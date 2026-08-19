@@ -4,7 +4,9 @@
 
     <application
         android:allowBackup="true"
-        android:label="12 Testers - Launch Circle"
+        android:icon="@drawable/launch_circle_logo"
+        android:label="@string/app_name"
+        android:roundIcon="@drawable/launch_circle_logo"
         android:supportsRtl="true"
         android:theme="@style/Theme.LaunchCircle">
         <activity

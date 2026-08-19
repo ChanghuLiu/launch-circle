@@ -1,9 +1,11 @@
 package com.launchcircle.testers.feature.onboarding
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
@@ -19,10 +21,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.launchcircle.testers.R
 
 @Composable
 fun SignInScreen(
@@ -40,6 +44,11 @@ fun SignInScreen(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        Image(
+            painter = painterResource(R.drawable.launch_circle_logo),
+            contentDescription = "Launch Circle logo",
+            modifier = Modifier.size(112.dp),
+        )
         Text("Launch Circle: 12 Testers", style = MaterialTheme.typography.headlineMedium)
         Text(
             "Find testers. Complete your 14-day closed test. Prepare for production.",

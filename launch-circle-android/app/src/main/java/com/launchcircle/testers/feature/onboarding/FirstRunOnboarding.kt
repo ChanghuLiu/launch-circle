@@ -1,5 +1,6 @@
 package com.launchcircle.testers.feature.onboarding
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -7,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -16,8 +18,10 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.launchcircle.testers.R
 
 data class OnboardingPage(val title: String, val body: String)
 
@@ -46,6 +50,12 @@ fun FirstRunOnboarding(onComplete: () -> Unit) {
         Modifier.fillMaxSize().padding(28.dp),
         verticalArrangement = Arrangement.Center,
     ) {
+        Image(
+            painter = painterResource(R.drawable.launch_circle_logo),
+            contentDescription = "Launch Circle logo",
+            modifier = Modifier.size(104.dp),
+        )
+        Spacer(Modifier.height(16.dp))
         Text(
             "Launch Circle",
             style = MaterialTheme.typography.titleLarge,
