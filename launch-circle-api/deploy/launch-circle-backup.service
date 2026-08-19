@@ -1,0 +1,17 @@
+[Unit]
+Description=Back up the Launch Circle SQLite pilot database
+After=launch-circle-api.service
+
+[Service]
+Type=oneshot
+User=launch-circle
+Group=launch-circle
+WorkingDirectory=/opt/launch-circle/launch-circle-api
+EnvironmentFile=/etc/launch-circle/launch-circle.env
+ExecStart=/opt/launch-circle/venv/bin/python scripts/backup_sqlite.py
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/launch-circle /var/backups/launch-circle

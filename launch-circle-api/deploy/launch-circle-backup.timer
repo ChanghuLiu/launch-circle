@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Launch Circle SQLite backup
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=15m
+Unit=launch-circle-backup.service
+
+[Install]
+WantedBy=timers.target

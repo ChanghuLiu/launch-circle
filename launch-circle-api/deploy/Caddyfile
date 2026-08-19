@@ -1,0 +1,11 @@
+# Set PILOT_HOST in Caddy service environment (for example /etc/default/caddy).
+{$PILOT_HOST} {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:8000
+
+    header {
+        -Server
+        X-Content-Type-Options nosniff
+        Referrer-Policy no-referrer
+    }
+}

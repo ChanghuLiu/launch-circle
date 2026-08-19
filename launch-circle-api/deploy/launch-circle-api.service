@@ -1,0 +1,24 @@
+[Unit]
+Description=Launch Circle FastAPI pilot service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=launch-circle
+Group=launch-circle
+WorkingDirectory=/opt/launch-circle/launch-circle-api
+EnvironmentFile=/etc/launch-circle/launch-circle.env
+ExecStart=/opt/launch-circle/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/launch-circle
+
+[Install]
+WantedBy=multi-user.target
