@@ -17,9 +17,19 @@ sealed interface AuthUiState {
     data class Error(val message: String) : AuthUiState
 }
 
+sealed interface AccountDeletionUiState {
+    data object Idle : AccountDeletionUiState
+    data object Deleting : AccountDeletionUiState
+    data class Error(val message: String) : AccountDeletionUiState
+}
+
 class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
     private val _state = MutableStateFlow<AuthUiState>(AuthUiState.Loading)
     val state: StateFlow<AuthUiState> = _state.asStateFlow()
+    private val _accountDeletionState =
+        MutableStateFlow<AccountDeletionUiState>(AccountDeletionUiState.Idle)
+    val accountDeletionState: StateFlow<AccountDeletionUiState> =
+        _accountDeletionState.asStateFlow()
 
     init {
         viewModelScope.launch {
@@ -64,6 +74,23 @@ class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
                 repository.updateTesterEmail(testerEmail, consent)
             }.onSuccess { _state.value = AuthUiState.SignedIn(it) }
                 .onFailure { _state.value = AuthUiState.Error(it.message ?: "Profile update failed") }
+        }
+    }
+
+    fun deleteAccount(onDeleted: () -> Unit = {}) {
+        viewModelScope.launch {
+            _accountDeletionState.value = AccountDeletionUiState.Deleting
+            runCatching { repository.deleteAccount() }
+                .onSuccess {
+                    _accountDeletionState.value = AccountDeletionUiState.Idle
+                    _state.value = AuthUiState.SignedOut
+                    onDeleted()
+                }
+                .onFailure {
+                    _accountDeletionState.value = AccountDeletionUiState.Error(
+                        it.message ?: "Could not delete your account. Try again.",
+                    )
+                }
         }
     }
 

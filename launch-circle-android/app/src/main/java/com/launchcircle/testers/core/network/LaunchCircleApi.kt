@@ -23,6 +23,7 @@ import com.launchcircle.testers.core.model.TokenPair
 import com.launchcircle.testers.core.model.UserProfile
 import com.launchcircle.testers.core.model.UserUpdateRequest
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.POST
@@ -51,6 +52,9 @@ interface LaunchCircleApi {
 
     @GET("v1/me")
     suspend fun me(@Header("Authorization") authorization: String): UserProfile
+
+    @DELETE("v1/me")
+    suspend fun deleteMe(@Header("Authorization") authorization: String)
 
     @PUT("v1/me")
     suspend fun updateMe(

@@ -51,9 +51,17 @@ import com.launchcircle.testers.core.model.PilotConfig
 import com.launchcircle.testers.core.model.TestMission
 import com.launchcircle.testers.core.model.TesterAssignment
 import com.launchcircle.testers.core.model.UserProfile
+import com.launchcircle.testers.feature.onboarding.AccountScreen
 
 @Composable
-fun LaunchWorkspace(profile: UserProfile, viewModel: LaunchViewModel, onLogout: () -> Unit) {
+fun LaunchWorkspace(
+    profile: UserProfile,
+    viewModel: LaunchViewModel,
+    deletionInProgress: Boolean,
+    deletionError: String?,
+    onDeleteAccount: () -> Unit,
+    onLogout: () -> Unit,
+) {
     val state by viewModel.state.collectAsState()
     LaunchedEffect(viewModel, profile.id) { viewModel.loadLaunches(profile.id) }
     Surface(Modifier.fillMaxSize()) {
@@ -99,7 +107,7 @@ fun LaunchWorkspace(profile: UserProfile, viewModel: LaunchViewModel, onLogout: 
                             profile, state.launches, state.dashboards,
                             viewModel::showAddApp, viewModel::showDashboard,
                             viewModel::showToday, viewModel::showInvite,
-                            viewModel::showJoin, onLogout,
+                            viewModel::showJoin, viewModel::showAccount, onLogout,
                         )
                         LaunchDestination.ADD_APP -> AddApp(
                             state.pilotConfig, viewModel::createApp,
@@ -127,6 +135,12 @@ fun LaunchWorkspace(profile: UserProfile, viewModel: LaunchViewModel, onLogout: 
                         }
                         LaunchDestination.TESTERS -> Testers(state.testers)
                         LaunchDestination.FEEDBACK -> Feedback(state.feedback)
+                        LaunchDestination.ACCOUNT -> AccountScreen(
+                            deleting = deletionInProgress,
+                            error = deletionError,
+                            onBack = viewModel::back,
+                            onDeleteAccount = onDeleteAccount,
+                        )
                     }
                 }
             }
@@ -144,6 +158,7 @@ private fun Home(
     onToday: () -> Unit,
     onInvite: () -> Unit,
     onJoin: () -> Unit,
+    onAccount: () -> Unit,
     onLogout: () -> Unit,
 ) {
     LazyColumn(
@@ -194,6 +209,9 @@ private fun Home(
             LaunchCard(app, dashboards[app.id]) { onOpen(app) }
         }
         item {
+            OutlinedButton(onClick = onAccount, modifier = Modifier.fillMaxWidth()) {
+                Text("Account / Settings")
+            }
             OutlinedButton(onClick = onLogout, modifier = Modifier.fillMaxWidth()) { Text("Sign out") }
             Spacer(Modifier.height(20.dp))
         }

@@ -1,12 +1,13 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.device import Device
+from app.models.launch import App, BackendEvent, Invite, PilotEvent, TesterAssignment
 from app.models.user import User
 from app.schemas.user import DeviceUpdate, TesterEmailUpdate, UserRead, UserUpdate
 
@@ -36,6 +37,49 @@ def serialize_user(user: User) -> UserRead:
 @router.get("", response_model=UserRead)
 def get_me(current_user: User = Depends(get_current_user)) -> UserRead:
     return serialize_user(current_user)
+
+
+@router.delete("")
+def delete_me(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    """Permanently delete a Launch Circle account and its associated service data."""
+    user_id = current_user.id
+    owned_app_ids = list(db.scalars(select(App.id).where(App.owner_id == user_id)))
+    assignment_ids = list(
+        db.scalars(select(TesterAssignment.id).where(TesterAssignment.tester_id == user_id))
+    )
+    invite_ids = list(
+        db.scalars(
+            select(Invite.id).where(
+                or_(Invite.inviter_id == user_id, Invite.joined_user_id == user_id)
+            )
+        )
+    )
+
+    pilot_event_filters = [PilotEvent.actor_user_id == user_id]
+    backend_event_filters = []
+    if owned_app_ids:
+        pilot_event_filters.append(PilotEvent.app_id.in_(owned_app_ids))
+        backend_event_filters.append(BackendEvent.app_id.in_(owned_app_ids))
+    if assignment_ids:
+        pilot_event_filters.append(PilotEvent.assignment_id.in_(assignment_ids))
+        backend_event_filters.append(BackendEvent.assignment_id.in_(assignment_ids))
+    if invite_ids:
+        pilot_event_filters.append(PilotEvent.invite_id.in_(invite_ids))
+
+    db.execute(delete(PilotEvent).where(or_(*pilot_event_filters)))
+    if backend_event_filters:
+        db.execute(delete(BackendEvent).where(or_(*backend_event_filters)))
+    if invite_ids:
+        db.execute(delete(Invite).where(Invite.id.in_(invite_ids)))
+
+    # Database-level ON DELETE rules remove owned apps and their testing data,
+    # tester assignments and missions, feedback, devices, and refresh tokens.
+    db.execute(delete(User).where(User.id == user_id))
+    db.commit()
+    return {"status": "deleted"}
 
 
 @router.put("", response_model=UserRead)

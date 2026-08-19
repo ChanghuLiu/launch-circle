@@ -60,6 +60,13 @@ class AuthRepository(
         api.updateDevice(bearer(), body)
     }
 
+    suspend fun deleteAccount() {
+        deleteAccountAndClearSession(
+            deleteRemote = { api.deleteMe(bearer()) },
+            clearSession = tokenStore::clear,
+        )
+    }
+
     suspend fun logout() {
         tokenStore.refreshToken?.let { runCatching { api.logout(LogoutRequest(it)) } }
         tokenStore.clear()

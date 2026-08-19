@@ -20,7 +20,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 enum class LaunchDestination {
-    MY_LAUNCHES, ADD_APP, DASHBOARD, TODAY_TESTS, MISSION, TESTERS, FEEDBACK
+    MY_LAUNCHES, ADD_APP, DASHBOARD, TODAY_TESTS, MISSION, TESTERS, FEEDBACK, ACCOUNT
 }
 
 enum class PilotSurface { NONE, INVITE, JOIN, JOIN_SUCCESS, GROUP_SETUP }
@@ -62,6 +62,14 @@ class LaunchViewModel(private val repository: LaunchRepository) : ViewModel() {
                 dashboards = dashboards,
             )
         }
+    }
+
+    fun showAccount() {
+        _state.value = _state.value.copy(
+            destination = LaunchDestination.ACCOUNT,
+            pilotSurface = PilotSurface.NONE,
+            error = null,
+        )
     }
 
     fun showAddApp() {
@@ -264,7 +272,8 @@ class LaunchViewModel(private val repository: LaunchRepository) : ViewModel() {
         val target = when (_state.value.destination) {
             LaunchDestination.ADD_APP,
             LaunchDestination.DASHBOARD,
-            LaunchDestination.TODAY_TESTS -> LaunchDestination.MY_LAUNCHES
+            LaunchDestination.TODAY_TESTS,
+            LaunchDestination.ACCOUNT -> LaunchDestination.MY_LAUNCHES
             LaunchDestination.MISSION -> LaunchDestination.TODAY_TESTS
             LaunchDestination.TESTERS,
             LaunchDestination.FEEDBACK -> LaunchDestination.DASHBOARD

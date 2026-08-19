@@ -24,6 +24,7 @@ import com.launchcircle.testers.core.launch.DemoLaunchRepository
 import com.launchcircle.testers.core.launch.RealLaunchRepository
 import com.launchcircle.testers.feature.launch.LaunchViewModel
 import com.launchcircle.testers.feature.launch.LaunchWorkspace
+import com.launchcircle.testers.feature.onboarding.AccountDeletionUiState
 import com.launchcircle.testers.feature.onboarding.AppDestination
 import com.launchcircle.testers.feature.onboarding.AppFlow
 import com.launchcircle.testers.feature.onboarding.AuthUiState
@@ -69,11 +70,13 @@ class MainActivity : ComponentActivity() {
                 }
                 val viewModel: AuthViewModel = viewModel(factory = SimpleAuthViewModelFactory(repository))
                 val state by viewModel.state.collectAsState()
+                val accountDeletionState by viewModel.accountDeletionState.collectAsState()
                 val launchViewModel: LaunchViewModel = viewModel(
                     factory = LaunchViewModelFactory(launchRepository),
                 )
                 AppRoot(
                     state = state,
+                    accountDeletionState = accountDeletionState,
                     launchViewModel = launchViewModel,
                     developmentAuthEnabled = BuildConfig.DEBUG && BuildConfig.ENABLE_DEVELOPMENT_AUTH,
                     onGoogleSignIn = {
@@ -85,6 +88,11 @@ class MainActivity : ComponentActivity() {
                     onSaveProfile = viewModel::saveProfile,
                     onDevelopmentSignIn = { email, password ->
                         viewModel.developmentSignIn(email, password)
+                    },
+                    onDeleteAccount = {
+                        viewModel.deleteAccount {
+                            lifecycleScope.launch { googleSignIn.clearCredentialState() }
+                        }
                     },
                     onLogout = {
                         viewModel.logout()
@@ -99,11 +107,13 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun AppRoot(
     state: AuthUiState,
+    accountDeletionState: AccountDeletionUiState,
     launchViewModel: LaunchViewModel,
     developmentAuthEnabled: Boolean,
     onGoogleSignIn: () -> Unit,
     onSaveProfile: (String?, String, List<String>, String, Boolean) -> Unit,
     onDevelopmentSignIn: (String, String) -> Unit,
+    onDeleteAccount: () -> Unit,
     onLogout: () -> Unit,
 ) {
     when (state) {
@@ -122,7 +132,14 @@ private fun AppRoot(
         is AuthUiState.SignedIn -> when (AppFlow.destination(state.profile)) {
             AppDestination.SIGN_IN -> SignInScreen(onGoogleSignIn)
             AppDestination.PROFILE -> ProfileScreen(state.profile, onSaveProfile)
-            AppDestination.HOME -> LaunchWorkspace(state.profile, launchViewModel, onLogout)
+            AppDestination.HOME -> LaunchWorkspace(
+                profile = state.profile,
+                viewModel = launchViewModel,
+                deletionInProgress = accountDeletionState is AccountDeletionUiState.Deleting,
+                deletionError = (accountDeletionState as? AccountDeletionUiState.Error)?.message,
+                onDeleteAccount = onDeleteAccount,
+                onLogout = onLogout,
+            )
         }
     }
 }
