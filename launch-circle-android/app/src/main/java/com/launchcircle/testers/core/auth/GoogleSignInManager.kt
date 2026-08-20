@@ -5,6 +5,7 @@ import androidx.credentials.ClearCredentialStateRequest
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.NoCredentialException
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 
@@ -22,7 +23,14 @@ class GoogleSignInManager(
         val request = GetCredentialRequest.Builder()
             .addCredentialOption(googleOption)
             .build()
-        val response = credentialManager.getCredential(activity, request)
+        val response = try {
+            credentialManager.getCredential(activity, request)
+        } catch (error: NoCredentialException) {
+            throw IllegalStateException(
+                "No eligible Google account is available for Launch Circle sign-in",
+                error,
+            )
+        }
         val credential = response.credential
         require(credential is CustomCredential) { "Unexpected credential type" }
         require(credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {

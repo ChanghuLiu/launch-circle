@@ -13,14 +13,9 @@ class TokenStore(context: Context) {
         get() = preferences.getString("refresh_token", null)
         private set(value) = preferences.edit().putString("refresh_token", value).apply()
 
-    var authMode: String?
-        get() = preferences.getString("auth_mode", null)
-        private set(value) = preferences.edit().putString("auth_mode", value).apply()
-
-    fun save(access: String, refresh: String, mode: String = "google") {
+    fun save(access: String, refresh: String) {
         accessToken = access
         refreshToken = refresh
-        authMode = mode
     }
 
     fun clear() {

@@ -2,7 +2,7 @@ package com.launchcircle.testers
 
 import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
+import java.util.UUID
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.CircularProgressIndicator
@@ -24,13 +24,13 @@ import com.launchcircle.testers.core.launch.DemoLaunchRepository
 import com.launchcircle.testers.core.launch.RealLaunchRepository
 import com.launchcircle.testers.feature.launch.LaunchViewModel
 import com.launchcircle.testers.feature.launch.LaunchWorkspace
-import com.launchcircle.testers.feature.onboarding.AccountDeletionUiState
 import com.launchcircle.testers.feature.onboarding.AppDestination
 import com.launchcircle.testers.feature.onboarding.AppFlow
+import com.launchcircle.testers.feature.onboarding.AccountDeletionUiState
 import com.launchcircle.testers.feature.onboarding.AuthUiState
 import com.launchcircle.testers.feature.onboarding.AuthViewModel
 import com.launchcircle.testers.feature.onboarding.FirstRunOnboarding
-import com.launchcircle.testers.feature.onboarding.SignInScreen
+import com.launchcircle.testers.feature.onboarding.AuthEntryScreen
 import com.launchcircle.testers.feature.profile.ProfileScreen
 import com.launchcircle.testers.ui.theme.LaunchCircleTheme
 import kotlinx.coroutines.launch
@@ -47,8 +47,13 @@ class MainActivity : ComponentActivity() {
             RealLaunchRepository(api, tokenStore)
         }
         val googleSignIn = GoogleSignInManager(this, BuildConfig.GOOGLE_SERVER_CLIENT_ID)
+        val installationPreferences = getSharedPreferences("launch_circle_installation", MODE_PRIVATE)
+        val installationId = installationPreferences.getString("installation_id", null)
+            ?: UUID.randomUUID().toString().also {
+                installationPreferences.edit().putString("installation_id", it).apply()
+            }
         val device = DeviceUpdateRequest(
-            installation_id = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID),
+            installation_id = installationId,
             manufacturer = Build.MANUFACTURER,
             model = Build.MODEL,
             android_api = Build.VERSION.SDK_INT,
@@ -77,18 +82,19 @@ class MainActivity : ComponentActivity() {
                 AppRoot(
                     state = state,
                     accountDeletionState = accountDeletionState,
+                    authViewModel = viewModel,
                     launchViewModel = launchViewModel,
+                    tokenStore = tokenStore,
+                    apiBaseUrl = BuildConfig.API_BASE_URL,
                     developmentAuthEnabled = BuildConfig.DEBUG && BuildConfig.ENABLE_DEVELOPMENT_AUTH,
                     onGoogleSignIn = {
                         lifecycleScope.launch {
                             runCatching { googleSignIn.signIn() }
                                 .onSuccess { viewModel.signIn(it, device) }
+                                .onFailure { viewModel.reportSignInError(it.message) }
                         }
                     },
                     onSaveProfile = viewModel::saveProfile,
-                    onDevelopmentSignIn = { email, password ->
-                        viewModel.developmentSignIn(email, password)
-                    },
                     onDeleteAccount = {
                         viewModel.deleteAccount {
                             lifecycleScope.launch { googleSignIn.clearCredentialState() }
@@ -108,29 +114,43 @@ class MainActivity : ComponentActivity() {
 private fun AppRoot(
     state: AuthUiState,
     accountDeletionState: AccountDeletionUiState,
+    authViewModel: AuthViewModel,
     launchViewModel: LaunchViewModel,
+    tokenStore: TokenStore,
+    apiBaseUrl: String,
     developmentAuthEnabled: Boolean,
     onGoogleSignIn: () -> Unit,
     onSaveProfile: (String?, String, List<String>, String, Boolean) -> Unit,
-    onDevelopmentSignIn: (String, String) -> Unit,
     onDeleteAccount: () -> Unit,
     onLogout: () -> Unit,
 ) {
     when (state) {
         AuthUiState.Loading -> CircularProgressIndicator()
-        AuthUiState.SignedOut -> SignInScreen(
-            onGoogleSignIn,
+        AuthUiState.SignedOut -> AuthEntryScreen(
+            viewModel = authViewModel,
+            tokenStore = tokenStore,
+            apiBaseUrl = apiBaseUrl,
             developmentAuthEnabled = developmentAuthEnabled,
-            onDevelopmentSignIn = onDevelopmentSignIn,
+            error = null,
+            onGoogleSignIn = onGoogleSignIn,
         )
-        is AuthUiState.Error -> SignInScreen(
-            onGoogleSignIn,
+        is AuthUiState.Error -> AuthEntryScreen(
+            viewModel = authViewModel,
+            tokenStore = tokenStore,
+            apiBaseUrl = apiBaseUrl,
             developmentAuthEnabled = developmentAuthEnabled,
             error = state.message,
-            onDevelopmentSignIn = onDevelopmentSignIn,
+            onGoogleSignIn = onGoogleSignIn,
         )
         is AuthUiState.SignedIn -> when (AppFlow.destination(state.profile)) {
-            AppDestination.SIGN_IN -> SignInScreen(onGoogleSignIn)
+            AppDestination.SIGN_IN -> AuthEntryScreen(
+                viewModel = authViewModel,
+                tokenStore = tokenStore,
+                apiBaseUrl = apiBaseUrl,
+                developmentAuthEnabled = developmentAuthEnabled,
+                error = null,
+                onGoogleSignIn = onGoogleSignIn,
+            )
             AppDestination.PROFILE -> ProfileScreen(state.profile, onSaveProfile)
             AppDestination.HOME -> LaunchWorkspace(
                 profile = state.profile,

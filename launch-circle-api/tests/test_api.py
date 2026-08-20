@@ -27,6 +27,11 @@ def test_health(client):
     assert response.json() == {"status": "ok"}
 
 
+def test_google_auth_requires_id_token_field(client):
+    response = client.post("/v1/auth/google", json={})
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["body", "id_token"]
+
 def test_invalid_google_token_rejected(client, monkeypatch):
     def reject(_token: str):
         from fastapi import HTTPException

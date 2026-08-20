@@ -1,8 +1,6 @@
 package com.launchcircle.testers.core.auth
 
 import com.launchcircle.testers.core.model.DeviceUpdateRequest
-import com.launchcircle.testers.core.model.DevelopmentLoginRequest
-import com.launchcircle.testers.core.model.DevelopmentUser
 import com.launchcircle.testers.core.model.GoogleAuthRequest
 import com.launchcircle.testers.core.model.LogoutRequest
 import com.launchcircle.testers.core.model.RefreshRequest
@@ -18,35 +16,23 @@ class AuthRepository(
 ) {
     suspend fun exchangeGoogleToken(idToken: String): UserProfile {
         val tokens = api.googleAuth(GoogleAuthRequest(idToken))
-        tokenStore.save(tokens.access_token, tokens.refresh_token, "google")
+        tokenStore.save(tokens.access_token, tokens.refresh_token)
         return loadProfile()
-    }
-
-    suspend fun developmentLogin(email: String, password: String): UserProfile {
-        val tokens = api.developmentLogin(DevelopmentLoginRequest(email, password))
-        tokenStore.save(tokens.access_token, tokens.refresh_token, "development")
-        return loadDevelopmentProfile()
     }
 
     suspend fun restoreSession(): UserProfile? {
         val refresh = tokenStore.refreshToken ?: return null
         return runCatching {
             val tokens = api.refresh(RefreshRequest(refresh))
-            val mode = tokenStore.authMode ?: "google"
-            tokenStore.save(tokens.access_token, tokens.refresh_token, mode)
-            if (mode == "development") loadDevelopmentProfile() else loadProfile()
+            tokenStore.save(tokens.access_token, tokens.refresh_token)
+            loadProfile()
         }.getOrElse {
             tokenStore.clear()
             null
         }
     }
 
-    suspend fun loadProfile(): UserProfile {
-        return api.me(bearer())
-    }
-
-    private suspend fun loadDevelopmentProfile(): UserProfile =
-        api.developmentMe(bearer()).asAcceptanceProfile()
+    suspend fun loadProfile(): UserProfile = api.me(bearer())
 
     suspend fun updateProfile(name: String?, country: String?, languages: List<String>): UserProfile {
         return api.updateMe(bearer(), UserUpdateRequest(name, country, languages))
@@ -78,13 +64,3 @@ class AuthRepository(
     }
 }
 
-private fun DevelopmentUser.asAcceptanceProfile() = UserProfile(
-    id = id,
-    login_email = email,
-    display_name = display_name,
-    tester_email = email,
-    tester_email_sharing_consent = true,
-    country = country ?: "CA",
-    languages = listOf("en"),
-    profile_ready = true,
-)

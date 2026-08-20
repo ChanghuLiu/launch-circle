@@ -1,6 +1,8 @@
 package com.launchcircle.testers
 
 import com.launchcircle.testers.core.model.UserProfile
+import com.launchcircle.testers.core.model.GoogleAuthRequest
+import com.google.gson.Gson
 import com.launchcircle.testers.feature.onboarding.AppDestination
 import com.launchcircle.testers.feature.onboarding.AppFlow
 import org.junit.Assert.assertEquals
@@ -31,5 +33,12 @@ class AppFlowTest {
     @Test
     fun routesReadyProfileToHome() {
         assertEquals(AppDestination.HOME, AppFlow.destination(profile(true)))
+    }
+
+
+    @Test
+    fun googleAuthRequestUsesBackendWireField() {
+        val json = Gson().toJson(GoogleAuthRequest("token-value"))
+        assertEquals("token-value", Gson().fromJson(json, Map::class.java)["id_token"])
     }
 }

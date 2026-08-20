@@ -1,8 +1,16 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
 
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+val releaseSigningFile = rootProject.file("keystore.properties")
+val releaseSigningProperties = Properties().apply {
+    if (releaseSigningFile.isFile) {
+        releaseSigningFile.inputStream().use(::load)
+    }
 }
 
 android {
@@ -13,8 +21,8 @@ android {
         applicationId = "com.launchcircle.testers"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "1.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -38,11 +46,50 @@ android {
         buildConfigField("String", "GOOGLE_SERVER_CLIENT_ID", "\"$googleClientId\"")
     }
 
+    signingConfigs {
+        if (releaseSigningFile.isFile) {
+            create("release") {
+                val configuredAlias = releaseSigningProperties.getProperty("keyAlias")
+                require(configuredAlias == "launch-circle-upload") {
+                    "Release signing keyAlias must be launch-circle-upload"
+                }
+                storeFile = rootProject.file(
+                    requireNotNull(releaseSigningProperties.getProperty("storeFile")) {
+                        "Missing storeFile in keystore.properties"
+                    },
+                )
+                storePassword = requireNotNull(releaseSigningProperties.getProperty("storePassword")) {
+                    "Missing storePassword in keystore.properties"
+                }
+                keyAlias = configuredAlias
+                keyPassword = requireNotNull(releaseSigningProperties.getProperty("keyPassword")) {
+                    "Missing keyPassword in keystore.properties"
+                }
+            }
+        }
+    }
+
     buildTypes {
         getByName("release") {
-            // Release/pilot artifacts always use the real backend and never expose email/password dev auth.
+            // Release artifacts always use the HTTPS pilot backend and Google authentication.
+            buildConfigField(
+                "String",
+                "API_BASE_URL",
+                "\"https://launchcircle-api.duckdns.org/\"",
+            )
             buildConfigField("boolean", "USE_DEMO_REPOSITORY", "false")
             buildConfigField("boolean", "ENABLE_DEVELOPMENT_AUTH", "false")
+            buildConfigField(
+                "String",
+                "GOOGLE_SERVER_CLIENT_ID",
+                "\"519813588502-4jlmnljs86ijr8kijmuesq6i147p5f0c.apps.googleusercontent.com\"",
+            )
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+            if (releaseSigningFile.isFile) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 

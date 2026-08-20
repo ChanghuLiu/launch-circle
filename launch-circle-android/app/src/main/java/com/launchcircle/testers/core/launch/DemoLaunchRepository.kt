@@ -14,11 +14,11 @@ import com.launchcircle.testers.core.model.TesterAssignment
 class DemoLaunchRepository : LaunchRepository {
     private val config = PilotConfig()
     private val apps = mutableListOf(
-        demoApp("cold", "Fresh Launch", "WAITING_FOR_TESTERS"),
-        demoApp("early", "eSIM Checker", "WAITING_FOR_TESTERS"),
         demoApp("healthy", "BLE Signal Analyzer", "TESTING", "2026-08-14T00:00:00Z"),
+        demoApp("early", "eSIM Checker", "WAITING_FOR_TESTERS"),
         demoApp("risk", "Privacy Scanner", "AT_RISK", "2026-08-14T00:00:00Z"),
         demoApp("ready", "Notes Escape", "PRODUCTION_READY", "2026-08-01T00:00:00Z", true),
+        demoApp("cold", "Fresh Launch", "WAITING_FOR_TESTERS"),
     )
     private var todays = mutableListOf(
         TestMission(

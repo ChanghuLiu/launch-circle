@@ -1,5 +1,7 @@
 package com.launchcircle.testers.core.model
 
+import com.google.gson.annotations.SerializedName
+
 data class TokenPair(
     val access_token: String,
     val refresh_token: String,
@@ -17,15 +19,8 @@ data class UserProfile(
     val profile_ready: Boolean,
 )
 
-data class GoogleAuthRequest(val id_token: String)
-data class DevelopmentLoginRequest(val email: String, val password: String)
-data class DevelopmentUser(
-    val id: String,
-    val email: String,
-    val display_name: String?,
-    val country: String?,
-    val reliability_score: Int,
-)
+// Request contract for POST /v1/auth/google; keep the wire name through R8.
+data class GoogleAuthRequest(@SerializedName("id_token") val id_token: String)
 data class RefreshRequest(val refresh_token: String)
 data class LogoutRequest(val refresh_token: String)
 data class UserUpdateRequest(

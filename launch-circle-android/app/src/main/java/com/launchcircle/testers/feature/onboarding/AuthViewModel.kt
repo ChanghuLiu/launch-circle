@@ -49,15 +49,12 @@ class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
         }
     }
 
-    fun developmentSignIn(email: String, password: String) {
-        viewModelScope.launch {
-            _state.value = AuthUiState.Loading
-            runCatching {
-                val profile = repository.developmentLogin(email, password)
-                profile
-            }.onSuccess { _state.value = AuthUiState.SignedIn(it) }
-                .onFailure { _state.value = AuthUiState.Error(it.message ?: "Development login failed") }
-        }
+    fun reportSignInError(message: String?) {
+        _state.value = AuthUiState.Error(message ?: "Google Sign-In failed")
+    }
+
+    fun acceptProfile(profile: UserProfile) {
+        _state.value = AuthUiState.SignedIn(profile)
     }
 
     fun saveProfile(

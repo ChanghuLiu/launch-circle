@@ -1,8 +1,6 @@
 package com.launchcircle.testers.core.network
 
 import com.launchcircle.testers.core.model.DeviceUpdateRequest
-import com.launchcircle.testers.core.model.DevelopmentLoginRequest
-import com.launchcircle.testers.core.model.DevelopmentUser
 import com.launchcircle.testers.core.model.CreateAppRequest
 import com.launchcircle.testers.core.model.FeedbackRequest
 import com.launchcircle.testers.core.model.LaunchApp
@@ -34,12 +32,6 @@ import retrofit2.http.PUT
 interface LaunchCircleApi {
     @GET("pilot-config")
     suspend fun pilotConfig(): PilotConfig
-
-    @POST("auth/login")
-    suspend fun developmentLogin(@Body body: DevelopmentLoginRequest): TokenPair
-
-    @GET("me")
-    suspend fun developmentMe(@Header("Authorization") authorization: String): DevelopmentUser
 
     @POST("v1/auth/google")
     suspend fun googleAuth(@Body body: GoogleAuthRequest): TokenPair
