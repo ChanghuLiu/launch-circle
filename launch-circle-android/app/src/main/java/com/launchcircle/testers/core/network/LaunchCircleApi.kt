@@ -6,9 +6,12 @@ import com.launchcircle.testers.core.model.FeedbackRequest
 import com.launchcircle.testers.core.model.LaunchApp
 import com.launchcircle.testers.core.model.LaunchDashboard
 import com.launchcircle.testers.core.model.LaunchInvite
+import com.launchcircle.testers.core.model.LaunchCircle
 import com.launchcircle.testers.core.model.MissionFeedback
 import com.launchcircle.testers.core.model.MatchingResult
 import com.launchcircle.testers.core.model.TestMission
+import com.launchcircle.testers.core.model.TestAssignment
+import com.launchcircle.testers.core.model.AssignmentCoverage
 import com.launchcircle.testers.core.model.TesterAssignment
 import com.launchcircle.testers.core.model.InviteRequest
 import com.launchcircle.testers.core.model.GoogleAuthRequest
@@ -78,6 +81,12 @@ interface LaunchCircleApi {
     @GET("apps/{appId}/dashboard")
     suspend fun dashboard(@Header("Authorization") authorization: String, @Path("appId") appId: String): LaunchDashboard
 
+    @GET("apps/{appId}/circle")
+    suspend fun appCircle(@Header("Authorization") authorization: String, @Path("appId") appId: String): LaunchCircle
+
+    @GET("circles/{circleId}")
+    suspend fun circle(@Header("Authorization") authorization: String, @Path("circleId") circleId: String): LaunchCircle
+
     @POST("apps/{appId}/match-testers")
     suspend fun matchTesters(@Header("Authorization") authorization: String, @Path("appId") appId: String): MatchingResult
 
@@ -89,6 +98,21 @@ interface LaunchCircleApi {
 
     @GET("test-missions/today")
     suspend fun todaysMissions(@Header("Authorization") authorization: String): List<TestMission>
+
+    @GET("test-assignments/today")
+    suspend fun todaysAssignments(@Header("Authorization") authorization: String): List<TestAssignment>
+
+    @POST("test-assignments/{assignmentId}/complete")
+    suspend fun completeAssignment(
+        @Header("Authorization") authorization: String,
+        @Path("assignmentId") assignmentId: String,
+    ): TestAssignment
+
+    @GET("apps/{appId}/assignment-coverage")
+    suspend fun assignmentCoverage(
+        @Header("Authorization") authorization: String,
+        @Path("appId") appId: String,
+    ): AssignmentCoverage
 
     @GET("assignments/{assignmentId}/missions")
     suspend fun missions(@Header("Authorization") authorization: String, @Path("assignmentId") assignmentId: String): List<TestMission>
@@ -113,4 +137,11 @@ interface LaunchCircleApi {
 
     @POST("invites")
     suspend fun createInvite(@Header("Authorization") authorization: String, @Body body: InviteRequest = InviteRequest()): LaunchInvite
+
+    @POST("apps/{appId}/invites")
+    suspend fun createAppInvite(
+        @Header("Authorization") authorization: String,
+        @Path("appId") appId: String,
+        @Body body: InviteRequest = InviteRequest(),
+    ): LaunchInvite
 }

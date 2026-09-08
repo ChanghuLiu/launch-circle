@@ -23,6 +23,10 @@ launchCircleUseDemoRepository=false
 launchCircleEnableDevelopmentAuth=true
 ```
 
+The debug build uses the real backend repository by default. Set
+`-PlaunchCircleUseDemoRepository=true` only when an in-memory demo workspace is
+explicitly needed.
+
 Physical phone on the LAN uses `http://HOST_LAN_IP:8000/`.
 
 External pilot uses an HTTPS URL, the real repository, and disabled development auth. Release builds force both demo data and development authentication off.

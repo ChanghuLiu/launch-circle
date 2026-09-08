@@ -1,9 +1,10 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from uuid import uuid4
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -30,6 +31,9 @@ class App(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     owner_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    circle_id: Mapped[str | None] = mapped_column(
+        ForeignKey("circles.id", ondelete="SET NULL"), index=True, nullable=True
+    )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     package_name: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     opt_in_url: Mapped[str] = mapped_column(Text, nullable=False)
@@ -47,6 +51,12 @@ class App(Base):
         DateTime(timezone=True), nullable=True
     )
     testing_end_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    testing_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    production_ready_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False
     )
@@ -58,6 +68,7 @@ class App(Base):
     )
 
     owner = relationship("User", back_populates="owned_apps")
+    circle = relationship("Circle", back_populates="apps")
     assignments = relationship(
         "TesterAssignment", back_populates="app", cascade="all, delete-orphan"
     )
@@ -84,7 +95,12 @@ class TesterAssignment(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     app_id: Mapped[str] = mapped_column(ForeignKey("apps.id", ondelete="CASCADE"), index=True)
+    circle_id: Mapped[str | None] = mapped_column(
+        ForeignKey("circles.id", ondelete="SET NULL"), index=True, nullable=True
+    )
     tester_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    assignment_day: Mapped[date | None] = mapped_column(Date, index=True, nullable=True)
+    test_type: Mapped[str] = mapped_column(String(40), default="APP_CHECK", nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="ASSIGNED", nullable=False)
     assigned_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False
@@ -102,6 +118,7 @@ class TesterAssignment(Base):
 
     app = relationship("App", back_populates="assignments")
     tester = relationship("User", back_populates="assignments")
+    circle = relationship("Circle")
     missions = relationship(
         "TestMission", back_populates="assignment", cascade="all, delete-orphan"
     )
@@ -119,13 +136,23 @@ class TesterAssignment(Base):
             name="ck_assignments_health_status",
         ),
         Index(
-            "uq_active_assignment",
+            "uq_assignment_day",
             "app_id",
             "tester_id",
+            "assignment_day",
+            "test_type",
             unique=True,
             sqlite_where=text("status != 'DROPPED'"),
         ),
     )
+
+    @property
+    def tester_user_id(self) -> str:
+        return self.tester_id
+
+    @tester_user_id.setter
+    def tester_user_id(self, value: str) -> None:
+        self.tester_id = value
 
 
 class TestMission(Base):
@@ -192,6 +219,9 @@ class Invite(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     inviter_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    circle_id: Mapped[str | None] = mapped_column(
+        ForeignKey("circles.id", ondelete="SET NULL"), index=True, nullable=True
+    )
     invite_code: Mapped[str] = mapped_column(String(16), unique=True, index=True)
     invited_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
     joined_user_id: Mapped[str | None] = mapped_column(
@@ -201,15 +231,77 @@ class Invite(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False
     )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     inviter = relationship("User", foreign_keys=[inviter_id], back_populates="sent_invites")
+    circle = relationship("Circle", back_populates="invites")
     joined_user = relationship(
         "User", foreign_keys=[joined_user_id], back_populates="accepted_invites"
     )
 
     __table_args__ = (
-        CheckConstraint("status IN ('PENDING','ACCEPTED','CANCELLED')", name="ck_invites_status"),
+        CheckConstraint(
+            "status IN ('PENDING','ACCEPTED','CANCELLED','EXPIRED')",
+            name="ck_invites_status",
+        ),
+    )
+
+
+class Circle(Base):
+    __tablename__ = "circles"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    owner_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    max_members: Mapped[int] = mapped_column(Integer, default=15, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
+
+    owner = relationship("User", back_populates="owned_circles")
+    members = relationship(
+        "CircleMember", back_populates="circle", cascade="all, delete-orphan"
+    )
+    apps = relationship("App", back_populates="circle")
+    invites = relationship("Invite", back_populates="circle", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        CheckConstraint("max_members = 15", name="ck_circles_max_members"),
+    )
+
+
+class CircleMember(Base):
+    __tablename__ = "circle_members"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    circle_id: Mapped[str] = mapped_column(
+        ForeignKey("circles.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    role: Mapped[str] = mapped_column(String(16), default="MEMBER", nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="ACTIVE", nullable=False)
+    joined_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    left_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    circle = relationship("Circle", back_populates="members")
+    user = relationship("User", back_populates="circle_memberships")
+
+    __table_args__ = (
+        CheckConstraint("role IN ('OWNER','MEMBER')", name="ck_circle_members_role"),
+        CheckConstraint(
+            "status IN ('ACTIVE','LEFT','REMOVED')", name="ck_circle_members_status"
+        ),
+        Index("uq_circle_member_user", "circle_id", "user_id", unique=True),
     )
 
 

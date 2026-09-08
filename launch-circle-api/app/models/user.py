@@ -48,6 +48,12 @@ class User(Base):
         "RefreshToken", back_populates="user", cascade="all, delete-orphan"
     )
     owned_apps = relationship("App", back_populates="owner", cascade="all, delete-orphan")
+    owned_circles = relationship(
+        "Circle", back_populates="owner", cascade="all, delete-orphan"
+    )
+    circle_memberships = relationship(
+        "CircleMember", back_populates="user", cascade="all, delete-orphan"
+    )
     assignments = relationship(
         "TesterAssignment", back_populates="tester", cascade="all, delete-orphan"
     )

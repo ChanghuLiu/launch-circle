@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta
 
-from app.models.launch import App, TesterAssignment
+from sqlalchemy import select
+
+from app.models.launch import App, CircleMember, TesterAssignment
 from app.services.clock import aware
 from app.services.events import emit_event
 from app.services.missions import refresh_mission_availability
@@ -8,6 +10,10 @@ from app.services.missions import refresh_mission_availability
 MISSION_GRACE = timedelta(days=1)
 AT_RISK_INACTIVITY = timedelta(days=2)
 INACTIVE_AFTER = timedelta(days=4)
+HEALTH_ACTIVE = "ACTIVE"
+HEALTH_NEEDS_ATTENTION = "NEEDS_ATTENTION"
+HEALTH_INACTIVE = "INACTIVE"
+HEALTH_DROPPED = "DROPPED"
 
 
 def record_activity(assignment: TesterAssignment, now: datetime) -> None:
@@ -62,11 +68,48 @@ def evaluate_assignment(db, assignment: TesterAssignment, now: datetime) -> str:
     return new
 
 
+def participation_state(assignment: TesterAssignment) -> str:
+    if assignment.status == "DROPPED" or assignment.health_status == "DROPPED":
+        return HEALTH_DROPPED
+    if assignment.health_status == "INACTIVE":
+        return HEALTH_INACTIVE
+    if assignment.health_status == "AT_RISK":
+        return HEALTH_NEEDS_ATTENTION
+    return HEALTH_ACTIVE
+
+
 def refresh_app_health(db, app: App, now: datetime) -> list[TesterAssignment]:
     newly_inactive = []
+    active_member_ids = set(
+        db.scalars(
+            select(CircleMember.user_id).where(
+                CircleMember.circle_id == app.circle_id,
+                CircleMember.status == "ACTIVE",
+            )
+        )
+    )
     for assignment in app.assignments:
         old = assignment.health_status
-        new = evaluate_assignment(db, assignment, now)
+        if (
+            assignment.status != "DROPPED"
+            and assignment.tester_id not in active_member_ids
+        ):
+            assignment.status = "DROPPED"
+            assignment.health_status = "DROPPED"
+            assignment.dropped_at = assignment.dropped_at or now
+            assignment.last_activity_at = now
+            new = "DROPPED"
+            if old != "DROPPED":
+                emit_event(
+                    db,
+                    assignment.app_id,
+                    "TESTER_DROPPED",
+                    f"health:{assignment.id}:DROPPED",
+                    assignment.id,
+                    {"health_status": "DROPPED", "reason": "circle_member_left"},
+                )
+        else:
+            new = evaluate_assignment(db, assignment, now)
         if new in {"INACTIVE", "DROPPED"} and old not in {"INACTIVE", "DROPPED"}:
             newly_inactive.append(assignment)
     return newly_inactive

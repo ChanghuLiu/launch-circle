@@ -12,6 +12,7 @@ from app.core.security import (
 )
 from app.models.user import User
 from app.schemas.auth import GoogleAuthRequest, LogoutRequest, RefreshRequest, TokenPair
+from app.services.circles import ensure_owner_circle
 
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
 
@@ -35,6 +36,8 @@ def google_auth(body: GoogleAuthRequest, db: Session = Depends(get_db)) -> Token
             display_name=payload.get("name"),
         )
         db.add(user)
+        db.flush()
+        ensure_owner_circle(db, user)
         db.commit()
         db.refresh(user)
     else:
@@ -43,6 +46,7 @@ def google_auth(body: GoogleAuthRequest, db: Session = Depends(get_db)) -> Token
         user.login_email = payload["email"]
         if payload.get("name") and not user.display_name:
             user.display_name = payload["name"]
+        ensure_owner_circle(db, user)
         db.commit()
 
     return TokenPair(

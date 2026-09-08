@@ -9,10 +9,12 @@ import com.launchcircle.testers.core.model.FeedbackRequest
 import com.launchcircle.testers.core.model.LaunchApp
 import com.launchcircle.testers.core.model.LaunchDashboard
 import com.launchcircle.testers.core.model.LaunchInvite
+import com.launchcircle.testers.core.model.LaunchCircle
 import com.launchcircle.testers.core.model.MatchingResult
 import com.launchcircle.testers.core.model.MissionFeedback
 import com.launchcircle.testers.core.model.PilotConfig
 import com.launchcircle.testers.core.model.TestMission
+import com.launchcircle.testers.core.model.TestAssignment
 import com.launchcircle.testers.core.model.TesterAssignment
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,7 +22,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 enum class LaunchDestination {
-    MY_LAUNCHES, ADD_APP, DASHBOARD, TODAY_TESTS, MISSION, TESTERS, FEEDBACK, ACCOUNT
+    MY_LAUNCHES, ADD_APP, DASHBOARD, TODAY_TESTS, ASSIGNMENT, MISSION, TESTERS, FEEDBACK, ACCOUNT
 }
 
 enum class PilotSurface { NONE, INVITE, JOIN, JOIN_SUCCESS, GROUP_SETUP }
@@ -32,10 +34,13 @@ data class LaunchUiState(
     val launches: List<LaunchApp> = emptyList(),
     val dashboards: Map<String, LaunchDashboard> = emptyMap(),
     val selectedApp: LaunchApp? = null,
+    val circle: LaunchCircle? = null,
     val selectedMission: TestMission? = null,
+    val selectedAssignment: TestAssignment? = null,
     val testers: List<TesterAssignment> = emptyList(),
     val feedback: List<MissionFeedback> = emptyList(),
     val today: List<TestMission> = emptyList(),
+    val todayAssignments: List<TestAssignment> = emptyList(),
     val invite: LaunchInvite? = null,
     val matchingResult: MatchingResult? = null,
     val loading: Boolean = true,
@@ -51,17 +56,53 @@ class LaunchViewModel(private val repository: LaunchRepository) : ViewModel() {
         if (loadedUserId == userId) return
         loadedUserId = userId
         _state.value = LaunchUiState()
+        loadWorkspace()
+    }
+
+    fun refresh() {
+        if (loadedUserId != null) loadWorkspace()
+    }
+
+    private fun loadWorkspace() {
         runTask {
             val config = runCatching { repository.pilotConfig() }.getOrDefault(PilotConfig())
             val apps = repository.launches()
             val dashboards = apps.associate { it.id to repository.dashboard(it.id) }
+            val selected = _state.value.selectedApp?.let { current ->
+                apps.firstOrNull { it.id == current.id }
+            } ?: apps.firstOrNull()
+            val circle = selected?.let { repository.circle(it.id) }
             _state.value.copy(
-                destination = LaunchDestination.MY_LAUNCHES,
+                destination = if (selected == null) {
+                    LaunchDestination.MY_LAUNCHES
+                } else {
+                    _state.value.destination
+                },
                 pilotConfig = config,
                 launches = apps,
                 dashboards = dashboards,
+                selectedApp = selected,
+                circle = circle,
+                todayAssignments = repository.todaysAssignments(),
             )
         }
+    }
+
+    fun showHome() {
+        val app = _state.value.selectedApp ?: _state.value.launches.firstOrNull()
+        if (app == null) {
+            _state.value = _state.value.copy(destination = LaunchDestination.MY_LAUNCHES)
+        } else {
+            showDashboard(app)
+        }
+    }
+
+    fun showMyLaunch() {
+        _state.value = _state.value.copy(
+            destination = LaunchDestination.MY_LAUNCHES,
+            pilotSurface = PilotSurface.NONE,
+            error = null,
+        )
     }
 
     fun showAccount() {
@@ -145,7 +186,27 @@ class LaunchViewModel(private val repository: LaunchRepository) : ViewModel() {
         _state.value.copy(
             destination = LaunchDestination.TODAY_TESTS,
             pilotSurface = PilotSurface.NONE,
-            today = repository.todaysMissions(),
+            todayAssignments = repository.todaysAssignments(),
+        )
+    }
+
+    fun showAssignment(assignment: TestAssignment) {
+        _state.value = _state.value.copy(
+            destination = LaunchDestination.ASSIGNMENT,
+            selectedAssignment = assignment,
+            error = null,
+        )
+    }
+
+    fun completeAssignment() = runTask {
+        val assignment = checkNotNull(_state.value.selectedAssignment)
+        val completed = repository.completeAssignment(assignment.id)
+        _state.value.copy(
+            destination = LaunchDestination.TODAY_TESTS,
+            selectedAssignment = null,
+            todayAssignments = _state.value.todayAssignments.map {
+                if (it.id == completed.id) completed else it
+            },
         )
     }
 
@@ -211,7 +272,28 @@ class LaunchViewModel(private val repository: LaunchRepository) : ViewModel() {
         _state.value.copy(
             destination = LaunchDestination.TESTERS,
             testers = repository.testers(app.id),
+            circle = repository.circle(app.id),
         )
+    }
+
+    fun showCircle() {
+        val joinedCircle = _state.value.circle
+        if (joinedCircle != null && _state.value.selectedApp == null) {
+            _state.value = _state.value.copy(
+                destination = LaunchDestination.TESTERS,
+                pilotSurface = PilotSurface.NONE,
+                testers = emptyList(),
+                error = null,
+            )
+            return
+        }
+        val app = _state.value.selectedApp ?: _state.value.launches.firstOrNull()
+        if (app == null) {
+            _state.value = _state.value.copy(destination = LaunchDestination.MY_LAUNCHES)
+            return
+        }
+        _state.value = _state.value.copy(selectedApp = app)
+        showTesters()
     }
 
     fun showFeedback() = runTask {
@@ -226,18 +308,20 @@ class LaunchViewModel(private val repository: LaunchRepository) : ViewModel() {
         _state.value = _state.value.copy(pilotSurface = PilotSurface.INVITE, error = null)
         if (_state.value.invite == null) {
             runTask {
+                val app = checkNotNull(_state.value.selectedApp)
                 _state.value.copy(
                     pilotSurface = PilotSurface.INVITE,
-                    invite = repository.createInvite(),
+                    invite = repository.createInvite(app.id),
                 )
             }
         }
     }
 
     fun refreshInvite() = runTask {
+        val app = checkNotNull(_state.value.selectedApp)
         _state.value.copy(
             pilotSurface = PilotSurface.INVITE,
-            invite = repository.createInvite(),
+            invite = repository.createInvite(app.id),
         )
     }
 
@@ -253,8 +337,10 @@ class LaunchViewModel(private val repository: LaunchRepository) : ViewModel() {
             return
         }
         runTask {
+            val invite = repository.acceptInvite(InviteCodeValidator.normalize(code))
             _state.value.copy(
-                invite = repository.acceptInvite(InviteCodeValidator.normalize(code)),
+                invite = invite,
+                circle = invite.circle_id?.let { repository.circle(it) },
                 pilotSurface = PilotSurface.JOIN_SUCCESS,
             )
         }
@@ -274,6 +360,7 @@ class LaunchViewModel(private val repository: LaunchRepository) : ViewModel() {
             LaunchDestination.DASHBOARD,
             LaunchDestination.TODAY_TESTS,
             LaunchDestination.ACCOUNT -> LaunchDestination.MY_LAUNCHES
+            LaunchDestination.ASSIGNMENT -> LaunchDestination.TODAY_TESTS
             LaunchDestination.MISSION -> LaunchDestination.TODAY_TESTS
             LaunchDestination.TESTERS,
             LaunchDestination.FEEDBACK -> LaunchDestination.DASHBOARD

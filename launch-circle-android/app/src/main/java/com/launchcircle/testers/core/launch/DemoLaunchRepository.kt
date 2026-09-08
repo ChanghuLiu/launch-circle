@@ -5,10 +5,13 @@ import com.launchcircle.testers.core.model.FeedbackRequest
 import com.launchcircle.testers.core.model.LaunchApp
 import com.launchcircle.testers.core.model.LaunchDashboard
 import com.launchcircle.testers.core.model.LaunchInvite
+import com.launchcircle.testers.core.model.LaunchCircle
+import com.launchcircle.testers.core.model.CircleMember
 import com.launchcircle.testers.core.model.MatchingResult
 import com.launchcircle.testers.core.model.MissionFeedback
 import com.launchcircle.testers.core.model.PilotConfig
 import com.launchcircle.testers.core.model.TestMission
+import com.launchcircle.testers.core.model.TestAssignment
 import com.launchcircle.testers.core.model.TesterAssignment
 
 class DemoLaunchRepository : LaunchRepository {
@@ -36,6 +39,18 @@ class DemoLaunchRepository : LaunchRepository {
     private var invite = LaunchInvite(
         "invite-1", "LC-8H4K2", "PENDING",
         "https://launchcircle.app/join/LC-8H4K2",
+    )
+    private val circle = LaunchCircle(
+        id = "demo-circle",
+        owner_id = "demo-owner",
+        name = "Demo Launch Circle",
+        active_member_count = 4,
+        members = listOf(
+            CircleMember("member-owner", "demo-owner", "Demo owner", "Demo owner", "OWNER", "ACTIVE", "2026-08-01T00:00:00Z"),
+            CircleMember("member-1", "tester-18", null, "Tester #18", "MEMBER", "ACTIVE", "2026-08-02T00:00:00Z"),
+            CircleMember("member-2", "tester-22", null, "Tester #22", "MEMBER", "ACTIVE", "2026-08-03T00:00:00Z"),
+            CircleMember("member-3", "tester-31", null, "Tester #31", "MEMBER", "ACTIVE", "2026-08-04T00:00:00Z"),
+        ),
     )
 
     override suspend fun pilotConfig() = config
@@ -68,6 +83,8 @@ class DemoLaunchRepository : LaunchRepository {
         else -> dashboard("WAITING_FOR_TESTERS", 0, 0, 15, 14, 0)
     }
 
+    override suspend fun circle(appId: String) = circle
+
     override suspend fun confirmGoogleGroup(appId: String): LaunchApp {
         val index = apps.indexOfFirst { it.id == appId }
         val updated = apps[index].copy(
@@ -92,6 +109,17 @@ class DemoLaunchRepository : LaunchRepository {
 
     override suspend fun feedback(appId: String) = feedbackRows.filter { it.app_id == appId }
     override suspend fun todaysMissions() = todays.toList()
+    override suspend fun todaysAssignments(): List<TestAssignment> = todays.map { mission ->
+        mission.toAssignment()
+    }
+
+    override suspend fun completeAssignment(assignmentId: String): TestAssignment {
+        val index = todays.indexOfFirst { it.assignment_id == assignmentId }
+        require(index >= 0) { "Assignment not found" }
+        todays[index] = todays[index].copy(status = "COMPLETED")
+        return todays[index].toAssignment()
+    }
+
     override suspend fun missions(assignmentId: String) =
         todays.filter { it.assignment_id == assignmentId }
 
@@ -123,7 +151,7 @@ class DemoLaunchRepository : LaunchRepository {
         return row
     }
 
-    override suspend fun createInvite() = invite
+    override suspend fun createInvite(appId: String) = invite.copy(circle_id = circle.id)
 
     override suspend fun acceptInvite(inviteCode: String): LaunchInvite {
         require(InviteCodeValidator.isValid(inviteCode)) { "Enter a valid invite code" }
@@ -165,6 +193,19 @@ class DemoLaunchRepository : LaunchRepository {
         circle_health = if (risk > 0) "AT_RISK" else "GOOD",
         missions_completed = missions,
         missions_total_available = available,
+        testing_started_at = if (status in setOf("TESTING", "AT_RISK", "TESTING_COMPLETE", "PRODUCTION_READY")) {
+            "2026-08-14T00:00:00Z"
+        } else null,
+        testing_target_end_at = if (status in setOf("TESTING", "AT_RISK", "TESTING_COMPLETE", "PRODUCTION_READY")) {
+            "2026-08-28T00:00:00Z"
+        } else null,
+        lifecycle_complete = remaining == 0 && status in setOf("TESTING_COMPLETE", "PRODUCTION_READY"),
+        qualifying_tester_count = active,
+        required_tester_count = 12,
+        internally_production_ready = status == "PRODUCTION_READY",
+        internal_production_ready_reason = if (status == "PRODUCTION_READY") {
+            "Launch Circle internal testing requirements are complete; Google Play approval is not guaranteed."
+        } else "Waiting for 14 full days and qualifying tester coverage.",
     )
 
     private fun assignment(
@@ -182,6 +223,21 @@ class DemoLaunchRepository : LaunchRepository {
         if (status in setOf("ACTIVE", "COMPLETED")) "2026-08-13T02:00:00Z" else null,
         null, completed, total, health, replacement, replacementFor, null,
         if (total > 0) 6 else 0,
+    )
+
+    private fun TestMission.toAssignment() = TestAssignment(
+        id = assignment_id,
+        circle_id = circle.id,
+        app_id = app_id,
+        app_name = app_name,
+        package_name = "com.demo.$app_id",
+        opt_in_url = opt_in_url,
+        test_type = mission_type,
+        status = if (status == "COMPLETED") "COMPLETED" else "ASSIGNED",
+        assignment_day = "2026-08-19",
+        assigned_at = "2026-08-19T12:00:00Z",
+        completed_at = if (status == "COMPLETED") "2026-08-19T12:05:00Z" else null,
+        estimated_minutes = estimated_minutes,
     )
 }
 

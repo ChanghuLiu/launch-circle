@@ -21,14 +21,22 @@ class AuthRepository(
     }
 
     suspend fun restoreSession(): UserProfile? {
-        val refresh = tokenStore.refreshToken ?: return null
+        if (!refreshSession()) return null
+        return runCatching { loadProfile() }.getOrElse {
+            tokenStore.clear()
+            null
+        }
+    }
+
+    suspend fun refreshSession(): Boolean {
+        val refresh = tokenStore.refreshToken ?: return false
         return runCatching {
             val tokens = api.refresh(RefreshRequest(refresh))
             tokenStore.save(tokens.access_token, tokens.refresh_token)
-            loadProfile()
+            true
         }.getOrElse {
             tokenStore.clear()
-            null
+            false
         }
     }
 
@@ -63,4 +71,3 @@ class AuthRepository(
         return "Bearer $access"
     }
 }
-

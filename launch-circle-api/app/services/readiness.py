@@ -4,6 +4,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.launch import App, Feedback, TesterAssignment, TestMission
+from app.services.clock import aware
 from app.services.lifecycle import (
     GOOGLE_MINIMUM,
     TOTAL_DAYS,
@@ -17,8 +18,8 @@ from app.services.lifecycle import (
 def calculate_readiness(db: Session, app: App, now: datetime | None = None) -> dict:
     current = now or datetime.now(timezone.utc)
     assignments = list(app.assignments)
-    active = len(active_qualifying(assignments))
-    continuous = len(continuous_qualifying(app))
+    active = len(active_qualifying(db, app))
+    continuous = len(continuous_qualifying(db, app))
     assigned = sum(item.status != "DROPPED" for item in assignments)
     feedback_count = db.scalar(select(func.count(Feedback.id)).where(Feedback.app_id == app.id)) or 0
     completed_missions = db.scalar(
@@ -71,6 +72,13 @@ def calculate_readiness(db: Session, app: App, now: datetime | None = None) -> d
     }
     risk = sum(a.health_status in {"AT_RISK", "INACTIVE"} for a in assignments)
     replacements = sum(a.replacement_for_id is not None and a.status != "DROPPED" for a in assignments)
+    shortage = max(0, GOOGLE_MINIMUM - active)
+    replacement_status = (
+        "COVERAGE_RESTORED" if replacements and shortage == 0
+        else "REPLACEMENT_ASSIGNED" if replacements
+        else "COVERAGE_AT_RISK" if shortage and app.testing_start_at is not None
+        else "NONE"
+    )
     today_tasks = sum(
         mission.status == "AVAILABLE" for assignment in assignments for mission in assignment.missions
     )
@@ -99,5 +107,25 @@ def calculate_readiness(db: Session, app: App, now: datetime | None = None) -> d
         "estimated_ready_date": timeline["estimated_ready_date"],
         "approval_disclaimer": (
             "Readiness is guidance only and does not guarantee Google Play production approval."
+        ),
+        "testing_started_at": aware(app.testing_start_at) if app.testing_start_at else None,
+        "testing_target_end_at": aware(app.testing_end_at) if app.testing_end_at else None,
+        "lifecycle_complete": timeline["lifecycle_complete"],
+        "qualifying_tester_count": active,
+        "required_tester_count": GOOGLE_MINIMUM,
+        "internally_production_ready": app.status == "PRODUCTION_READY",
+        "internal_production_ready_reason": (
+            "Launch Circle internal testing requirements are complete; Google Play approval is not guaranteed."
+            if app.status == "PRODUCTION_READY"
+            else "Waiting for 14 full days and qualifying tester coverage."
+            if app.testing_start_at is None
+            else "Internal testing duration or qualifying tester coverage is not complete."
+        ),
+        "coverage_shortage": shortage if app.testing_start_at is not None else 0,
+        "replacement_status": replacement_status,
+        "risk_reason": (
+            f"{shortage} qualifying tester(s) needed to restore coverage."
+            if shortage and app.testing_start_at is not None
+            else ""
         ),
     }

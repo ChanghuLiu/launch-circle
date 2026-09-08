@@ -59,7 +59,7 @@ def production_report(db: Session, app: App, now: datetime, mark_generated: bool
             "lifecycle_complete": timeline["lifecycle_complete"],
         },
         "assigned_testers": len(assignments),
-        "continuous_testers": len(continuous_qualifying(app)),
+        "continuous_testers": len(continuous_qualifying(db, app)),
         "replacements": sum(a.replacement_for_id is not None for a in assignments),
         "dropped_testers": sum(a.status == "DROPPED" for a in assignments),
         "completed_missions": completed,

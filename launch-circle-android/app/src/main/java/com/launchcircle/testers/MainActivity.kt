@@ -4,7 +4,9 @@ import android.os.Build
 import android.os.Bundle
 import java.util.UUID
 import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -38,13 +40,14 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         val api = ApiFactory.create(BuildConfig.API_BASE_URL)
         val tokenStore = TokenStore(applicationContext)
         val repository = AuthRepository(api, tokenStore)
         val launchRepository = if (BuildConfig.USE_DEMO_REPOSITORY) {
             DemoLaunchRepository()
         } else {
-            RealLaunchRepository(api, tokenStore)
+            RealLaunchRepository(api, tokenStore, repository::refreshSession)
         }
         val googleSignIn = GoogleSignInManager(this, BuildConfig.GOOGLE_SERVER_CLIENT_ID)
         val installationPreferences = getSharedPreferences("launch_circle_installation", MODE_PRIVATE)
@@ -125,7 +128,10 @@ private fun AppRoot(
     onLogout: () -> Unit,
 ) {
     when (state) {
-        AuthUiState.Loading -> CircularProgressIndicator()
+        AuthUiState.Loading -> androidx.compose.foundation.layout.Box(
+            modifier = androidx.compose.ui.Modifier.fillMaxSize(),
+            contentAlignment = androidx.compose.ui.Alignment.Center,
+        ) { CircularProgressIndicator() }
         AuthUiState.SignedOut -> AuthEntryScreen(
             viewModel = authViewModel,
             tokenStore = tokenStore,

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, EmailStr, Field, HttpUrl, field_validator
 
@@ -43,30 +43,13 @@ class AppUpdate(BaseModel):
     opt_in_url: HttpUrl | None = None
     google_group_url: HttpUrl | None = None
     google_group_mode: str | None = Field(default=None, pattern="^(LAUNCH_CIRCLE|OWN_GROUP|EMAIL_LIST)$")
-    status: str | None = None
     tester_target: int | None = Field(default=None, ge=1, le=100)
-    testing_start_at: datetime | None = None
-    testing_end_at: datetime | None = None
-
-    @field_validator("status")
-    @classmethod
-    def valid_status(cls, value: str | None) -> str | None:
-        allowed = {
-            "DRAFT",
-            "WAITING_FOR_TESTERS",
-            "TESTING",
-            "AT_RISK",
-            "TESTING_COMPLETE",
-            "PRODUCTION_READY",
-        }
-        if value is not None and value not in allowed:
-            raise ValueError("invalid app status")
-        return value
 
 
 class AppRead(BaseModel):
     id: str
     owner_id: str
+    circle_id: str
     name: str
     package_name: str
     opt_in_url: str
@@ -78,6 +61,8 @@ class AppRead(BaseModel):
     tester_target: int
     testing_start_at: datetime | None
     testing_end_at: datetime | None
+    testing_completed_at: datetime | None = None
+    production_ready_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -99,6 +84,33 @@ class AssignmentRead(BaseModel):
     testing_day: int = 0
     completed_missions: int = 0
     total_missions: int = 0
+    circle_id: str | None = None
+    assignment_day: date | None = None
+    test_type: str = "APP_CHECK"
+    participation_state: str = "ACTIVE"
+
+
+class TestAssignmentRead(BaseModel):
+    id: str
+    circle_id: str
+    app_id: str
+    tester_user_id: str | None = None
+    app_name: str
+    package_name: str
+    opt_in_url: str
+    test_type: str
+    status: str
+    assignment_day: date
+    assigned_at: datetime
+    completed_at: datetime | None
+    estimated_minutes: int = 5
+
+
+class AssignmentCoverageRead(BaseModel):
+    app_id: str
+    assignment_count: int
+    completed_count: int
+    participating_members: int
 
 
 class MissionRead(BaseModel):
@@ -159,15 +171,37 @@ class PilotConfigRead(BaseModel):
 
 class InviteCreate(BaseModel):
     invited_email: EmailStr | None = None
+    circle_id: str | None = None
+
+
+class CircleMemberRead(BaseModel):
+    id: str
+    user_id: str
+    display_name: str | None
+    member_label: str
+    role: str
+    status: str
+    joined_at: datetime
+
+
+class CircleRead(BaseModel):
+    id: str
+    owner_id: str
+    name: str
+    max_members: int
+    active_member_count: int
+    members: list[CircleMemberRead]
 
 
 class InviteRead(BaseModel):
     id: str
+    circle_id: str
     invite_code: str
     invited_email: EmailStr | None
     joined_user_id: str | None
     status: str
     created_at: datetime
+    expires_at: datetime
     accepted_at: datetime | None
     share_url: str
 
@@ -196,6 +230,16 @@ class DashboardRead(BaseModel):
     missions_total_available: int = 0
     estimated_ready_date: str
     approval_disclaimer: str
+    testing_started_at: datetime | None = None
+    testing_target_end_at: datetime | None = None
+    lifecycle_complete: bool = False
+    qualifying_tester_count: int = 0
+    required_tester_count: int = 12
+    internally_production_ready: bool = False
+    internal_production_ready_reason: str = ""
+    coverage_shortage: int = 0
+    replacement_status: str = "NONE"
+    risk_reason: str = ""
 
 
 class MatchingRead(BaseModel):
@@ -227,3 +271,5 @@ class HealthRefreshRead(BaseModel):
     inactive: int
     dropped: int
     replacements_assigned: int
+    coverage_shortage: int = 0
+    replacement_status: str = "NONE"

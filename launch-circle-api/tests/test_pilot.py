@@ -37,6 +37,20 @@ def create_launch(client, owner: dict) -> dict:
     return response.json()
 
 
+def join_circle(client, owner: dict, member: dict) -> None:
+    invite = client.post(
+        "/invites",
+        headers=owner["headers"],
+        json={},
+    )
+    assert invite.status_code == 201, invite.text
+    accepted = client.post(
+        f"/invites/{invite.json()['invite_code']}/accept",
+        headers=member["headers"],
+    )
+    assert accepted.status_code == 200, accepted.text
+
+
 def test_pilot_config_and_google_group_confirmation_persist(client):
     owner = register(client, "pilot-owner@example.com", "Pilot Owner")
     launch = create_launch(client, owner)
@@ -118,6 +132,7 @@ def test_core_pilot_events_are_recorded(client):
     owner = register(client, "event-owner@example.com", "Owner")
     tester = register(client, "event-tester@example.com", "Tester")
     launch = create_launch(client, owner)
+    join_circle(client, owner, tester)
 
     assignment = client.post(
         f"/apps/{launch['id']}/assign/{tester['id']}",

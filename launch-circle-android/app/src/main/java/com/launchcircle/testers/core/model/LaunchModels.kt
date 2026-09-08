@@ -14,6 +14,7 @@ data class LaunchApp(
     val google_group_mode: String = "LAUNCH_CIRCLE",
     val google_group_configured: Boolean = false,
     val google_group_confirmed_at: String? = null,
+    val circle_id: String? = null,
 )
 
 data class CreateAppRequest(
@@ -45,8 +46,18 @@ data class LaunchDashboard(
     val elapsed_days: Int = 0,
     val days_remaining: Int = 14,
     val circle_health: String = "GOOD",
-    val missions_completed: Int = completed_missions,
+    val missions_completed: Int = 0,
     val missions_total_available: Int = 0,
+    val testing_started_at: String? = null,
+    val testing_target_end_at: String? = null,
+    val lifecycle_complete: Boolean = false,
+    val qualifying_tester_count: Int = active_testers,
+    val required_tester_count: Int = 12,
+    val internally_production_ready: Boolean = false,
+    val internal_production_ready_reason: String = "",
+    val coverage_shortage: Int = 0,
+    val replacement_status: String = "NONE",
+    val risk_reason: String = "",
 )
 
 data class TesterAssignment(
@@ -66,6 +77,7 @@ data class TesterAssignment(
     val replacement_for_id: String? = null,
     val last_activity_at: String? = null,
     val testing_day: Int = 0,
+    val participation_state: String = "ACTIVE",
 )
 
 data class TestMission(
@@ -81,6 +93,29 @@ data class TestMission(
     val completed_at: String?,
     val estimated_minutes: Int,
     val assignment_status: String = "ASSIGNED",
+)
+
+data class TestAssignment(
+    val id: String,
+    val circle_id: String,
+    val app_id: String,
+    val app_name: String,
+    val package_name: String,
+    val opt_in_url: String,
+    val test_type: String,
+    val status: String,
+    val assignment_day: String,
+    val assigned_at: String,
+    val completed_at: String?,
+    val estimated_minutes: Int = 5,
+    val tester_user_id: String? = null,
+)
+
+data class AssignmentCoverage(
+    val app_id: String,
+    val assignment_count: Int,
+    val completed_count: Int,
+    val participating_members: Int,
 )
 
 data class FeedbackRequest(
@@ -112,6 +147,31 @@ data class LaunchInvite(
     val invite_code: String,
     val status: String,
     val share_url: String,
+    val circle_id: String? = null,
+    val invited_email: String? = null,
+    val joined_user_id: String? = null,
+    val created_at: String? = null,
+    val expires_at: String? = null,
+    val accepted_at: String? = null,
+)
+
+data class CircleMember(
+    val id: String,
+    val user_id: String,
+    val display_name: String? = null,
+    val member_label: String,
+    val role: String,
+    val status: String,
+    val joined_at: String,
+)
+
+data class LaunchCircle(
+    val id: String,
+    val owner_id: String,
+    val name: String,
+    val max_members: Int = 15,
+    val active_member_count: Int = 0,
+    val members: List<CircleMember> = emptyList(),
 )
 
 data class MatchingResult(

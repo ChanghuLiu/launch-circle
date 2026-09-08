@@ -36,7 +36,37 @@ def create_app(client, owner: dict, target: int = 15, suffix: str = "main") -> d
         },
     )
     assert response.status_code == 201, response.text
-    return response.json()
+    launch = response.json()
+    # P0-1 matching is intentionally circle-scoped. Join the existing test
+    # accounts through the same invite API used by real developers, capped at
+    # the persisted circle's 15 active members including its owner.
+    with SessionLocal() as db:
+        member_emails = list(
+            db.scalars(
+                select(User.email)
+                .where(User.id != owner["id"])
+                .order_by(User.created_at, User.id)
+                .limit(14)
+            )
+        )
+    for email in member_emails:
+        invite = client.post(
+            f"/apps/{launch['id']}/invites",
+            headers=owner["headers"],
+            json={"invited_email": email},
+        )
+        assert invite.status_code == 201, invite.text
+        login = client.post(
+            "/auth/login",
+            json={"email": email, "password": PASSWORD},
+        )
+        assert login.status_code == 200, login.text
+        accepted = client.post(
+            f"/invites/{invite.json()['invite_code']}/accept",
+            headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+        )
+        assert accepted.status_code == 200, accepted.text
+    return launch
 
 
 @pytest.fixture
@@ -69,15 +99,15 @@ def test_matching_fills_15_excludes_owner_and_existing_assignment(client):
     matched = client.post(f"/apps/{launch['id']}/match-testers", headers=owner["headers"])
     assert matched.status_code == 200, matched.text
     assert matched.json() == {
-        "assigned_now": 14,
-        "assigned_total": 15,
+        "assigned_now": 13,
+        "assigned_total": 14,
         "active_testers": 0,
         "minimum_needed": 12,
         "target": 15,
-        "remaining_to_target": 0,
+        "remaining_to_target": 1,
     }
     rows = client.get(f"/apps/{launch['id']}/testers", headers=owner["headers"]).json()
-    assert len(rows) == 15
+    assert len(rows) == 14
     assert owner["id"] not in {row["tester_id"] for row in rows}
     assert sum(row["tester_id"] == testers[0]["id"] for row in rows) == 1
 
@@ -147,10 +177,10 @@ def test_date_driven_mission_availability_with_test_clock(client, test_clock):
 def test_health_replacement_and_status_transitions(client, test_clock):
     owner = register(client, 0)
     testers = [register(client, index) for index in range(1, 17)]
-    launch = create_app(client, owner)
+    launch = create_app(client, owner, target=13)
     assert client.post(
         f"/apps/{launch['id']}/match-testers", headers=owner["headers"]
-    ).json()["assigned_now"] == 15
+    ).json()["assigned_now"] == 13
     rows = client.get(f"/apps/{launch['id']}/testers", headers=owner["headers"]).json()
     by_id = {tester["id"]: tester for tester in testers}
     for row in rows:
@@ -158,7 +188,7 @@ def test_health_replacement_and_status_transitions(client, test_clock):
 
     initial = client.get(f"/apps/{launch['id']}/dashboard", headers=owner["headers"]).json()
     assert initial["status"] == "TESTING"
-    assert initial["continuous_qualifying_testers"] == 15
+    assert initial["continuous_qualifying_testers"] == 13
 
     test_clock["now"] += timedelta(days=5)
     victim_id = rows[0]["id"]
@@ -184,7 +214,7 @@ def test_health_replacement_and_status_transitions(client, test_clock):
     assert replacements[0]["total_missions"] == 0
     dashboard = client.get(f"/apps/{launch['id']}/dashboard", headers=owner["headers"]).json()
     assert dashboard["status"] == "TESTING"
-    assert dashboard["continuous_qualifying_testers"] == 14
+    assert dashboard["continuous_qualifying_testers"] == 12
     assert dashboard["replacement_testers"] == 1
 
     healthy_originals = [
@@ -198,7 +228,7 @@ def test_health_replacement_and_status_transitions(client, test_clock):
         assert dropped.status_code == 200
     risk = client.get(f"/apps/{launch['id']}/dashboard", headers=owner["headers"]).json()
     assert risk["status"] == "AT_RISK"
-    assert risk["continuous_qualifying_testers"] == 11
+    assert risk["continuous_qualifying_testers"] == 9
 
 
 def test_phase1_accelerated_acceptance_report_and_evidence_only_draft(client, test_clock):
@@ -295,9 +325,9 @@ def test_phase1_full_matching_replacement_day14_acceptance(client, test_clock):
     """Repeatable A -> 15 testers -> Day 5 replacement -> Day 14 evidence workflow."""
     owner = register(client, 100, "Acceptance Developer A")
     testers = [register(client, index) for index in range(101, 117)]
-    launch = create_app(client, owner, target=15, suffix="full_acceptance")
+    launch = create_app(client, owner, target=13, suffix="full_acceptance")
     matched = client.post(f"/apps/{launch['id']}/match-testers", headers=owner["headers"])
-    assert matched.json()["assigned_now"] == 15
+    assert matched.json()["assigned_now"] == 13
     rows = client.get(f"/apps/{launch['id']}/testers", headers=owner["headers"]).json()
     by_id = {tester["id"]: tester for tester in testers}
     for row in rows:
@@ -369,11 +399,11 @@ def test_phase1_full_matching_replacement_day14_acceptance(client, test_clock):
         ).status_code == 201
     before = client.get(f"/apps/{launch['id']}/dashboard", headers=owner["headers"]).json()
     assert before["status"] == "TESTING_COMPLETE"
-    assert before["continuous_qualifying_testers"] == 14
+    assert before["continuous_qualifying_testers"] == 12
     assert before["replacement_testers"] == 1
     report = client.get(f"/apps/{launch['id']}/production-report", headers=owner["headers"]).json()
     assert report["replacements"] == 1
-    assert report["continuous_testers"] == 14
+    assert report["continuous_testers"] == 12
     assert report["common_issues"] == ["Dark mode contrast"]
     assert report["changes_recorded"] == [
         "Improved dark mode contrast based on tester feedback.",

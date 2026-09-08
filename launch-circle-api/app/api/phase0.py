@@ -2,10 +2,10 @@ import hashlib
 import hmac
 import secrets
 import string
-from datetime import datetime, timezone
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -13,7 +13,8 @@ from app.core.config import Settings, get_settings
 from app.core.database import get_db
 from app.core.security import create_access_token, create_refresh_token, get_current_user
 from app.models.launch import (
-    App, AppChange, BackendEvent, Feedback, Invite, TesterAssignment, TestMission,
+    App, AppChange, BackendEvent, Circle, CircleMember, Feedback, Invite, TesterAssignment,
+    TestMission,
 )
 from app.models.user import User
 from app.schemas.auth import TokenPair
@@ -24,6 +25,8 @@ from app.schemas.phase0 import (
     AppRead,
     AppUpdate,
     AssignmentRead,
+    CircleMemberRead,
+    CircleRead,
     DashboardRead,
     DropAssignmentRequest,
     DevelopmentUserRead,
@@ -31,6 +34,7 @@ from app.schemas.phase0 import (
     FeedbackRead,
     InviteCreate,
     InviteRead,
+    AssignmentCoverageRead,
     HealthRefreshRead,
     GoogleGroupConfirmation,
     LoginRequest,
@@ -38,14 +42,18 @@ from app.schemas.phase0 import (
     MissionRead,
     PilotConfigRead,
     RegisterRequest,
+    TestAssignmentRead,
 )
+from app.services.assignments import assignment_day, todays_assignments
 from app.services.clock import aware, get_now
+from app.services.circles import CIRCLE_MAX_MEMBERS, active_member, active_member_count, ensure_owner_circle
 from app.services.events import emit_event, emit_pilot_event
-from app.services.lifecycle import establish_timeline
+from app.services.lifecycle import evaluate_lifecycle
 from app.services.matching import match_testers, matching_summary
 from app.services.missions import MISSION_MINUTES, generate_missions, refresh_mission_availability
 from app.services.reporting import production_application_draft, production_report
-from app.services.tester_health import record_activity, refresh_app_health
+from app.services.recovery import evaluate_app_recovery, evaluate_circle_recovery
+from app.services.tester_health import participation_state, record_activity, refresh_app_health
 from app.services.readiness import calculate_readiness
 
 router = APIRouter()
@@ -86,10 +94,46 @@ def user_read(user: User) -> DevelopmentUserRead:
     )
 
 
+def member_label(user: User) -> str:
+    return (user.display_name or f"Developer #{user.id[-4:].upper()}").strip()
+
+
+def circle_read(db: Session, circle: Circle) -> CircleRead:
+    members = sorted(
+        circle.members,
+        key=lambda member: (
+            member.status != "ACTIVE",
+            member.role != "OWNER",
+            aware(member.joined_at),
+            member.id,
+        ),
+    )
+    return CircleRead(
+        id=circle.id,
+        owner_id=circle.owner_id,
+        name=circle.name,
+        max_members=circle.max_members,
+        active_member_count=sum(member.status == "ACTIVE" for member in members),
+        members=[
+            CircleMemberRead(
+                id=member.id,
+                user_id=member.user_id,
+                display_name=member.user.display_name,
+                member_label=member_label(member.user),
+                role=member.role,
+                status=member.status,
+                joined_at=member.joined_at,
+            )
+            for member in members
+        ],
+    )
+
+
 def app_read(app: App) -> AppRead:
     return AppRead(
         id=app.id,
         owner_id=app.owner_id,
+        circle_id=app.circle_id,
         name=app.name,
         package_name=app.package_name,
         opt_in_url=app.opt_in_url,
@@ -99,8 +143,10 @@ def app_read(app: App) -> AppRead:
         google_group_confirmed_at=app.google_group_confirmed_at,
         status=app.status,
         tester_target=app.tester_target,
-        testing_start_at=app.testing_start_at,
-        testing_end_at=app.testing_end_at,
+        testing_start_at=aware(app.testing_start_at) if app.testing_start_at else None,
+        testing_end_at=aware(app.testing_end_at) if app.testing_end_at else None,
+        testing_completed_at=aware(app.testing_completed_at) if app.testing_completed_at else None,
+        production_ready_at=aware(app.production_ready_at) if app.production_ready_at else None,
         created_at=app.created_at,
         updated_at=app.updated_at,
     )
@@ -134,6 +180,31 @@ def assignment_read(item: TesterAssignment, now: datetime | None = None) -> Assi
         testing_day=testing_day,
         completed_missions=completed,
         total_missions=len(item.missions),
+        circle_id=item.circle_id,
+        assignment_day=item.assignment_day,
+        test_type=item.test_type,
+        participation_state=participation_state(item),
+    )
+
+
+def test_assignment_read(
+    item: TesterAssignment,
+    *,
+    include_tester: bool = False,
+) -> TestAssignmentRead:
+    return TestAssignmentRead(
+        id=item.id,
+        circle_id=item.circle_id or item.app.circle_id or "",
+        app_id=item.app_id,
+        tester_user_id=item.tester_id if include_tester else None,
+        app_name=item.app.name,
+        package_name=item.app.package_name,
+        opt_in_url=item.app.opt_in_url,
+        test_type=item.test_type,
+        status="COMPLETED" if item.status == "COMPLETED" else "ASSIGNED",
+        assignment_day=item.assignment_day,
+        assigned_at=item.assigned_at,
+        completed_at=item.completed_at,
     )
 
 
@@ -176,11 +247,13 @@ def invite_read(item: Invite) -> InviteRead:
     invite_base_url = settings.launch_circle_invite_base_url.rstrip("/")
     return InviteRead(
         id=item.id,
+        circle_id=item.circle_id,
         invite_code=item.invite_code,
         invited_email=item.invited_email,
         joined_user_id=item.joined_user_id,
         status=item.status,
         created_at=item.created_at,
+        expires_at=item.expires_at,
         accepted_at=item.accepted_at,
         share_url=f"{invite_base_url}/{item.invite_code}",
     )
@@ -236,6 +309,8 @@ def register(
         country=body.country,
     )
     db.add(user)
+    db.flush()
+    ensure_owner_circle(db, user)
     db.commit()
     db.refresh(user)
     return TokenPair(
@@ -268,6 +343,67 @@ def me(current_user: User = Depends(get_current_user)) -> DevelopmentUserRead:
     return user_read(current_user)
 
 
+@router.get("/circles/{circle_id}", response_model=CircleRead)
+def get_circle(
+    circle_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    now: datetime = Depends(get_now),
+) -> CircleRead:
+    circle = db.get(Circle, circle_id)
+    if circle is None:
+        raise HTTPException(status_code=404, detail="Circle not found")
+    if active_member(db, circle.id, current_user.id) is None:
+        raise HTTPException(status_code=403, detail="You are not an active member of this circle")
+    evaluate_circle_recovery(db, circle.id, now)
+    db.commit()
+    return circle_read(db, circle)
+
+
+@router.post("/circles/{circle_id}/leave", response_model=CircleRead)
+def leave_circle(
+    circle_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    now: datetime = Depends(get_now),
+) -> CircleRead:
+    circle = db.get(Circle, circle_id)
+    if circle is None:
+        raise HTTPException(status_code=404, detail="Circle not found")
+    member = db.scalar(
+        select(CircleMember).where(
+            CircleMember.circle_id == circle.id,
+            CircleMember.user_id == current_user.id,
+            CircleMember.status == "ACTIVE",
+        )
+    )
+    if member is None:
+        raise HTTPException(status_code=403, detail="You are not an active member of this circle")
+    if member.role == "OWNER":
+        raise HTTPException(status_code=409, detail="Circle owners cannot leave their Circle")
+    member.status = "LEFT"
+    member.left_at = now
+    for app in db.scalars(select(App).where(App.circle_id == circle.id)):
+        for assignment in app.assignments:
+            if assignment.tester_id == current_user.id and assignment.status != "DROPPED":
+                assignment.status = "DROPPED"
+                assignment.health_status = "DROPPED"
+                assignment.dropped_at = assignment.dropped_at or now
+                assignment.last_activity_at = now
+                emit_event(
+                    db,
+                    assignment.app_id,
+                    "TESTER_DROPPED",
+                    f"health:{assignment.id}:DROPPED",
+                    assignment.id,
+                    {"health_status": "DROPPED", "reason": "circle_member_left"},
+                )
+    evaluate_circle_recovery(db, circle.id, now)
+    db.commit()
+    db.refresh(circle)
+    return circle_read(db, circle)
+
+
 @router.post("/apps", response_model=AppRead, status_code=status.HTTP_201_CREATED)
 def create_app(
     body: AppCreate,
@@ -276,6 +412,7 @@ def create_app(
 ) -> AppRead:
     app = App(
         owner_id=current_user.id,
+        circle_id=ensure_owner_circle(db, current_user).id,
         name=body.name,
         package_name=body.package_name,
         opt_in_url=str(body.opt_in_url),
@@ -295,6 +432,23 @@ def create_app(
         raise HTTPException(status_code=409, detail="Package name is already registered") from exc
     db.refresh(app)
     return app_read(app)
+
+
+@router.get("/apps/{app_id}/circle", response_model=CircleRead)
+def get_app_circle(
+    app_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    now: datetime = Depends(get_now),
+) -> CircleRead:
+    app = db.get(App, app_id)
+    if app is None:
+        raise HTTPException(status_code=404, detail="App not found")
+    if active_member(db, app.circle_id, current_user.id) is None:
+        raise HTTPException(status_code=403, detail="You are not an active member of this circle")
+    evaluate_circle_recovery(db, app.circle_id, now)
+    db.commit()
+    return circle_read(db, app.circle)
 
 
 @router.get("/apps", response_model=list[AppRead])
@@ -365,6 +519,8 @@ def list_testers(
     now: datetime = Depends(get_now),
 ) -> list[AssignmentRead]:
     app = owned_app(db, app_id, current_user)
+    evaluate_app_recovery(db, app, now)
+    db.commit()
     return [assignment_read(item, now) for item in app.assignments]
 
 
@@ -386,6 +542,24 @@ def assign_tester(
     tester = db.get(User, tester_id)
     if tester is None:
         raise HTTPException(status_code=404, detail="Tester not found")
+    member = db.scalar(
+        select(CircleMember).where(
+            CircleMember.circle_id == app.circle_id,
+            CircleMember.user_id == tester_id,
+            CircleMember.status == "ACTIVE",
+        )
+    )
+    if member is None or not tester.is_active:
+        raise HTTPException(status_code=422, detail="Tester must be an active member of the app circle")
+    daily_count = db.scalar(
+        select(func.count(TesterAssignment.id)).where(
+            TesterAssignment.tester_id == tester_id,
+            TesterAssignment.assignment_day == assignment_day(now),
+            TesterAssignment.status != "DROPPED",
+        )
+    ) or 0
+    if daily_count >= 2:
+        raise HTTPException(status_code=409, detail="Tester has reached the daily assignment limit")
     duplicate = db.scalar(
         select(TesterAssignment).where(
             TesterAssignment.app_id == app_id,
@@ -395,7 +569,14 @@ def assign_tester(
     )
     if duplicate:
         raise HTTPException(status_code=409, detail="Tester already has an active assignment")
-    assignment = TesterAssignment(app_id=app_id, tester_id=tester_id, status="ASSIGNED")
+    assignment = TesterAssignment(
+        app_id=app_id,
+        circle_id=app.circle_id,
+        tester_id=tester_id,
+        assignment_day=assignment_day(now),
+        test_type="APP_CHECK",
+        status="ASSIGNED",
+    )
     db.add(assignment)
     db.flush()
     emit_event(db, app.id, "TESTER_ASSIGNED", f"TESTER_ASSIGNED:{assignment.id}", assignment.id)
@@ -465,7 +646,7 @@ def confirm_installed(
             app_id=assignment.app_id, assignment_id=assignment.id,
         )
     generate_missions(db, assignment, now)
-    establish_timeline(db, assignment.app, now)
+    evaluate_lifecycle(db, assignment.app, now)
     db.commit()
     db.refresh(assignment)
     return assignment_read(assignment, now)
@@ -488,6 +669,80 @@ def todays_missions(
     refresh_mission_availability(db, missions, now)
     db.commit()
     return [mission_read(item) for item in missions if item.status == "AVAILABLE"]
+
+
+@router.get("/test-assignments/today", response_model=list[TestAssignmentRead])
+def todays_test_assignments(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    now: datetime = Depends(get_now),
+) -> list[TestAssignmentRead]:
+    rows = todays_assignments(db, current_user.id, now)
+    db.commit()
+    return [test_assignment_read(row) for row in rows]
+
+
+@router.post("/test-assignments/{assignment_id}/complete", response_model=TestAssignmentRead)
+def complete_test_assignment(
+    assignment_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    now: datetime = Depends(get_now),
+) -> TestAssignmentRead:
+    assignment = db.get(TesterAssignment, assignment_id)
+    if assignment is None or assignment.assignment_day is None:
+        raise HTTPException(status_code=404, detail="Test assignment not found")
+    if assignment.tester_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Test assignment belongs to another tester")
+    if assignment.status == "COMPLETED":
+        evaluate_app_recovery(db, assignment.app, now)
+        db.commit()
+        return test_assignment_read(assignment)
+    if assignment.status != "ASSIGNED":
+        raise HTTPException(status_code=409, detail="Test assignment is not completable")
+    assignment.status = "COMPLETED"
+    assignment.completed_at = now
+    assignment.opted_in_at = assignment.opted_in_at or now
+    assignment.installed_at = assignment.installed_at or now
+    assignment.last_activity_at = now
+    assignment.health_status = "GOOD"
+    evaluate_app_recovery(db, assignment.app, now)
+    emit_pilot_event(
+        db,
+        current_user.id,
+        "test_assignment_completed",
+        f"test-assignment-completed:{assignment.id}",
+        app_id=assignment.app_id,
+        assignment_id=assignment.id,
+        payload={"assignment_day": str(assignment.assignment_day)},
+    )
+    db.commit()
+    db.refresh(assignment)
+    return test_assignment_read(assignment)
+
+
+@router.get("/apps/{app_id}/assignment-coverage", response_model=AssignmentCoverageRead)
+def assignment_coverage(
+    app_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AssignmentCoverageRead:
+    app = owned_app(db, app_id, current_user)
+    rows = list(
+        db.scalars(
+            select(TesterAssignment).where(
+                TesterAssignment.app_id == app.id,
+                TesterAssignment.circle_id == app.circle_id,
+                TesterAssignment.status != "DROPPED",
+            )
+        )
+    )
+    return AssignmentCoverageRead(
+        app_id=app.id,
+        assignment_count=len(rows),
+        completed_count=sum(row.status == "COMPLETED" for row in rows),
+        participating_members=len({row.tester_id for row in rows}),
+    )
 
 
 @router.get("/assignments/{assignment_id}/missions", response_model=list[MissionRead])
@@ -565,6 +820,7 @@ def complete_mission(
         mission.assignment.status = "COMPLETED"
         mission.assignment.completed_at = now
         mission.assignment.tester.reliability_score += 5
+    evaluate_app_recovery(db, mission.assignment.app, now)
     db.commit()
     db.refresh(mission)
     return mission_read(mission)
@@ -632,27 +888,64 @@ def generate_invite_code(db: Session) -> str:
             return code
 
 
-@router.post("/invites", response_model=InviteRead, status_code=status.HTTP_201_CREATED)
-def create_invite(
+INVITE_TTL = timedelta(days=7)
+
+
+def create_circle_invite(
     body: InviteCreate,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    circle: Circle,
+    current_user: User,
+    db: Session,
+    now: datetime,
 ) -> InviteRead:
+    if active_member(db, circle.id, current_user.id) is None:
+        raise HTTPException(status_code=403, detail="You are not an active member of this circle")
     invite = Invite(
         inviter_id=current_user.id,
+        circle_id=circle.id,
         invite_code=generate_invite_code(db),
         invited_email=str(body.invited_email).lower() if body.invited_email else None,
         status="PENDING",
+        created_at=now,
+        expires_at=now + INVITE_TTL,
     )
     db.add(invite)
     db.flush()
     emit_pilot_event(
         db, current_user.id, "invite_created", f"invite-created:{invite.id}",
-        invite_id=invite.id,
+        invite_id=invite.id, payload={"circle_id": circle.id},
     )
     db.commit()
     db.refresh(invite)
     return invite_read(invite)
+
+
+@router.post("/apps/{app_id}/invites", response_model=InviteRead, status_code=status.HTTP_201_CREATED)
+def create_app_invite(
+    app_id: str,
+    body: InviteCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    now: datetime = Depends(get_now),
+) -> InviteRead:
+    app = owned_app(db, app_id, current_user)
+    return create_circle_invite(body, app.circle, current_user, db, now)
+
+
+@router.post("/invites", response_model=InviteRead, status_code=status.HTTP_201_CREATED)
+def create_invite(
+    body: InviteCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    now: datetime = Depends(get_now),
+) -> InviteRead:
+    if body.circle_id:
+        circle = db.get(Circle, body.circle_id)
+        if circle is None:
+            raise HTTPException(status_code=404, detail="Circle not found")
+    else:
+        circle = ensure_owner_circle(db, current_user)
+    return create_circle_invite(body, circle, current_user, db, now)
 
 
 @router.get("/invites/me", response_model=list[InviteRead])
@@ -679,27 +972,80 @@ def accept_invite(
     invite_code: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    now: datetime = Depends(get_now),
 ) -> InviteRead:
-    invite = db.scalar(select(Invite).where(Invite.invite_code == invite_code.upper()))
+    invite = db.scalar(
+        select(Invite)
+        .where(Invite.invite_code == invite_code.upper())
+        .with_for_update()
+    )
     if invite is None:
         raise HTTPException(status_code=404, detail="Invite not found")
     if invite.inviter_id == current_user.id:
         raise HTTPException(status_code=422, detail="You cannot accept your own invite")
     if invite.status == "ACCEPTED" and invite.joined_user_id != current_user.id:
         raise HTTPException(status_code=409, detail="Invite was already accepted")
-    if invite.status == "CANCELLED":
+    if invite.status in {"CANCELLED", "EXPIRED"}:
         raise HTTPException(status_code=409, detail="Invite is no longer active")
     if invite.invited_email and invite.invited_email != current_user.email:
         raise HTTPException(status_code=403, detail="Invite is intended for another email")
+    if (
+        invite.status == "PENDING"
+        and invite.expires_at is not None
+        and aware(invite.expires_at) <= aware(now)
+    ):
+        invite.status = "EXPIRED"
+        try:
+            db.commit()
+        except IntegrityError:
+            # Older SQLite files may still have the pre-circle status CHECK;
+            # expiration enforcement remains effective even if that legacy row
+            # cannot be rewritten until the additive migration is applied.
+            db.rollback()
+        raise HTTPException(status_code=410, detail="Invite has expired")
+
+    circle = db.scalar(
+        select(Circle).where(Circle.id == invite.circle_id).with_for_update()
+    )
+    if circle is None:
+        raise HTTPException(status_code=409, detail="Invite circle is no longer available")
+
+    member = db.scalar(
+        select(CircleMember)
+        .where(
+            CircleMember.circle_id == circle.id,
+            CircleMember.user_id == current_user.id,
+        )
+        .with_for_update()
+    )
+    if member is None:
+        if active_member_count(db, circle.id) >= min(circle.max_members, CIRCLE_MAX_MEMBERS):
+            raise HTTPException(status_code=409, detail="This Launch Circle is full")
+        member = CircleMember(
+            circle_id=circle.id,
+            user_id=current_user.id,
+            role="MEMBER",
+            status="ACTIVE",
+            joined_at=now,
+        )
+        db.add(member)
+    elif member.status != "ACTIVE":
+        if active_member_count(db, circle.id) >= min(circle.max_members, CIRCLE_MAX_MEMBERS):
+            raise HTTPException(status_code=409, detail="This Launch Circle is full")
+        member.status = "ACTIVE"
+        member.joined_at = now
+        member.left_at = None
+
     first_acceptance = invite.status != "ACCEPTED"
     invite.status = "ACCEPTED"
     invite.joined_user_id = current_user.id
-    invite.accepted_at = invite.accepted_at or datetime.now(timezone.utc)
+    invite.accepted_at = invite.accepted_at or now
     if first_acceptance:
         emit_pilot_event(
             db, current_user.id, "invite_accepted", f"invite-accepted:{invite.id}",
             invite_id=invite.id, payload={"inviter_id": invite.inviter_id},
         )
+    evaluate_circle_recovery(db, circle.id, now)
     db.commit()
     db.refresh(invite)
     return invite_read(invite)
@@ -710,9 +1056,10 @@ def auto_match_testers(
     app_id: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    now: datetime = Depends(get_now),
 ) -> MatchingRead:
     app = owned_app(db, app_id, current_user)
-    assigned = match_testers(db, app)
+    assigned = match_testers(db, app, now=now)
     for assignment in assigned:
         emit_pilot_event(
             db, current_user.id, "tester_assigned", f"pilot:tester-assigned:{assignment.id}",
@@ -750,7 +1097,8 @@ def drop_assignment(
             db, current_user.id, "tester_dropped", f"tester-dropped:{assignment.id}",
             app_id=assignment.app_id, assignment_id=assignment.id,
         )
-        match_testers(db, assignment.app, limit=1, replacement_for=assignment)
+        match_testers(db, assignment.app, limit=1, replacement_for=assignment, now=now)
+        evaluate_app_recovery(db, assignment.app, now)
     db.commit()
     db.refresh(assignment)
     return assignment_read(assignment, now)
@@ -767,13 +1115,16 @@ def refresh_health(
     newly_inactive = refresh_app_health(db, app, now)
     replacements = 0
     for inactive in newly_inactive:
-        replacements += len(match_testers(db, app, limit=1, replacement_for=inactive))
-    calculate_readiness(db, app, now)
+        replacements += len(match_testers(db, app, limit=1, replacement_for=inactive, now=now))
+    replacements += len(evaluate_app_recovery(db, app, now))
+    readiness = calculate_readiness(db, app, now)
     counts = {
         "at_risk": sum(a.health_status == "AT_RISK" for a in app.assignments),
         "inactive": sum(a.health_status == "INACTIVE" for a in app.assignments),
         "dropped": sum(a.health_status == "DROPPED" for a in app.assignments),
         "replacements_assigned": replacements,
+        "coverage_shortage": readiness["coverage_shortage"],
+        "replacement_status": readiness["replacement_status"],
     }
     db.commit()
     return HealthRefreshRead(**counts)
@@ -867,7 +1218,7 @@ def dashboard(
     app = owned_app(db, app_id, current_user)
     for assignment in app.assignments:
         refresh_mission_availability(db, assignment.missions, now)
-    refresh_app_health(db, app, now)
+    evaluate_app_recovery(db, app, now, include_readiness=False)
     result = calculate_readiness(db, app, now)
     db.commit()
     return DashboardRead(**result)
