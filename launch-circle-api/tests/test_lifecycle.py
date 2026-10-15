@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import hashlib
 
 import pytest
 from fastapi.testclient import TestClient
@@ -8,6 +9,11 @@ from app.core.database import SessionLocal, engine
 from app.main import app as fastapi_app
 from app.models.launch import App, CircleMember
 from app.services.clock import get_now
+
+
+def play_account_id_for_test(owner: dict, suffix: str) -> str:
+    digest = hashlib.sha256(f"{owner['id']}:{suffix}".encode()).digest()[:8]
+    return str(int.from_bytes(digest, "big"))
 
 
 def register(client: TestClient, email: str, name: str) -> dict:
@@ -45,6 +51,7 @@ def create_app(client: TestClient, owner: dict, suffix: str) -> dict:
             "name": f"Lifecycle App {suffix}",
             "package_name": f"com.example.lifecycle{suffix}",
             "opt_in_url": f"https://play.google.com/apps/testing/com.example.lifecycle{suffix}",
+            "play_developer_account_id": play_account_id_for_test(owner, suffix),
         },
     )
     assert response.status_code == 201, response.text

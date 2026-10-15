@@ -11,6 +11,7 @@ Kotlin and Jetpack Compose client for **Launch Circle: 12 Testers**.
 - Today Tests, mission flow, and factual feedback submission
 - invite creation, share, direct invite-code acceptance, and join confirmation
 - Launch Circle Google Group onboarding
+- Google Play one-time checkout for additional apps and Managed Launch
 - real Retrofit and in-memory demo repositories
 
 ## Backend modes
@@ -30,6 +31,8 @@ explicitly needed.
 Physical phone on the LAN uses `http://HOST_LAN_IP:8000/`.
 
 External pilot uses an HTTPS URL, the real repository, and disabled development auth. Release builds force both demo data and development authentication off.
+
+The release client uses Google Play Billing for one-time purchases and reads localized prices from Google Play. Purchase verification and entitlement grants happen on the API; Play service-account credentials stay on the server. Configure the product IDs in Play Console and the API environment as described in `../PILOT_DEPLOYMENT.md`.
 
 ## Google authentication
 

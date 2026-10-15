@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -34,6 +36,10 @@ def google_auth(body: GoogleAuthRequest, db: Session = Depends(get_db)) -> Token
             email=payload["email"].lower(),
             login_email=payload["email"],
             display_name=payload.get("name"),
+            acquisition_source=body.acquisition_source or "UNKNOWN",
+            acquisition_medium=body.acquisition_medium,
+            acquisition_campaign=body.acquisition_campaign,
+            attribution_captured_at=(datetime.now(timezone.utc) if body.acquisition_source else None),
         )
         db.add(user)
         db.flush()
@@ -46,6 +52,11 @@ def google_auth(body: GoogleAuthRequest, db: Session = Depends(get_db)) -> Token
         user.login_email = payload["email"]
         if payload.get("name") and not user.display_name:
             user.display_name = payload["name"]
+        if user.acquisition_source == "UNKNOWN" and body.acquisition_source:
+            user.acquisition_source = body.acquisition_source
+            user.acquisition_medium = body.acquisition_medium
+            user.acquisition_campaign = body.acquisition_campaign
+            user.attribution_captured_at = datetime.now(timezone.utc)
         ensure_owner_circle(db, user)
         db.commit()
 

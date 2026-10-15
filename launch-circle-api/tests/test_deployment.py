@@ -21,6 +21,7 @@ def pilot_settings(tmp_path, **overrides):
         "public_base_url": "https://pilot.example.test",
         "cors_origins": "https://pilot.example.test",
         "development_auth_enabled": False,
+        "google_play_developer_account_id": "1234567890123456789",
         "_env_file": None,
     }
     values.update(overrides)
@@ -110,6 +111,6 @@ def test_development_auth_disabled_in_pilot(client, tmp_path):
 
 
 def test_no_acceptance_control_routes_are_exposed():
-    paths = {route.path for route in app.routes}
+    paths = {route.path for route in app.routes if hasattr(route, "path")}
     forbidden = {"/test-clock", "/acceptance/seed", "/acceptance/reset", "/reset", "/seed"}
     assert paths.isdisjoint(forbidden)

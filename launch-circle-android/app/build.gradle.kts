@@ -21,8 +21,8 @@ android {
         applicationId = "com.launchcircle.testers"
         minSdk = 27
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.0.2"
+        versionCode = 9
+        versionName = "1.0.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -130,6 +130,8 @@ dependencies {
     implementation("androidx.credentials:credentials:1.6.0")
     implementation("androidx.credentials:credentials-play-services-auth:1.6.0")
     implementation("com.google.android.libraries.identity.googleid:googleid:1.2.0")
+    implementation("com.android.installreferrer:installreferrer:2.2")
+    implementation("com.android.billingclient:billing:9.1.0")
 
     implementation("com.squareup.retrofit2:retrofit:3.0.0")
     implementation("com.squareup.retrofit2:converter-gson:3.0.0")

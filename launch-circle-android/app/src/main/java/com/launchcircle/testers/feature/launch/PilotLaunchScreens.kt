@@ -49,6 +49,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -61,11 +62,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.launchcircle.testers.core.model.AdditionalAppCheckout
+import com.launchcircle.testers.core.model.ManagedCheckout
 import com.launchcircle.testers.core.model.LaunchApp
 import com.launchcircle.testers.core.model.LaunchDashboard
 import com.launchcircle.testers.core.model.LaunchInvite
@@ -74,10 +78,14 @@ import com.launchcircle.testers.core.model.MissionFeedback
 import com.launchcircle.testers.core.model.PilotConfig
 import com.launchcircle.testers.core.model.TestMission
 import com.launchcircle.testers.core.model.TestAssignment
+import com.launchcircle.testers.core.model.managedCheckoutPriceLabel
 import com.launchcircle.testers.core.model.TesterAssignment
+import com.launchcircle.testers.core.model.parseCoreWorkflowSteps
 import com.launchcircle.testers.core.model.UserProfile
+import com.launchcircle.testers.R
 import com.launchcircle.testers.feature.onboarding.AccountScreen
 import com.launchcircle.testers.ui.theme.LaunchAttention
+import java.util.Locale
 
 @Composable
 fun LaunchWorkspace(
@@ -89,6 +97,7 @@ fun LaunchWorkspace(
     onLogout: () -> Unit,
 ) {
     val state by viewModel.state.collectAsState()
+    val activity = LocalActivity.current
     LaunchedEffect(viewModel, profile.id) { viewModel.loadLaunches(profile.id) }
     val primaryDestination = state.pilotSurface == PilotSurface.NONE && state.destination in setOf(
         LaunchDestination.MY_LAUNCHES,
@@ -120,7 +129,7 @@ fun LaunchWorkspace(
                 TextButton(
                     onClick = viewModel::back,
                     modifier = Modifier.defaultMinSize(minHeight = 48.dp).padding(horizontal = 8.dp),
-                ) { Text("Back") }
+                ) { Text(stringResource(R.string.back)) }
             }
             state.error?.let { ErrorBanner(it) }
             Box(Modifier.fillMaxSize()) {
@@ -153,6 +162,35 @@ fun LaunchWorkspace(
                             viewModel::confirmGoogleGroup, viewModel::skipGroupSetup,
                         )
                     }
+                    PilotSurface.ADDITIONAL_APP_PAYMENT -> state.pendingPayment?.let { checkout ->
+                        LaunchedEffect(activity, checkout.product_id) {
+                            activity?.let { current -> viewModel.loadGooglePlayPrice(current, checkout.product_id) }
+                        }
+                        AdditionalAppPayment(
+                            checkout = checkout,
+                            actualPrice = state.googlePlayPrice,
+                            loading = state.loading,
+                            onCheckStatus = { activity?.let(viewModel::recoverAdditionalAppPurchase) },
+                            onPurchase = { activity?.let(viewModel::launchAdditionalAppPurchase) },
+                            onClose = viewModel::closeAdditionalAppPayment,
+                        )
+                    }
+                    PilotSurface.MANAGED_PAYMENT -> state.pendingManagedPayment?.let { checkout ->
+                        LaunchedEffect(activity, checkout.product_id, checkout.list_product_id) {
+                            activity?.let { current ->
+                                viewModel.loadGooglePlayPrice(current, checkout.product_id, checkout.list_product_id)
+                            }
+                        }
+                        ManagedLaunchPayment(
+                            checkout = checkout,
+                            actualPrice = state.googlePlayPrice,
+                            actualListPrice = state.googlePlayListPrice,
+                            loading = state.loading,
+                            onCheckStatus = viewModel::checkManagedPayment,
+                            onPurchase = { activity?.let(viewModel::launchManagedPurchase) },
+                            onClose = viewModel::closeManagedPayment,
+                        )
+                    }
                     PilotSurface.NONE -> when (state.destination) {
                         LaunchDestination.MY_LAUNCHES -> Home(
                             profile, state.launches, state.dashboards, state.selectedApp, state.todayAssignments,
@@ -161,7 +199,7 @@ fun LaunchWorkspace(
                             viewModel::showJoin, viewModel::showAccount, onLogout,
                         )
                         LaunchDestination.ADD_APP -> AddApp(
-                            state.pilotConfig, viewModel::createApp,
+                            state.pilotConfig, state.availableCircles, viewModel::createApp,
                         )
                         LaunchDestination.DASHBOARD -> {
                             val selected = state.selectedApp
@@ -172,6 +210,9 @@ fun LaunchWorkspace(
                                     viewModel::showInvite, viewModel::matchTesters,
                                     viewModel::showTesters, viewModel::showFeedback,
                                     viewModel::showGoogleGroupSetup,
+                                    viewModel::recordCoordinationTime,
+                                    { trigger -> viewModel.recordManagedOfferViewed(selected.id, trigger) },
+                                    { viewModel.startManagedCheckout(selected.id) },
                                 )
                             }
                         }
@@ -264,25 +305,25 @@ private fun Home(
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         item {
-            Text("Home", style = MaterialTheme.typography.headlineLarge)
-            Text("Welcome back, " + (profile.display_name ?: "developer"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.home), style = MaterialTheme.typography.headlineLarge)
+            Text(stringResource(R.string.welcome_back, profile.display_name ?: stringResource(R.string.developer)), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (primaryApp == null || dashboard == null) {
             item {
                 EmptyCard(
-                    "Your first launch starts here",
-                    "Add an app, connect tester access, then invite developers or match available testers.",
+                    stringResource(R.string.first_launch_title),
+                    stringResource(R.string.first_launch_body),
                 )
             }
             item {
                 MetricCard(
-                    label = "Today's Work",
-                    value = "${today.size} ${if (today.size == 1) "test" else "tests"}",
+                    label = stringResource(R.string.todays_work),
+                    value = stringResource(if (today.size == 1) R.string.test_count_singular else R.string.test_count_plural, today.size),
                     supporting = "~${today.sumOf { it.estimated_minutes }} min",
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-            item { Button(onClick = onAdd, modifier = Modifier.fillMaxWidth()) { Text("Add app") } }
+            item { Button(onClick = onAdd, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.add_app)) } }
         } else {
             item {
                 CountdownHero(primaryApp, dashboard) { onOpen(primaryApp) }
@@ -290,37 +331,37 @@ private fun Home(
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     MetricCard(
-                        label = "Tester Coverage",
+                        label = stringResource(R.string.tester_coverage),
                         value = "${dashboard.active_testers} / ${dashboard.google_minimum}",
-                        supporting = if (dashboard.testers_needed_for_minimum == 0) "Requirement met" else
-                            "${dashboard.testers_needed_for_minimum} more required",
+                        supporting = if (dashboard.testers_needed_for_minimum == 0) stringResource(R.string.requirement_met) else
+                            stringResource(R.string.more_testers_required, dashboard.testers_needed_for_minimum),
                         positive = dashboard.testers_needed_for_minimum == 0,
                         modifier = Modifier.weight(1f),
                     )
                     MetricCard(
-                        label = "Today's Work",
-                        value = "${today.size} ${if (today.size == 1) "test" else "tests"}",
+                        label = stringResource(R.string.todays_work),
+                        value = stringResource(if (today.size == 1) R.string.test_count_singular else R.string.test_count_plural, today.size),
                         supporting = "~${today.sumOf { it.estimated_minutes }} min",
                         modifier = Modifier.weight(1f),
                     )
                 }
             }
             item {
-                SectionHeader("TODAY", if (today.isNotEmpty()) "View all" else null, onToday)
+                SectionHeader(stringResource(R.string.today), if (today.isNotEmpty()) stringResource(R.string.view_all) else null, onToday)
             }
             if (today.isEmpty()) {
-                item { EmptyCard("You're caught up", "No tests are assigned for today.") }
+                item { EmptyCard(stringResource(R.string.you_are_caught_up), stringResource(R.string.no_tests_today)) }
             } else {
                 items(today, key = { "home-${it.id}" }) { mission ->
                     TodayAssignmentCard(assignment = mission, onClick = { onAssignment(mission) }, compact = true)
                 }
             }
             item {
-                SectionHeader("CIRCLE HEALTH")
+                SectionHeader(stringResource(R.string.circle_health))
                 HealthCard(dashboard)
             }
             item {
-                SectionHeader("YOUR LAUNCHES")
+                SectionHeader(stringResource(R.string.your_launches))
             }
             items(apps, key = { it.id }) { app ->
                 LaunchCard(app, dashboards[app.id]) { onOpen(app) }
@@ -328,10 +369,10 @@ private fun Home(
         }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SecondaryLaunchButton("Invite developers", onInvite)
-                SecondaryLaunchButton("Join with invite code", onJoin)
-                TextButton(onClick = onAccount, modifier = Modifier.fillMaxWidth()) { Text("Account & settings") }
-                TextButton(onClick = onLogout, modifier = Modifier.fillMaxWidth()) { Text("Sign out") }
+                SecondaryLaunchButton(stringResource(R.string.invite_developers), onInvite)
+                SecondaryLaunchButton(stringResource(R.string.join_with_invite_code), onJoin)
+                TextButton(onClick = onAccount, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.account_settings)) }
+                TextButton(onClick = onLogout, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.sign_out)) }
             }
         }
     }
@@ -364,7 +405,7 @@ private fun CountdownHero(app: LaunchApp, dashboard: LaunchDashboard, onOpen: ()
                     overflow = TextOverflow.Ellipsis,
                 )
                 Spacer(Modifier.width(12.dp))
-                StatusBadge(if (onTrack) "Testing on track" else "Needs attention", if (onTrack) StatusTone.SUCCESS else StatusTone.ATTENTION)
+                StatusBadge(stringResource(if (onTrack) R.string.testing_on_track else R.string.needs_attention), if (onTrack) StatusTone.SUCCESS else StatusTone.ATTENTION)
             }
             Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
                 if (dashboard.testing_started_at == null) {
@@ -376,24 +417,24 @@ private fun CountdownHero(app: LaunchApp, dashboard: LaunchDashboard, onOpen: ()
                         "${dashboard.qualifying_tester_count} / ${dashboard.required_tester_count} ready",
                         style = MaterialTheme.typography.titleLarge,
                     )
-                    Text("Day 1 starts when the requirement is met.", style = MaterialTheme.typography.bodyLarge)
+                    Text(stringResource(R.string.day_one_starts_after_requirement), style = MaterialTheme.typography.bodyLarge)
                 } else if (dashboard.lifecycle_complete) {
-                    Text("Internal testing complete", style = MaterialTheme.typography.headlineMedium)
-                    Text("Production application can be prepared.", style = MaterialTheme.typography.bodyLarge)
+                    Text(stringResource(R.string.internal_testing_complete), style = MaterialTheme.typography.headlineMedium)
+                    Text(stringResource(R.string.production_app_can_be_prepared), style = MaterialTheme.typography.bodyLarge)
                 } else {
                     Text(
                         dashboard.days_remaining.coerceAtLeast(0).toString(),
                         style = MaterialTheme.typography.displayLarge.copy(fontSize = 72.sp, lineHeight = 76.sp),
                     )
-                    Text("DAYS", style = MaterialTheme.typography.titleLarge)
-                    Text("until internal testing eligibility", style = MaterialTheme.typography.bodyLarge)
+                    Text(stringResource(R.string.days_uppercase), style = MaterialTheme.typography.titleLarge)
+                    Text(stringResource(R.string.until_internal_testing_eligibility), style = MaterialTheme.typography.bodyLarge)
                 }
             }
             Text(
                 if (dashboard.testing_started_at == null) {
-                    "Waiting for Day 1"
+                    stringResource(R.string.waiting_for_day_one)
                 } else {
-                    "Day ${dashboard.day.coerceAtLeast(0)} of $totalDays"
+                    stringResource(R.string.day_of_total, dashboard.day.coerceAtLeast(0), totalDays)
                 },
                 style = MaterialTheme.typography.titleMedium,
             )
@@ -407,7 +448,7 @@ private fun CountdownHero(app: LaunchApp, dashboard: LaunchDashboard, onOpen: ()
                 trackColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.24f),
             )
             Text(
-                "${dashboard.qualifying_tester_count} / ${dashboard.required_tester_count} testers qualifying",
+                stringResource(R.string.testers_qualifying_count, dashboard.qualifying_tester_count, dashboard.required_tester_count),
                 style = MaterialTheme.typography.titleMedium,
             )
         }
@@ -445,12 +486,12 @@ private fun HealthCard(dashboard: LaunchDashboard) {
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(if (good) "Good" else "Action needed", style = MaterialTheme.typography.headlineSmall)
-                StatusBadge(if (good) "Healthy" else "Attention", if (good) StatusTone.SUCCESS else StatusTone.ATTENTION)
+                Text(stringResource(if (good) R.string.good else R.string.action_needed), style = MaterialTheme.typography.headlineSmall)
+                StatusBadge(stringResource(if (good) R.string.healthy else R.string.attention), if (good) StatusTone.SUCCESS else StatusTone.ATTENTION)
             }
-            Text("${dashboard.active_testers} active testers", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.active_testers_count, dashboard.active_testers), color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (dashboard.at_risk_testers > 0) {
-                Text("${dashboard.at_risk_testers} need attention", color = LaunchAttention)
+                Text(stringResource(R.string.testers_need_attention_count, dashboard.at_risk_testers), color = LaunchAttention)
             }
         }
     }
@@ -465,8 +506,8 @@ private fun LaunchCard(app: LaunchApp, dashboard: LaunchDashboard?, onOpen: () -
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(app.name, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Day ${dashboard?.day ?: 0} / ${dashboard?.total_days ?: 14}")
-                Text("${dashboard?.active_testers ?: 0} active", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.day_progress, dashboard?.day ?: 0, dashboard?.total_days ?: 14))
+                Text(stringResource(R.string.active_count, dashboard?.active_testers ?: 0), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             LinearProgressIndicator(
                 progress = { (dashboard?.production_readiness ?: 0).coerceIn(0, 100) / 100f },
@@ -477,58 +518,208 @@ private fun LaunchCard(app: LaunchApp, dashboard: LaunchDashboard?, onOpen: () -
 }
 
 @Composable
+private fun AdditionalAppPayment(
+    checkout: AdditionalAppCheckout,
+    actualPrice: String?,
+    loading: Boolean,
+    onCheckStatus: () -> Unit,
+    onPurchase: () -> Unit,
+    onClose: () -> Unit,
+) {
+    val isPaid = checkout.status == "PAID" || checkout.status == "CONSUMED"
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text(stringResource(R.string.additional_app), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text(
+            when (checkout.status) {
+                "PAID", "CONSUMED" -> stringResource(R.string.additional_app_purchase_confirmed)
+                "FAILED", "EXPIRED" ->
+                    stringResource(R.string.additional_app_purchase_cancelled)
+                else ->
+                    stringResource(R.string.additional_app_purchase_verification)
+            },
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            actualPrice ?: stringResource(R.string.loading_google_play_price),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Button(
+            onClick = onPurchase,
+            enabled = !loading && !isPaid && actualPrice != null,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text(stringResource(R.string.buy_with_google_play)) }
+        Button(
+            onClick = onCheckStatus,
+            enabled = !loading,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text(stringResource(if (isPaid) R.string.apply_purchase else R.string.check_purchase_status)) }
+        OutlinedButton(
+            onClick = onClose,
+            enabled = !loading,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text(stringResource(R.string.return_to_add_app)) }
+    }
+}
+
+@Composable
+private fun ManagedLaunchPayment(
+    checkout: ManagedCheckout,
+    actualPrice: String?,
+    actualListPrice: String?,
+    loading: Boolean,
+    onCheckStatus: () -> Unit,
+    onPurchase: () -> Unit,
+    onClose: () -> Unit,
+) {
+    val isPaid = checkout.status == "PAID"
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text(stringResource(R.string.managed_launch), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text(
+            when (checkout.status) {
+                "PAID" -> stringResource(R.string.managed_purchase_confirmed)
+                "FAILED", "EXPIRED" -> stringResource(R.string.managed_purchase_cancelled)
+                else -> stringResource(R.string.managed_purchase_verification)
+            },
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            managedCheckoutPriceLabel(
+                actualListPrice,
+                actualPrice,
+                hasCredit = checkout.credit_amount > 0,
+            ),
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Button(
+            onClick = onPurchase,
+            enabled = !loading && !isPaid && actualPrice != null,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text(stringResource(R.string.buy_with_google_play)) }
+        Button(
+            onClick = onCheckStatus,
+            enabled = !loading,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text(stringResource(if (isPaid) R.string.refresh_confirmation else R.string.check_purchase_status)) }
+        OutlinedButton(
+            onClick = onClose,
+            enabled = !loading,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text(stringResource(R.string.return_to_launch)) }
+    }
+}
+
+@Composable
 private fun AddApp(
     config: PilotConfig,
-    onCreate: (String, String, String, String?, String) -> Unit,
+    circles: List<LaunchCircle>,
+    onCreate: (String, String, String, String?, String, List<String>, String, String) -> Unit,
 ) {
     var name by rememberSaveable { mutableStateOf("") }
     var packageName by rememberSaveable { mutableStateOf("") }
     var optIn by rememberSaveable { mutableStateOf("") }
+    var playDeveloperAccountId by rememberSaveable { mutableStateOf("") }
+    var workflowText by rememberSaveable { mutableStateOf("") }
     var mode by rememberSaveable { mutableStateOf("LAUNCH_CIRCLE") }
     var ownUrl by rememberSaveable { mutableStateOf("") }
+    var circleId by rememberSaveable { mutableStateOf(circles.firstOrNull()?.id.orEmpty()) }
+    LaunchedEffect(circles) {
+        if (circles.none { it.id == circleId }) circleId = circles.firstOrNull()?.id.orEmpty()
+    }
     val context = LocalContext.current
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Add your app", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("A guided setup for your closed test.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Section("APP DETAILS")
-        OutlinedTextField(name, { name = it }, label = { Text("App name") }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(packageName, { packageName = it }, label = { Text("Package name") }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(optIn, { optIn = it }, label = { Text("Closed-testing opt-in URL") }, modifier = Modifier.fillMaxWidth())
-        Section("TESTER ACCESS")
-        Option(mode == "LAUNCH_CIRCLE", "Launch Circle Google Group · Recommended", "Shared access for pilot testers.") {
+        Text(stringResource(R.string.add_your_app), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.guided_closed_test_setup), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Section(stringResource(R.string.app_details_section))
+        OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.app_name_label)) }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(packageName, { packageName = it }, label = { Text(stringResource(R.string.package_name_label)) }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(optIn, { optIn = it }, label = { Text(stringResource(R.string.closed_testing_opt_in_url)) }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(
+            playDeveloperAccountId,
+            { playDeveloperAccountId = it.filter(Char::isDigit).take(32) },
+            label = { Text(stringResource(R.string.google_play_developer_account_id)) },
+            supportingText = {
+                Text(stringResource(R.string.first_app_free_additional_apps_paid))
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Section(stringResource(R.string.main_test_workflow))
+        Text(
+            stringResource(R.string.workflow_steps_instruction),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedTextField(
+            workflowText,
+            { workflowText = it },
+            label = { Text(stringResource(R.string.what_testers_should_do)) },
+            minLines = 2,
+            maxLines = 4,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        val workflowSteps = parseCoreWorkflowSteps(workflowText)
+        val validWorkflow = workflowSteps.size in 2..4 && workflowSteps.all { it.length <= 200 }
+        Section(stringResource(R.string.tester_circle_section))
+        Text(
+            stringResource(R.string.tester_circle_explanation),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        circles.forEach { circle ->
+            Option(
+                circleId == circle.id,
+                circle.name,
+                stringResource(R.string.circle_member_availability, circle.active_member_count, circle.max_members, maxOf(circle.active_member_count - 1, 0)),
+            ) { circleId = circle.id }
+        }
+        if (circles.isEmpty()) {
+            Text(stringResource(R.string.join_or_create_circle_first))
+        }
+        Section(stringResource(R.string.tester_access_section))
+        Option(mode == "LAUNCH_CIRCLE", stringResource(R.string.launch_circle_group_recommended), stringResource(R.string.shared_pilot_tester_access)) {
             mode = "LAUNCH_CIRCLE"
         }
         if (mode == "LAUNCH_CIRCLE") {
             Highlight {
-                Text("Group email")
+                Text(stringResource(R.string.group_email))
                 Text(config.google_group_email, fontWeight = FontWeight.SemiBold)
                 OutlinedButton(onClick = { copy(context, config.google_group_email) }) {
-                    Text("Copy Group Email")
+                    Text(stringResource(R.string.copy_group_email))
                 }
                 Text(
-                    "You still add this group to your Closed Testing track in Play Console.",
+                    stringResource(R.string.add_group_to_closed_test_track),
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
         }
-        Option(mode == "OWN_GROUP", "Use my own Google Group", "Use an existing group URL.") {
+        Option(mode == "OWN_GROUP", stringResource(R.string.use_own_google_group), stringResource(R.string.use_existing_group_url)) {
             mode = "OWN_GROUP"
         }
         if (mode == "OWN_GROUP") {
-            OutlinedTextField(ownUrl, { ownUrl = it }, label = { Text("Google Group URL") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(ownUrl, { ownUrl = it }, label = { Text(stringResource(R.string.google_group_url)) }, modifier = Modifier.fillMaxWidth())
         }
-        Option(mode == "EMAIL_LIST", "Use email tester list", "Manage a fallback list in Play Console.") {
+        Option(mode == "EMAIL_LIST", stringResource(R.string.use_email_tester_list), stringResource(R.string.manage_fallback_list_in_play_console)) {
             mode = "EMAIL_LIST"
         }
         Button(
-            onClick = { onCreate(name.trim(), packageName.trim(), optIn.trim(), ownUrl.ifBlank { null }, mode) },
+            onClick = {
+                onCreate(
+                    name.trim(), packageName.trim(), optIn.trim(), ownUrl.ifBlank { null },
+                    mode, workflowSteps, playDeveloperAccountId.trim(), circleId,
+                )
+            },
             enabled = name.isNotBlank() && packageName.contains(".") && optIn.startsWith("http") &&
+                validWorkflow && playDeveloperAccountId.isNotBlank() && circleId.isNotBlank() &&
                 (mode != "OWN_GROUP" || ownUrl.startsWith("http")),
             modifier = Modifier.fillMaxWidth(),
-        ) { Text("Create Launch") }
+        ) { Text(stringResource(R.string.create_launch)) }
         Spacer(Modifier.height(20.dp))
     }
 }
@@ -546,32 +737,32 @@ private fun GroupSetup(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Connect tester access", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.connect_tester_access), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text(app.name, color = MaterialTheme.colorScheme.primary)
         Highlight {
-            Text("Launch Circle Google Group", fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.launch_circle_google_group), fontWeight = FontWeight.SemiBold)
             Text(config.google_group_email)
-            OutlinedButton(onClick = { copy(context, config.google_group_email) }) { Text("Copy Group Email") }
+            OutlinedButton(onClick = { copy(context, config.google_group_email) }) { Text(stringResource(R.string.copy_group_email)) }
         }
-        Text("Add the group in Play Console", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.add_group_in_play_console), style = MaterialTheme.typography.titleMedium)
         listOf(
-            "1. Open Play Console",
-            "2. Closed testing",
-            "3. Manage testers",
-            "4. Add Google Group",
-            "5. Enter: " + config.google_group_email,
-            "6. Save",
-            "7. Return here and continue",
+            stringResource(R.string.group_setup_step_open_console),
+            stringResource(R.string.group_setup_step_closed_testing),
+            stringResource(R.string.group_setup_step_manage_testers),
+            stringResource(R.string.group_setup_step_add_group),
+            stringResource(R.string.group_setup_step_enter_group, config.google_group_email),
+            stringResource(R.string.group_setup_step_save),
+            stringResource(R.string.group_setup_step_return_continue),
         ).forEach { Text(it) }
         Text(
-            "This is your confirmation. Launch Circle does not modify or verify Play Console.",
+            stringResource(R.string.play_console_user_confirmation_note),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Button(onClick = onConfirm, enabled = !loading, modifier = Modifier.fillMaxWidth()) {
-            Text("I've added the Google Group")
+            Text(stringResource(R.string.i_added_the_google_group))
         }
-        OutlinedButton(onClick = onLater, modifier = Modifier.fillMaxWidth()) { Text("I'll do this later") }
+        OutlinedButton(onClick = onLater, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.do_this_later)) }
     }
 }
 
@@ -585,14 +776,22 @@ private fun Dashboard(
     onTesters: () -> Unit,
     onFeedback: () -> Unit,
     onGroupSetup: () -> Unit,
+    onCoordinationTime: (Int, String) -> Unit,
+    onManagedOfferViewed: (String) -> Unit,
+    onManagedCheckout: () -> Unit,
 ) {
+    var coordinationMinutesText by rememberSaveable(app.id) { mutableStateOf("") }
+    var showPriorityOffer by rememberSaveable(app.id) { mutableStateOf(false) }
+    LaunchedEffect(app.id, data.managed_offer_triggers.orEmpty()) {
+        data.managed_offer_triggers.orEmpty().distinct().forEach(onManagedOfferViewed)
+    }
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
-            Text("My Launch", style = MaterialTheme.typography.headlineLarge)
+        Text(stringResource(R.string.my_launch), style = MaterialTheme.typography.headlineLarge)
             Text(
                 app.name,
                 style = MaterialTheme.typography.titleLarge,
@@ -609,11 +808,11 @@ private fun Dashboard(
                 Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text(
-                            if (data.testing_started_at == null) "Waiting for testers"
-                            else "Day ${data.day} / ${data.total_days}",
+                            if (data.testing_started_at == null) stringResource(R.string.waiting_for_testers)
+                            else stringResource(R.string.day_progress, data.day, data.total_days),
                             style = MaterialTheme.typography.headlineMedium,
                         )
-                        StatusBadge(pretty(data.status))
+                        StatusBadge(localizedLabel(data.status))
                     }
                     LinearProgressIndicator(
                         progress = { data.production_readiness.coerceIn(0, 100) / 100f },
@@ -622,23 +821,23 @@ private fun Dashboard(
                     )
                     Text(
                         if (data.testing_started_at == null) {
-                            "${data.qualifying_tester_count} / ${data.required_tester_count} ready"
+                            stringResource(R.string.testers_ready_count, data.qualifying_tester_count, data.required_tester_count)
                         } else if (data.lifecycle_complete) {
-                            "14-day internal test complete"
+                            stringResource(R.string.fourteen_day_test_complete)
                         } else {
-                            "${data.days_remaining.coerceAtLeast(0)} days remaining"
+                            stringResource(R.string.days_remaining, data.days_remaining.coerceAtLeast(0))
                         },
                         style = MaterialTheme.typography.titleMedium,
                     )
                     if (data.estimated_ready_date.isNotBlank()) {
-                        Text("Estimated production date · ${data.estimated_ready_date}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.estimated_production_date, data.estimated_ready_date), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     if (data.replacement_status != "NONE") {
                         Text(
                             when (data.replacement_status) {
-                                "COVERAGE_RESTORED" -> "Coverage restored"
-                                "REPLACEMENT_ASSIGNED" -> "Replacement assigned"
-                                else -> "Coverage at risk"
+                                "COVERAGE_RESTORED" -> stringResource(R.string.coverage_restored)
+                                "REPLACEMENT_ASSIGNED" -> stringResource(R.string.replacement_assigned)
+                                else -> stringResource(R.string.coverage_at_risk)
                             },
                             color = if (data.coverage_shortage == 0) MaterialTheme.colorScheme.tertiary else LaunchAttention,
                         )
@@ -650,40 +849,112 @@ private fun Dashboard(
             }
         }
         item {
-            SectionHeader("TESTER COVERAGE")
+            SectionHeader(stringResource(R.string.tester_coverage))
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                MetricCard("Active testers", data.qualifying_tester_count.toString(), "Currently qualifying", data.qualifying_tester_count >= data.required_tester_count, Modifier.fillMaxWidth())
-                MetricCard("Required testers", data.required_tester_count.toString(), "Launch Circle requirement", modifier = Modifier.fillMaxWidth())
+                MetricCard(stringResource(R.string.active_testers), data.qualifying_tester_count.toString(), stringResource(R.string.currently_qualifying), data.qualifying_tester_count >= data.required_tester_count, Modifier.fillMaxWidth())
+                MetricCard(stringResource(R.string.required_testers), data.required_tester_count.toString(), stringResource(R.string.launch_circle_requirement), modifier = Modifier.fillMaxWidth())
             }
         }
         item {
-            SectionHeader("MILESTONES")
+            SectionHeader(stringResource(R.string.milestones))
             MilestoneTimeline(data)
         }
         item {
-            SectionHeader("CIRCLE HEALTH")
+            SectionHeader(stringResource(R.string.circle_health))
             HealthCard(data)
         }
         item {
             OutlinedButton(onClick = onGroupSetup, modifier = Modifier.fillMaxWidth()) {
-                Text("Tester access · " + if (app.google_group_configured) "Confirmed" else "Setup needed")
+                Text(stringResource(if (app.google_group_configured) R.string.tester_access_confirmed else R.string.tester_access_setup_needed))
             }
         }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onInvite, modifier = Modifier.fillMaxWidth()) { Text("Invite developers") }
-                OutlinedButton(onClick = onMatch, enabled = !loading, modifier = Modifier.fillMaxWidth()) { Text("Match available testers") }
-                OutlinedButton(onClick = onTesters, modifier = Modifier.fillMaxWidth()) { Text("View circle") }
+                Button(onClick = onInvite, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.invite_developers)) }
+                OutlinedButton(onClick = onMatch, enabled = !loading, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.match_available_testers)) }
+                OutlinedButton(onClick = onTesters, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.view_circle)) }
             }
         }
         item {
             OutlinedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Activity", style = MaterialTheme.typography.titleMedium)
-                    Text("Missions · ${data.missions_completed} / ${data.missions_total_available}")
-                    Text("Feedback · ${data.feedback_count} responses")
-                    TextButton(onClick = onFeedback) { Text("View feedback") }
+                    Text(stringResource(R.string.activity), style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.missions_progress, data.missions_completed, data.missions_total_available))
+                    Text(stringResource(R.string.feedback_response_count, data.feedback_count))
+                    TextButton(onClick = onFeedback) { Text(stringResource(R.string.view_feedback)) }
                 }
+            }
+        }
+        item {
+            OutlinedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.workload), style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.tester_time_reported, data.tester_minutes_reported))
+                    Text(stringResource(R.string.developer_coordination_time, data.developer_coordination_minutes, data.coordination_entries))
+                    if (data.remaining_reciprocal_missions > 0) {
+                        Text(stringResource(R.string.remaining_circle_missions, data.remaining_reciprocal_missions, data.remaining_reciprocal_minutes))
+                    }
+                    OutlinedTextField(
+                        value = coordinationMinutesText,
+                        onValueChange = { coordinationMinutesText = it.filter(Char::isDigit).take(3) },
+                        label = { Text(stringResource(R.string.coordination_time_minutes)) },
+                        supportingText = { Text(stringResource(R.string.log_coordination_time_help)) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    val minutes = coordinationMinutesText.toIntOrNull()
+                    Button(
+                        onClick = {
+                            onCoordinationTime(checkNotNull(minutes), "COORDINATION")
+                            coordinationMinutesText = ""
+                        },
+                        enabled = !loading && minutes != null && minutes in 1..480,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(stringResource(R.string.log_coordination_time)) }
+                }
+            }
+        }
+        if (data.managed_launch_purchased) {
+            item {
+                OutlinedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(stringResource(R.string.managed_launch), style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(R.string.managed_launch_active))
+                    }
+                }
+            }
+        } else if (!data.managed_offer_triggers.isNullOrEmpty() || showPriorityOffer) {
+            item {
+                OutlinedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(stringResource(R.string.managed_launch), style = MaterialTheme.typography.titleMedium)
+                        val offerLabels = mutableListOf<String>()
+                        for (trigger in (data.managed_offer_triggers.orEmpty() + if (showPriorityOffer) listOf("PRIORITY") else emptyList()).distinct()) {
+                            offerLabels.add(localizedLabel(trigger))
+                        }
+                        val labels = offerLabels.joinToString()
+                        Text(stringResource(R.string.available_for, labels))
+                        Text(stringResource(R.string.one_time_google_play_purchase))
+                        Text(
+                            stringResource(R.string.google_play_shows_local_price),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Button(
+                            onClick = onManagedCheckout,
+                            enabled = !loading,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text(stringResource(R.string.see_google_play_price)) }
+                    }
+                }
+            }
+        } else {
+            item {
+                OutlinedButton(
+                    onClick = {
+                        showPriorityOffer = true
+                        onManagedOfferViewed("PRIORITY")
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(stringResource(R.string.need_priority_help)) }
             }
         }
         item {
@@ -726,12 +997,12 @@ private fun InviteScreen(invite: LaunchInvite?, loading: Boolean, onNew: () -> U
         TextButton(
             onClick = onClose,
             modifier = Modifier.defaultMinSize(minHeight = 48.dp),
-        ) { Text("Back") }
-        Text("Invite Developers", style = MaterialTheme.typography.headlineLarge)
+        ) { Text(stringResource(R.string.back)) }
+        Text(stringResource(R.string.invite_developers_title), style = MaterialTheme.typography.headlineLarge)
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Grow your testing circle", style = MaterialTheme.typography.titleLarge)
+            Text(stringResource(R.string.grow_your_testing_circle), style = MaterialTheme.typography.titleLarge)
             Text(
-                "Invite another Android developer. You test their app. They test yours.",
+                stringResource(R.string.invite_developer_exchange_testing),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -748,21 +1019,21 @@ private fun InviteScreen(invite: LaunchInvite?, loading: Boolean, onNew: () -> U
                 if (invite == null) {
                     CircularProgressIndicator()
                 } else {
-                    Text("YOUR INVITE CODE", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    Text(stringResource(R.string.your_invite_code), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
                     Text(
                         invite.invite_code,
                         style = MaterialTheme.typography.displaySmall.copy(fontFamily = FontFamily.Monospace),
                         maxLines = 1,
                     )
-                    PrimaryLaunchButton("Share invite", onClick = { share(context, invite.share_url) })
+                    PrimaryLaunchButton(stringResource(R.string.share_invite), onClick = { share(context, invite.share_url) })
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                        TextButton(onClick = { copy(context, invite.share_url) }) { Text("Copy link") }
-                        TextButton(onClick = { copy(context, invite.invite_code) }) { Text("Copy code") }
+                        TextButton(onClick = { copy(context, invite.share_url) }) { Text(stringResource(R.string.copy_link)) }
+                        TextButton(onClick = { copy(context, invite.invite_code) }) { Text(stringResource(R.string.copy_code)) }
                     }
                 }
             }
         }
-        SecondaryLaunchButton("Create another code", onNew, enabled = !loading)
+        SecondaryLaunchButton(stringResource(R.string.create_another_invite_code), onNew, enabled = !loading)
     }
 }
 
@@ -773,17 +1044,17 @@ private fun JoinScreen(loading: Boolean, onJoin: (String) -> Unit, onClose: () -
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Text("Join Launch Circle", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("Enter the invite code another Android developer shared.")
+        Text(stringResource(R.string.join_launch_circle), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.enter_shared_invite_code))
         OutlinedTextField(
             code, { code = it.uppercase().take(8) },
-            label = { Text("Invite code") }, placeholder = { Text("LC-8H4K2") },
+            label = { Text(stringResource(R.string.invite_code)) }, placeholder = { Text(stringResource(R.string.invite_code_example)) },
             modifier = Modifier.fillMaxWidth(),
         )
         Button(onClick = { onJoin(code) }, enabled = !loading && code.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
-            Text("Join Launch Circle")
+            Text(stringResource(R.string.join_launch_circle))
         }
-        OutlinedButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
+        OutlinedButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.cancel)) }
     }
 }
 
@@ -799,15 +1070,15 @@ private fun JoinSuccess(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Text("You’re in.", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
-        Text("Next steps", style = MaterialTheme.typography.titleLarge)
-        Text("1. Join the Launch Circle Google Group")
-        Text("2. Add your Android app if you have one")
-        Text("3. Start helping test other developers")
-        Button(onClick = { uri.openUri(config.google_group_join_url) }, modifier = Modifier.fillMaxWidth()) { Text("Join Google Group") }
-        OutlinedButton(onClick = onAdd, modifier = Modifier.fillMaxWidth()) { Text("Add My App") }
-        OutlinedButton(onClick = onTests, modifier = Modifier.fillMaxWidth()) { Text("View Test Apps") }
-        OutlinedButton(onClick = onCircle, modifier = Modifier.fillMaxWidth()) { Text("View Circle Members") }
+        Text(stringResource(R.string.you_are_in), style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.next_steps), style = MaterialTheme.typography.titleLarge)
+        Text(stringResource(R.string.join_launch_circle_group_step))
+        Text(stringResource(R.string.add_android_app_step))
+        Text(stringResource(R.string.help_test_developers_step))
+        Button(onClick = { uri.openUri(config.google_group_join_url) }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.join_google_group)) }
+        OutlinedButton(onClick = onAdd, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.add_my_app)) }
+        OutlinedButton(onClick = onTests, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.view_test_apps)) }
+        OutlinedButton(onClick = onCircle, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.view_circle_members)) }
     }
 }
 
@@ -826,20 +1097,20 @@ private fun Today(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Text("Tests", style = MaterialTheme.typography.headlineLarge)
-            Text("Today's tests", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 4.dp))
-            Text("Short, meaningful checks scheduled for today.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.tests), style = MaterialTheme.typography.headlineLarge)
+            Text(stringResource(R.string.todays_tests), style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 4.dp))
+            Text(stringResource(R.string.short_checks_today), color = MaterialTheme.colorScheme.onSurfaceVariant)
             OutlinedButton(
                 onClick = { uri.openUri(config.google_group_join_url) },
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-            ) { Text("Open Launch Circle Google Group") }
+            ) { Text(stringResource(R.string.open_launch_circle_group)) }
         }
-        if (assignments.isEmpty()) item { EmptyCard("You're caught up", "No tests are assigned for today.") }
-        if (toDo.isNotEmpty()) item { SectionHeader("TO DO") }
+        if (assignments.isEmpty()) item { EmptyCard(stringResource(R.string.you_are_caught_up), stringResource(R.string.no_tests_today)) }
+        if (toDo.isNotEmpty()) item { SectionHeader(stringResource(R.string.to_do)) }
         items(toDo, key = { "todo-${it.id}" }) { assignment ->
             TodayAssignmentCard(assignment, { onAssignment(assignment) })
         }
-        if (completed.isNotEmpty()) item { SectionHeader("COMPLETED") }
+        if (completed.isNotEmpty()) item { SectionHeader(stringResource(R.string.completed)) }
         items(completed, key = { "completed-${it.id}" }) { assignment ->
             TodayAssignmentCard(assignment, { onAssignment(assignment) }, completed = true)
         }
@@ -884,22 +1155,22 @@ private fun TodayMissionCard(
                         color = if (completed) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        pretty(mission.mission_type) + " test",
+                        stringResource(R.string.mission_type_test, localizedLabel(mission.mission_type)),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("~${mission.estimated_minutes} min", style = MaterialTheme.typography.labelLarge)
+                    Text(stringResource(R.string.estimated_minutes_short, mission.estimated_minutes), style = MaterialTheme.typography.labelLarge)
                     if (compact && !completed) {
-                        Button(onClick = onClick, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) { Text("Start") }
+                        Button(onClick = onClick, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) { Text(stringResource(R.string.start)) }
                     } else if (!completed) {
                         FilledTonalButton(onClick = onClick, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) {
-                            Text(if (inProgress) "Continue" else "Start test")
+                            Text(stringResource(if (inProgress) R.string.continue_ else R.string.start_test))
                         }
                     }
                 }
             }
-            if (completed) Text("Completed", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
+            if (completed) Text(stringResource(R.string.completed), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
         }
     }
 }
@@ -932,14 +1203,14 @@ private fun TodayAssignmentCard(
                         overflow = TextOverflow.Ellipsis,
                         color = if (completed) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
                     )
-                    Text(pretty(assignment.test_type) + " test", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.mission_type_test, localizedLabel(assignment.test_type)), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("~${assignment.estimated_minutes} min", style = MaterialTheme.typography.labelLarge)
+                    Text(stringResource(R.string.estimated_minutes_short, assignment.estimated_minutes), style = MaterialTheme.typography.labelLarge)
                     if (completed) {
-                        Text("Completed", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
+                        Text(stringResource(R.string.completed), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
                     } else {
-                        val label = if (compact) "Start" else "Start test"
+                        val label = stringResource(if (compact) R.string.start else R.string.start_test)
                         FilledTonalButton(onClick = onClick, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) { Text(label) }
                     }
                 }
@@ -956,16 +1227,16 @@ private fun AssignmentScreen(assignment: TestAssignment, onComplete: () -> Unit)
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Text(assignment.app_name, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text(pretty(assignment.test_type) + " Test", style = MaterialTheme.typography.titleLarge)
-        Text("About ${assignment.estimated_minutes} minutes")
-        Text("Assigned for ${assignment.assignment_day}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(stringResource(R.string.mission_type_test_title, localizedLabel(assignment.test_type)), style = MaterialTheme.typography.titleLarge)
+        Text(stringResource(R.string.about_minutes, assignment.estimated_minutes))
+        Text(stringResource(R.string.assigned_for_day, assignment.assignment_day), color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (assignment.status == "COMPLETED" || assignment.completed_at != null) {
-            Highlight { Text("Completed", fontWeight = FontWeight.SemiBold); Text("Your completion is saved.") }
+            Highlight { Text(stringResource(R.string.completed), fontWeight = FontWeight.SemiBold); Text(stringResource(R.string.completion_saved)) }
         } else {
             Button(onClick = { uri.openUri(assignment.opt_in_url) }, modifier = Modifier.fillMaxWidth()) {
-                Text("Start test")
+                Text(stringResource(R.string.start_test))
             }
-            Button(onClick = onComplete, modifier = Modifier.fillMaxWidth()) { Text("Mark test complete") }
+            Button(onClick = onComplete, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.mark_test_complete)) }
         }
     }
 }
@@ -992,7 +1263,7 @@ private fun Mission(
     onStart: () -> Unit,
     onOptIn: () -> Unit,
     onInstalled: () -> Unit,
-    onSubmit: (Boolean, String, String?, String?) -> Unit,
+    onSubmit: (String, String?, String?, Int?) -> Unit,
 ) {
     val initial = when (mission.assignment_status) {
         "ACTIVE", "COMPLETED", "INSTALLED" -> 3
@@ -1000,37 +1271,64 @@ private fun Mission(
         else -> 0
     }
     var step by rememberSaveable(mission.id) { mutableIntStateOf(initial) }
-    var openOk by rememberSaveable(mission.id) { mutableStateOf<Boolean?>(null) }
-    var featureOk by rememberSaveable(mission.id) { mutableStateOf<String?>(null) }
+    var completionResult by rememberSaveable(mission.id) { mutableStateOf<String?>(null) }
+    var timeSpentText by rememberSaveable(mission.id) { mutableStateOf("") }
     var issue by rememberSaveable(mission.id) { mutableStateOf("") }
     var suggestion by rememberSaveable(mission.id) { mutableStateOf("") }
+    val missionSteps = mission.steps.orEmpty().ifEmpty { listOf(missionPrompt(mission.mission_type)) }
+    val missionGoal = mission.goal.orEmpty().ifBlank { missionPrompt(mission.mission_type) }
     val uri = LocalUriHandler.current
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(mission.app_name, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text(pretty(mission.mission_type) + " Test", style = MaterialTheme.typography.titleLarge)
-        Text("About " + mission.estimated_minutes + " minutes")
-        if (step == 0) Button(onClick = { uri.openUri(mission.opt_in_url); step = 1 }, modifier = Modifier.fillMaxWidth()) { Text("Open Play Testing Link") }
-        if (step == 1) Button(onClick = { onOptIn(); step = 2 }, modifier = Modifier.fillMaxWidth()) { Text("Confirm Opt-In") }
-        if (step == 2) Button(onClick = { onInstalled(); step = 3 }, modifier = Modifier.fillMaxWidth()) { Text("Confirm Installed") }
+        Text(stringResource(R.string.mission_type_test_title, localizedLabel(mission.mission_type)), style = MaterialTheme.typography.titleLarge)
+        Text(stringResource(R.string.about_minutes, mission.estimated_minutes))
+        if (step == 0) Button(onClick = { uri.openUri(mission.opt_in_url); step = 1 }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.open_play_testing_link)) }
+        if (step == 1) Button(onClick = { onOptIn(); step = 2 }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.confirm_opt_in)) }
+        if (step == 2) Button(onClick = { onInstalled(); step = 3 }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.confirm_installed)) }
         if (step == 3) {
-            Highlight { Text("Your mission", fontWeight = FontWeight.SemiBold); Text(missionPrompt(mission.mission_type)) }
-            Button(onClick = { onStart(); step = 4 }, modifier = Modifier.fillMaxWidth()) { Text("Complete Mission") }
+            Highlight {
+                Text(stringResource(R.string.your_mission), fontWeight = FontWeight.SemiBold)
+                Text(missionGoal)
+                missionSteps.forEachIndexed { index, instruction ->
+                    Text("${index + 1}. $instruction")
+                }
+            }
+            Button(onClick = { onStart(); step = 4 }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.start_mission)) }
         }
         if (step >= 4) {
-            Text("Did the app open successfully?", fontWeight = FontWeight.SemiBold)
-            Choices(listOf("Yes", "No"), openOk?.let { if (it) "Yes" else "No" }) { openOk = it == "Yes" }
-            Text("Did the main feature work?", fontWeight = FontWeight.SemiBold)
-            Choices(listOf("Yes", "Partly", "No"), featureOk?.lowercase()?.replaceFirstChar { it.uppercase() }) { featureOk = it.uppercase() }
-            OutlinedTextField(issue, { issue = it }, label = { Text("Any issue? Optional") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(suggestion, { suggestion = it }, label = { Text("Any suggestion? Optional") }, modifier = Modifier.fillMaxWidth())
-            Button(
-                onClick = { onSubmit(checkNotNull(openOk), checkNotNull(featureOk), issue, suggestion) },
-                enabled = openOk != null && featureOk != null,
+            Text(stringResource(R.string.mission_result_question), fontWeight = FontWeight.SemiBold)
+            Option(
+                completionResult == "COMPLETED",
+                stringResource(R.string.result_completed),
+                stringResource(R.string.result_completed_help),
+            ) { completionResult = "COMPLETED" }
+            Option(
+                completionResult == "COMPLETED_WITH_DIFFICULTY",
+                stringResource(R.string.result_with_difficulty),
+                stringResource(R.string.result_with_difficulty_help),
+            ) { completionResult = "COMPLETED_WITH_DIFFICULTY" }
+            Option(
+                completionResult == "COULD_NOT_COMPLETE",
+                stringResource(R.string.result_could_not_complete),
+                stringResource(R.string.result_could_not_complete_help),
+            ) { completionResult = "COULD_NOT_COMPLETE" }
+            OutlinedTextField(
+                value = timeSpentText,
+                onValueChange = { timeSpentText = it.filter(Char::isDigit).take(3) },
+                label = { Text(stringResource(R.string.time_taken_prompt)) },
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("Submit Feedback") }
+            )
+            OutlinedTextField(issue, { issue = it }, label = { Text(stringResource(R.string.what_happened_optional)) }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(suggestion, { suggestion = it }, label = { Text(stringResource(R.string.suggestion_optional)) }, modifier = Modifier.fillMaxWidth())
+            val timeSpentMinutes = timeSpentText.toIntOrNull()
+            Button(
+                onClick = { onSubmit(checkNotNull(completionResult), issue, suggestion, checkNotNull(timeSpentMinutes)) },
+                enabled = completionResult != null && timeSpentMinutes != null && timeSpentMinutes in 1..240,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(stringResource(R.string.submit_feedback)) }
         }
     }
 }
@@ -1042,12 +1340,12 @@ private fun Testers(
     rows: List<TesterAssignment>,
     circle: LaunchCircle?,
 ) {
-    val attentionRows = rows.filter { participationState(it) == "NEEDS_ATTENTION" }
-    val inactiveRows = rows.filter { participationState(it) == "INACTIVE" }
+    val attentionRows = rows.filter { participationState(it) == "AT_RISK" }
+    val criticalRows = rows.filter { participationState(it) == "CRITICAL" }
     val droppedRows = rows.filter { participationState(it) == "DROPPED" }
     val activeRows = rows.filter { participationState(it) == "ACTIVE" }
     val active = dashboard?.active_testers ?: activeRows.size
-    val attention = dashboard?.at_risk_testers ?: attentionRows.size + inactiveRows.size
+    val attention = dashboard?.at_risk_testers ?: attentionRows.size + criticalRows.size
     val healthy = dashboard?.status != "AT_RISK" && dashboard?.circle_health == "GOOD"
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -1055,9 +1353,9 @@ private fun Testers(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Text("Circle", style = MaterialTheme.typography.headlineLarge)
+            Text(stringResource(R.string.circle), style = MaterialTheme.typography.headlineLarge)
             Text(
-                app?.let { "${it.name} testing circle" } ?: "Testing circle",
+                app?.let { stringResource(R.string.app_testing_circle, it.name) } ?: stringResource(R.string.testing_circle),
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,
@@ -1073,13 +1371,13 @@ private fun Testers(
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Column {
-                            Text("Circle Health", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(if (healthy) "Healthy" else "Needs attention", style = MaterialTheme.typography.headlineSmall)
+                            Text(stringResource(R.string.circle_health_title), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(if (healthy) R.string.healthy else R.string.needs_attention), style = MaterialTheme.typography.headlineSmall)
                         }
-                        StatusBadge(if (healthy) "On track" else "Attention", if (healthy) StatusTone.SUCCESS else StatusTone.ATTENTION)
+                        StatusBadge(stringResource(if (healthy) R.string.on_track else R.string.attention), if (healthy) StatusTone.SUCCESS else StatusTone.ATTENTION)
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Tester coverage", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.tester_coverage_title), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text("$active / ${dashboard?.required_tester_count ?: 12}", style = MaterialTheme.typography.labelLarge)
                     }
                     LinearProgressIndicator(
@@ -1091,16 +1389,16 @@ private fun Testers(
                         color = if (healthy) MaterialTheme.colorScheme.tertiary else LaunchAttention,
                     )
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        CircleMetric(active.toString(), "Active", StatusTone.SUCCESS, Modifier.weight(1f))
-                        CircleMetric(attention.toString(), "Attention", StatusTone.ATTENTION, Modifier.weight(1f))
-                        CircleMetric(droppedRows.size.toString(), "Dropped", StatusTone.NEUTRAL, Modifier.weight(1f))
+                        CircleMetric(active.toString(), stringResource(R.string.active), StatusTone.SUCCESS, Modifier.weight(1f))
+                        CircleMetric(attention.toString(), stringResource(R.string.attention), StatusTone.ATTENTION, Modifier.weight(1f))
+                        CircleMetric(droppedRows.size.toString(), stringResource(R.string.dropped), StatusTone.NEUTRAL, Modifier.weight(1f))
                     }
                 }
             }
         }
         if (app != null) {
             item {
-                SectionHeader("APP STATUS")
+                SectionHeader(stringResource(R.string.app_status))
                 OutlinedCard(Modifier.fillMaxWidth()) {
                     Row(
                         Modifier.fillMaxWidth().padding(18.dp),
@@ -1114,16 +1412,16 @@ private fun Testers(
                             overflow = TextOverflow.Ellipsis,
                         )
                         Spacer(Modifier.width(8.dp))
-                        StatusBadge(pretty(dashboard?.status ?: app.status))
+                        StatusBadge(localizedLabel(dashboard?.status ?: app.status))
                     }
                 }
             }
         }
         circle?.let { launchCircle ->
             item {
-                SectionHeader("CIRCLE MEMBERS")
+                SectionHeader(stringResource(R.string.circle_members))
                 Text(
-                    "${launchCircle.active_member_count} / ${launchCircle.max_members} active members",
+                    stringResource(R.string.active_members_count, launchCircle.active_member_count, launchCircle.max_members),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -1132,29 +1430,34 @@ private fun Testers(
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(member.member_label, style = MaterialTheme.typography.titleMedium)
                         Text(
-                            if (member.role == "OWNER") "Circle owner"
-                            else if (member.status == "ACTIVE") "Active member"
-                            else member.status.lowercase().replaceFirstChar { it.uppercase() } + " member",
+                            stringResource(
+                                when {
+                                    member.role == "OWNER" -> R.string.circle_owner
+                                    member.status == "ACTIVE" -> R.string.active_member
+                                    else -> R.string.circle_member_status
+                                },
+                                member.status.lowercase().replaceFirstChar { it.uppercase() },
+                            ),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
             }
         }
-        if (rows.isEmpty()) item { EmptyCard("No tester statuses yet", "Tester status appears after members are assigned to this app.") }
-        if (attentionRows.isNotEmpty()) item { SectionHeader("NEEDS ATTENTION") }
+        if (rows.isEmpty()) item { EmptyCard(stringResource(R.string.no_tester_statuses), stringResource(R.string.tester_statuses_explanation)) }
+        if (attentionRows.isNotEmpty()) item { SectionHeader(stringResource(R.string.at_risk)) }
         items(attentionRows, key = { "attention-${it.id}" }) { tester ->
             TesterStatusRow(tester)
         }
-        if (activeRows.isNotEmpty()) item { SectionHeader("ACTIVE MEMBERS") }
+        if (activeRows.isNotEmpty()) item { SectionHeader(stringResource(R.string.active_members)) }
         items(activeRows, key = { "active-${it.id}" }) { tester ->
             TesterStatusRow(tester)
         }
-        if (inactiveRows.isNotEmpty()) item { SectionHeader("INACTIVE") }
-        items(inactiveRows, key = { "inactive-${it.id}" }) { tester ->
+        if (criticalRows.isNotEmpty()) item { SectionHeader(stringResource(R.string.critical)) }
+        items(criticalRows, key = { "critical-${it.id}" }) { tester ->
             TesterStatusRow(tester, muted = true)
         }
-        if (droppedRows.isNotEmpty()) item { SectionHeader("DROPPED") }
+        if (droppedRows.isNotEmpty()) item { SectionHeader(stringResource(R.string.dropped)) }
         items(droppedRows, key = { "dropped-${it.id}" }) { tester ->
             TesterStatusRow(tester, muted = true)
         }
@@ -1176,8 +1479,10 @@ private fun CircleMetric(value: String, label: String, tone: StatusTone, modifie
 
 private fun participationState(tester: TesterAssignment): String = when {
     tester.status == "DROPPED" || tester.health_status == "DROPPED" -> "DROPPED"
-    tester.health_status == "INACTIVE" -> "INACTIVE"
-    tester.health_status == "AT_RISK" -> "NEEDS_ATTENTION"
+    tester.health_status in setOf("CRITICAL", "INACTIVE") -> "CRITICAL"
+    tester.health_status == "AT_RISK" -> "AT_RISK"
+    tester.participation_state == "NEEDS_ATTENTION" -> "AT_RISK"
+    tester.participation_state == "INACTIVE" -> "CRITICAL"
     tester.participation_state.isNotBlank() -> tester.participation_state
     else -> "ACTIVE"
 }
@@ -1204,9 +1509,9 @@ private fun TesterStatusRow(tester: TesterAssignment, muted: Boolean = false) {
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text("Day ${tester.testing_day}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.day_number, tester.testing_day), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (tester.total_missions > 0) {
-                    Text("${tester.completed_missions} / ${tester.total_missions} tests", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.completed_mission_count, tester.completed_missions, tester.total_missions), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             StatusBadge(testerLabel(tester), testerTone(tester))
@@ -1230,14 +1535,16 @@ private fun TesterAvatar(label: String, muted: Boolean) {
 @Composable
 private fun Feedback(rows: List<MissionFeedback>) {
     LazyColumn(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item { Text("Feedback", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold) }
-        if (rows.isEmpty()) item { EmptyCard("No feedback yet", "Responses appear after completed missions.") }
+        item { Text(stringResource(R.string.feedback), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold) }
+        if (rows.isEmpty()) item { EmptyCard(stringResource(R.string.no_feedback_yet), stringResource(R.string.feedback_after_missions)) }
         items(rows, key = { it.id }) { row ->
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(row.tester_label + " · " + pretty(row.mission_type), fontWeight = FontWeight.SemiBold)
-                    row.issue_text?.let { Text("Issue · " + it) }
-                    row.suggestion_text?.let { Text("Suggestion · " + it) }
+                    Text(row.tester_label + " · " + localizedLabel(row.mission_type), fontWeight = FontWeight.SemiBold)
+                    row.completion_result?.let { Text(stringResource(R.string.feedback_result, localizedLabel(it))) }
+                    row.time_spent_minutes?.let { Text(stringResource(R.string.feedback_tester_time, it)) }
+                    row.issue_text?.let { Text(stringResource(R.string.feedback_issue, it)) }
+                    row.suggestion_text?.let { Text(stringResource(R.string.feedback_suggestion, it)) }
                 }
             }
         }
@@ -1365,30 +1672,60 @@ private fun Choices(values: List<String>, selected: String?, onSelect: (String) 
     }
 }
 
-private fun testerLabel(value: TesterAssignment): String = when {
-    participationState(value) == "DROPPED" -> "Dropped"
-    participationState(value) == "INACTIVE" -> "Inactive"
-    participationState(value) == "NEEDS_ATTENTION" -> "Needs attention"
-    value.is_replacement -> "Replacement"
-    value.health_status == "NEW" -> "New"
-    else -> "Active"
-}
+@Composable
+private fun testerLabel(value: TesterAssignment): String = stringResource(
+    when {
+        participationState(value) == "DROPPED" -> R.string.dropped
+        participationState(value) == "CRITICAL" -> R.string.critical
+        participationState(value) == "AT_RISK" -> R.string.at_risk
+        value.is_replacement -> R.string.replacement
+        value.health_status == "NEW" -> R.string.new_tester
+        value.health_status == "HEALTHY" -> R.string.healthy
+        else -> R.string.active
+    },
+)
 
 private fun testerTone(value: TesterAssignment): StatusTone = when {
-    participationState(value) == "ACTIVE" -> StatusTone.SUCCESS
-    participationState(value) in setOf("NEEDS_ATTENTION", "INACTIVE") -> StatusTone.ATTENTION
+    participationState(value) in setOf("ACTIVE", "HEALTHY") -> StatusTone.SUCCESS
+    participationState(value) in setOf("AT_RISK", "CRITICAL") -> StatusTone.ATTENTION
     else -> StatusTone.NEUTRAL
 }
 
-private fun missionPrompt(type: String): String = when (type) {
-    "INSTALL_FIRST_IMPRESSION" -> "Check the first-run experience."
-    "CORE_FEATURE" -> "Use the main feature and note anything unclear."
-    "EDGE_CASE" -> "Try an unusual input or interruption."
-    "SECOND_USE" -> "Return and complete a normal task again."
-    "RETEST" -> "Recheck the latest developer changes."
-    "FINAL_FEEDBACK" -> "Summarize the full testing experience."
-    else -> pretty(type)
-}
+@Composable
+private fun missionPrompt(type: String): String = stringResource(
+    when (type) {
+        "INSTALL_FIRST_IMPRESSION" -> R.string.mission_prompt_first_impression
+        "CORE_FEATURE" -> R.string.mission_prompt_core_feature
+        "EDGE_CASE" -> R.string.mission_prompt_edge_case
+        "SECOND_USE" -> R.string.mission_prompt_second_use
+        "RETEST" -> R.string.mission_prompt_retest
+        "FINAL_FEEDBACK" -> R.string.mission_prompt_final_feedback
+        else -> R.string.mission_prompt_generic
+    },
+)
+
+@Composable
+private fun localizedLabel(value: String): String = stringResource(
+    when (value) {
+        "WAITING_FOR_TESTERS" -> R.string.waiting_for_testers
+        "TESTING" -> R.string.testing_status
+        "AT_RISK", "COVERAGE_AT_RISK" -> R.string.coverage_at_risk
+        "TESTING_COMPLETE" -> R.string.fourteen_day_test_complete
+        "PRODUCTION_READY" -> R.string.production_ready_status
+        "DRAFT" -> R.string.draft_status
+        "INSTALL_FIRST_IMPRESSION" -> R.string.mission_first_impression
+        "CORE_FEATURE" -> R.string.mission_core_feature
+        "EDGE_CASE" -> R.string.mission_edge_case
+        "SECOND_USE" -> R.string.mission_second_use
+        "RETEST" -> R.string.mission_retest
+        "FINAL_FEEDBACK" -> R.string.mission_final_feedback
+        "COMPLETED" -> R.string.result_completed
+        "COMPLETED_WITH_DIFFICULTY" -> R.string.result_with_difficulty
+        "COULD_NOT_COMPLETE" -> R.string.result_could_not_complete
+        "PRIORITY" -> R.string.priority_support
+        else -> return pretty(value)
+    },
+)
 
 private fun pretty(value: String): String =
     value.lowercase().split("_").joinToString(" ") { it.replaceFirstChar(Char::uppercase) }

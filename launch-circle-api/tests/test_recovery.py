@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta, timezone
+import hashlib
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -7,6 +8,11 @@ from app.core.database import SessionLocal
 from app.main import app as fastapi_app
 from app.models.launch import App, CircleMember, TesterAssignment
 from app.services.clock import get_now
+
+
+def play_account_id_for_test(owner: dict, suffix: str) -> str:
+    digest = hashlib.sha256(f"{owner['id']}:{suffix}".encode()).digest()[:8]
+    return str(int.from_bytes(digest, "big"))
 
 
 def register(client: TestClient, email: str, name: str) -> dict:
@@ -51,6 +57,7 @@ def create_app(client: TestClient, owner: dict, suffix: str, target: int = 12) -
             "name": f"Recovery App {suffix}",
             "package_name": f"com.example.recovery{suffix}",
             "opt_in_url": f"https://play.google.com/apps/testing/com.example.recovery{suffix}",
+            "play_developer_account_id": play_account_id_for_test(owner, suffix),
             "tester_target": target,
         },
     )
@@ -123,7 +130,7 @@ def test_health_states_are_server_evaluated_and_deterministic(client):
             saved.health_status = "GOOD"
             db.commit()
         attention = client.get(f"/apps/{app['id']}/testers", headers=owner["headers"]).json()[0]
-        assert attention["participation_state"] == "NEEDS_ATTENTION"
+        assert attention["participation_state"] == "AT_RISK"
         with SessionLocal() as db:
             saved = db.get(TesterAssignment, row["id"])
             assert saved is not None
@@ -131,7 +138,8 @@ def test_health_states_are_server_evaluated_and_deterministic(client):
             saved.health_status = "GOOD"
             db.commit()
         inactive = client.get(f"/apps/{app['id']}/testers", headers=owner["headers"]).json()[0]
-        assert inactive["participation_state"] == "INACTIVE"
+        assert inactive["participation_state"] == "CRITICAL"
+        assert inactive["health_status"] == "CRITICAL"
     finally:
         clear_clock()
 

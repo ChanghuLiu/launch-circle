@@ -1,15 +1,19 @@
 package com.launchcircle.testers
 
 import com.launchcircle.testers.core.launch.InviteCodeValidator
+import com.launchcircle.testers.core.launch.DemoLaunchRepository
 import com.launchcircle.testers.core.model.LaunchApp
 import com.launchcircle.testers.core.model.LaunchDashboard
+import com.launchcircle.testers.core.model.parseCoreWorkflowSteps
 import com.launchcircle.testers.feature.launch.PilotUiLogic
 import com.launchcircle.testers.feature.onboarding.PilotOnboarding
+import com.launchcircle.testers.R
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlinx.coroutines.runBlocking
 
 class PilotFlowTest {
     @Test
@@ -21,10 +25,26 @@ class PilotFlowTest {
     }
 
     @Test
+    fun circleInviteCanBeCreatedWithoutSelectingAnApp() = runBlocking {
+        val invite = DemoLaunchRepository().createCircleInvite()
+
+        assertEquals("demo-circle", invite.circle_id)
+        assertTrue(invite.invite_code.isNotBlank())
+    }
+
+    @Test
+    fun coreWorkflowStepsAreTrimmedAndBlankLinesIgnored() {
+        assertEquals(
+            listOf("Open the app", "Finish the main task"),
+            parseCoreWorkflowSteps("  Open the app  \n\nFinish the main task "),
+        )
+    }
+
+    @Test
     fun onboardingHasExactlyThreeClearSteps() {
         assertEquals(3, PilotOnboarding.pages.size)
-        assertTrue(PilotOnboarding.pages.first().title.contains("12 testers"))
-        assertTrue(PilotOnboarding.pages.last().title.contains("Get tested"))
+        assertEquals(R.string.onboarding_title_1, PilotOnboarding.pages.first().title)
+        assertEquals(R.string.onboarding_title_3, PilotOnboarding.pages.last().title)
     }
 
     @Test

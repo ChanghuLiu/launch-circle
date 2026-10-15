@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, Integer, String
+from sqlalchemy import Boolean, DateTime, Integer, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -30,6 +30,14 @@ class User(Base):
         DateTime(timezone=True)
     )
     country: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    acquisition_source: Mapped[str] = mapped_column(
+        String(120), default="UNKNOWN", server_default=text("'UNKNOWN'"), nullable=False
+    )
+    acquisition_medium: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    acquisition_campaign: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    attribution_captured_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     reliability_score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     last_successful_test_at: Mapped[datetime | None] = mapped_column(

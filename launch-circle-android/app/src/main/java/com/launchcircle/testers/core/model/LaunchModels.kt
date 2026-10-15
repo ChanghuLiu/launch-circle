@@ -1,5 +1,19 @@
 package com.launchcircle.testers.core.model
 
+import java.util.Locale
+
+fun formatCheckoutAmount(cents: Int, currency: String = "USD"): String =
+    "${currency.uppercase(Locale.US)} ${String.format(Locale.US, "%.2f", cents / 100.0)}"
+
+fun managedCheckoutPriceLabel(listPrice: String?, actualPrice: String?, hasCredit: Boolean): String = when {
+    actualPrice == null -> "Loading Google Play price…"
+    hasCredit && listPrice != null -> "$listPrice list price · $actualPrice with your Managed credit"
+    else -> actualPrice
+}
+
+fun parseCoreWorkflowSteps(value: String): List<String> =
+    value.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toList()
+
 data class LaunchApp(
     val id: String,
     val owner_id: String,
@@ -11,10 +25,13 @@ data class LaunchApp(
     val tester_target: Int,
     val testing_start_at: String?,
     val testing_end_at: String?,
+    val core_workflow_steps: List<String> = emptyList(),
     val google_group_mode: String = "LAUNCH_CIRCLE",
     val google_group_configured: Boolean = false,
     val google_group_confirmed_at: String? = null,
     val circle_id: String? = null,
+    val play_developer_account_id: String? = null,
+    val entitlement_status: String = "LEGACY",
 )
 
 data class CreateAppRequest(
@@ -23,7 +40,40 @@ data class CreateAppRequest(
     val opt_in_url: String,
     val google_group_url: String?,
     val google_group_mode: String = "LAUNCH_CIRCLE",
+    val core_workflow_steps: List<String> = emptyList(),
+    val play_developer_account_id: String = "",
+    val circle_id: String? = null,
 )
+
+data class AdditionalAppCheckoutRequest(val play_developer_account_id: String)
+
+data class AdditionalAppCheckout(
+    val id: String,
+    val status: String,
+    val product_id: String,
+    val amount_total: Int = 100,
+    val currency: String = "USD",
+    val app_id: String? = null,
+)
+
+data class GooglePlayPurchaseVerification(
+    val purchase_id: String,
+    val purchase_type: String,
+    val purchase_token: String,
+)
+
+data class ManagedCheckout(
+    val id: String,
+    val status: String,
+    val app_id: String,
+    val product_id: String,
+    val list_product_id: String = "managed_launch_15",
+    val amount_total: Int = 1500,
+    val currency: String = "USD",
+    val list_price_total: Int = 1500,
+    val credit_amount: Int = 0,
+)
+
 
 data class LaunchDashboard(
     val status: String,
@@ -58,6 +108,16 @@ data class LaunchDashboard(
     val coverage_shortage: Int = 0,
     val replacement_status: String = "NONE",
     val risk_reason: String = "",
+    val tester_minutes_reported: Int = 0,
+    val developer_coordination_minutes: Int = 0,
+    val coordination_entries: Int = 0,
+    val remaining_reciprocal_missions: Int = 0,
+    val remaining_reciprocal_minutes: Int = 0,
+    val managed_offer_triggers: List<String>? = emptyList(),
+    val managed_list_price_cents: Int = 1500,
+    val managed_checkout_amount_cents: Int = 1500,
+    val managed_credit_amount_cents: Int = 0,
+    val managed_launch_purchased: Boolean = false,
 )
 
 data class TesterAssignment(
@@ -93,6 +153,8 @@ data class TestMission(
     val completed_at: String?,
     val estimated_minutes: Int,
     val assignment_status: String = "ASSIGNED",
+    val goal: String = "",
+    val steps: List<String> = emptyList(),
 )
 
 data class TestAssignment(
@@ -124,6 +186,8 @@ data class FeedbackRequest(
     val rating: Int?,
     val issue_text: String?,
     val suggestion_text: String?,
+    val completion_result: String? = null,
+    val time_spent_minutes: Int? = null,
 )
 
 data class MissionFeedback(
@@ -138,7 +202,34 @@ data class MissionFeedback(
     val issue_text: String?,
     val suggestion_text: String?,
     val created_at: String,
+    val completion_result: String? = null,
+    val time_spent_minutes: Int? = null,
 )
+
+data class WorkloadSummary(
+    val app_id: String,
+    val completed_missions: Int = 0,
+    val tester_minutes_reported: Int = 0,
+    val tester_feedback_with_time: Int = 0,
+    val tester_feedback_without_time: Int = 0,
+    val estimated_unreported_tester_minutes: Int = 0,
+    val developer_coordination_minutes: Int = 0,
+    val coordination_entries: Int = 0,
+)
+
+data class ManagedOfferSummary(
+    val app_id: String,
+    val triggers: List<String> = emptyList(),
+    val remaining_reciprocal_missions: Int = 0,
+    val remaining_reciprocal_minutes: Int = 0,
+    val managed_list_price_cents: Int = 1500,
+    val managed_checkout_amount_cents: Int = 1500,
+    val managed_credit_amount_cents: Int = 0,
+    val managed_launch_purchased: Boolean = false,
+)
+
+data class CoordinationTimeRequest(val minutes: Int, val category: String = "COORDINATION")
+data class ManagedOfferViewRequest(val trigger: String)
 
 data class InviteRequest(val invited_email: String? = null)
 

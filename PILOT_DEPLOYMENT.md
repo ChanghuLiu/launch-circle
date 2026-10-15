@@ -51,9 +51,16 @@ Generate the real JWT value on the server with `openssl rand -hex 32` and place 
 
 For Google OAuth, create an OAuth 2.0 Web client for the backend token audience and set its client ID as `GOOGLE_CLIENT_ID`. Configure the Android OAuth client for package `com.launchcircle.testers` and the signing certificate SHA-1. Pass the same Web client ID to the Android `googleServerClientId` Gradle property. No client secret belongs in the APK. Infrastructure can start before these OAuth credentials exist, but external sign-in will return a configuration error until they are supplied.
 
+#### Google Play one-time products
+
+Google Play Billing is the only payment channel. Configure the Android Publisher API for the app, grant the service account access to the Play Console app, and place its JSON credentials in the protected `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` environment value. Set `GOOGLE_PLAY_DEVELOPER_ACCOUNT_ID` to the canonical numeric publisher account ID. Before granting the first-app entitlement, the API requires that ID and verifies the service account can read the submitted package's Play review record. This check is read-only and does not change Play metadata. Never add service-account credentials to the APK or repository.
+
+Create three active one-time products in Play Console: `additional_app_1` = US$1.00, `managed_launch_15` = US$15.00, and `managed_launch_14` = US$14.00. Configure those IDs through the matching environment variables. Keep one active buy option per product and do not add separate discount offers. Android queries Google Play and displays the selected SKU's current localized price before launch; localized amounts can differ by region. The backend verifies the purchase token, order, product ID, active regional catalog entry, and the exact US base price before granting the entitlement or credit. It consumes the one-time product after granting it.
+
+A verified $1 Additional App purchase keeps its Additional App entitlement and creates one Managed discount eligibility linked to that purchase record and Google Play order ID. The $1 discount applies only to the same App created with that Additional App entitlement. Managed Launch uses the $15 SKU without eligibility and the $14 SKU for that same App. Repeated verification of the same purchase token is idempotent.
 ### 4. Initialize or preserve SQLite
 
-The service safely creates the parent and database on first start. Existing pilot upgrades must leave `/var/lib/launch-circle/launch_circle.db` in place. SQLite uses foreign keys, WAL mode, a 30-second busy timeout, and one Uvicorn process for the pilot.
+The service safely creates the parent and database on first start. Rebuild only a confirmed Launch Circle database after checking that it is dedicated to this app and contains no required records; preserve shared or non-empty databases. SQLite uses foreign keys, WAL mode, a 30-second busy timeout, and one Uvicorn process for the pilot.
 
 Install the unit:
 

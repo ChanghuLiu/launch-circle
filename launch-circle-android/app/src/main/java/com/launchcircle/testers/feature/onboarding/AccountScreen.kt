@@ -21,7 +21,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.launchcircle.testers.R
 import com.launchcircle.testers.core.model.UserProfile
 
 internal enum class DeleteConfirmationState { CLOSED, OPEN }
@@ -51,43 +53,43 @@ fun AccountScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item {
-            TextButton(onClick = onBack, enabled = !deleting) { Text("Back") }
-            Text("Account & Settings", style = MaterialTheme.typography.headlineLarge)
+            TextButton(onClick = onBack, enabled = !deleting) { Text(stringResource(R.string.back)) }
+            Text(stringResource(R.string.account_settings), style = MaterialTheme.typography.headlineLarge)
         }
-        item { SettingsSection("ACCOUNT") }
+        item { SettingsSection(stringResource(R.string.account)) }
         item {
             Card(
                 Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
             ) {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(profile.display_name ?: "Launch Circle developer", style = MaterialTheme.typography.titleLarge)
+                    Text(profile.display_name ?: stringResource(R.string.launch_circle_developer), style = MaterialTheme.typography.titleLarge)
                     Text(profile.login_email, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     profile.tester_email?.takeIf { it.isNotBlank() }?.let {
-                        Text("Tester email · $it", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.tester_email_value, it), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
         }
-        item { SettingsSection("PREFERENCES") }
+        item { SettingsSection(stringResource(R.string.preferences)) }
         item {
             Card(
                 Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
             ) {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    SettingsValue("Theme", "Follows device setting")
+                    SettingsValue(stringResource(R.string.theme), stringResource(R.string.follows_device_setting))
                     if (profile.languages.isNotEmpty()) {
-                        SettingsValue("Languages", profile.languages.joinToString(", "))
+                        SettingsValue(stringResource(R.string.languages), profile.languages.joinToString(", "))
                     }
                 }
             }
         }
-        item { SettingsSection("DANGER ZONE", destructive = true) }
+        item { SettingsSection(stringResource(R.string.danger_zone), destructive = true) }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    "Deleting your Launch Circle account permanently removes its associated data. It does not delete your Google account or Google Play apps.",
+                    stringResource(R.string.account_delete_explanation),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -97,7 +99,7 @@ fun AccountScreen(
                     modifier = Modifier.fillMaxWidth(),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                ) { Text(if (deleting) "Deleting account…" else "Delete account") }
+                ) { Text(stringResource(if (deleting) R.string.deleting_account else R.string.delete_account)) }
             }
         }
     }
@@ -107,11 +109,10 @@ fun AccountScreen(
             onDismissRequest = {
                 if (!deleting) confirmation = AccountDeletionUiLogic.cancelConfirmation()
             },
-            title = { Text("Permanently delete account?") },
+            title = { Text(stringResource(R.string.permanently_delete_account_question)) },
             text = {
                 Text(
-                    "Your Launch Circle account and associated Launch Circle data will be permanently removed. " +
-                        "This does not delete your Google account or remove apps from Google Play.",
+                    stringResource(R.string.account_delete_confirmation),
                 )
             },
             confirmButton = {
@@ -122,13 +123,13 @@ fun AccountScreen(
                     },
                     enabled = !deleting,
                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                ) { Text("Delete permanently") }
+                ) { Text(stringResource(R.string.delete_permanently)) }
             },
             dismissButton = {
                 TextButton(
                     onClick = { confirmation = AccountDeletionUiLogic.cancelConfirmation() },
                     enabled = !deleting,
-                ) { Text("Cancel") }
+                ) { Text(stringResource(R.string.cancel)) }
             },
         )
     }

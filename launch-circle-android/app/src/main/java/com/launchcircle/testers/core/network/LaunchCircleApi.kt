@@ -2,11 +2,19 @@ package com.launchcircle.testers.core.network
 
 import com.launchcircle.testers.core.model.DeviceUpdateRequest
 import com.launchcircle.testers.core.model.CreateAppRequest
+import com.launchcircle.testers.core.model.AdditionalAppCheckout
+import com.launchcircle.testers.core.model.AdditionalAppCheckoutRequest
+import com.launchcircle.testers.core.model.GooglePlayPurchaseVerification
 import com.launchcircle.testers.core.model.FeedbackRequest
 import com.launchcircle.testers.core.model.LaunchApp
 import com.launchcircle.testers.core.model.LaunchDashboard
 import com.launchcircle.testers.core.model.LaunchInvite
 import com.launchcircle.testers.core.model.LaunchCircle
+import com.launchcircle.testers.core.model.CoordinationTimeRequest
+import com.launchcircle.testers.core.model.WorkloadSummary
+import com.launchcircle.testers.core.model.ManagedOfferViewRequest
+import com.launchcircle.testers.core.model.ManagedOfferSummary
+import com.launchcircle.testers.core.model.ManagedCheckout
 import com.launchcircle.testers.core.model.MissionFeedback
 import com.launchcircle.testers.core.model.MatchingResult
 import com.launchcircle.testers.core.model.TestMission
@@ -75,14 +83,61 @@ interface LaunchCircleApi {
     @POST("apps")
     suspend fun createApp(@Header("Authorization") authorization: String, @Body body: CreateAppRequest): LaunchApp
 
+    @POST("payments/additional-app-checkout")
+    suspend fun createAdditionalAppCheckout(
+        @Header("Authorization") authorization: String,
+        @Body body: AdditionalAppCheckoutRequest,
+    ): AdditionalAppCheckout
+
+    @GET("payments/additional-app-checkout/{purchaseId}")
+    suspend fun additionalAppCheckout(
+        @Header("Authorization") authorization: String,
+        @Path("purchaseId") purchaseId: String,
+    ): AdditionalAppCheckout
+
+    @POST("apps/{appId}/managed-checkout")
+    suspend fun createManagedCheckout(
+        @Header("Authorization") authorization: String,
+        @Path("appId") appId: String,
+    ): ManagedCheckout
+
+    @GET("payments/managed-checkout/{checkoutId}")
+    suspend fun managedCheckout(
+        @Header("Authorization") authorization: String,
+        @Path("checkoutId") checkoutId: String,
+    ): ManagedCheckout
+
+    @POST("payments/google-play/verify")
+    suspend fun verifyGooglePlayPurchase(
+        @Header("Authorization") authorization: String,
+        @Body body: GooglePlayPurchaseVerification,
+    ): Map<String, Any>
+
     @POST("apps/{appId}/google-group/confirm")
     suspend fun confirmGoogleGroup(@Header("Authorization") authorization: String, @Path("appId") appId: String, @Body body: GoogleGroupConfirmationRequest = GoogleGroupConfirmationRequest()): LaunchApp
 
     @GET("apps/{appId}/dashboard")
     suspend fun dashboard(@Header("Authorization") authorization: String, @Path("appId") appId: String): LaunchDashboard
 
+    @POST("apps/{appId}/coordination-time")
+    suspend fun recordCoordinationTime(
+        @Header("Authorization") authorization: String,
+        @Path("appId") appId: String,
+        @Body body: CoordinationTimeRequest,
+    ): WorkloadSummary
+
+    @POST("apps/{appId}/managed-offer/viewed")
+    suspend fun recordManagedOfferViewed(
+        @Header("Authorization") authorization: String,
+        @Path("appId") appId: String,
+        @Body body: ManagedOfferViewRequest,
+    ): ManagedOfferSummary
+
     @GET("apps/{appId}/circle")
     suspend fun appCircle(@Header("Authorization") authorization: String, @Path("appId") appId: String): LaunchCircle
+
+    @GET("circles")
+    suspend fun circles(@Header("Authorization") authorization: String): List<LaunchCircle>
 
     @GET("circles/{circleId}")
     suspend fun circle(@Header("Authorization") authorization: String, @Path("circleId") circleId: String): LaunchCircle

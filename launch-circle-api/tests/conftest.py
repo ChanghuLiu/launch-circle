@@ -24,5 +24,8 @@ def reset_database():
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
+    # API integration tests use a fake publisher check; service-level tests
+    # cover Android Publisher request behavior without touching Play.
+    monkeypatch.setattr("app.api.phase0.verify_app_package_ownership", lambda *_args: None)
     return TestClient(app)

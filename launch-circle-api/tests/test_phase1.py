@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import hashlib
 
 import pytest
 from sqlalchemy import select
@@ -10,6 +11,11 @@ from app.models.user import User
 from app.services.clock import get_now
 
 PASSWORD = "strong-password"
+
+
+def play_account_id_for_test(owner: dict, suffix: str) -> str:
+    digest = hashlib.sha256(f"{owner['id']}:{suffix}".encode()).digest()[:8]
+    return str(int.from_bytes(digest, "big"))
 
 
 def register(client, index: int, name: str | None = None) -> dict:
@@ -32,6 +38,7 @@ def create_app(client, owner: dict, target: int = 15, suffix: str = "main") -> d
             "name": "Phase 1 Analyzer",
             "package_name": f"com.launchcircle.phase1.{suffix}",
             "opt_in_url": f"https://play.google.com/apps/testing/com.launchcircle.phase1.{suffix}",
+            "play_developer_account_id": play_account_id_for_test(owner, suffix),
             "tester_target": target,
         },
     )

@@ -2,6 +2,7 @@ from datetime import date, datetime, timezone
 from uuid import uuid4
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     CheckConstraint,
     Date,
@@ -11,6 +12,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -26,17 +28,64 @@ def new_id() -> str:
     return str(uuid4())
 
 
+class DeveloperAccount(Base):
+    __tablename__ = "developer_accounts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    play_developer_account_id: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    identity_method: Mapped[str] = mapped_column(
+        String(24), default="USER_PROVIDED", server_default=text("'USER_PROVIDED'"), nullable=False
+    )
+    verification_status: Mapped[str] = mapped_column(
+        String(24), default="UNVERIFIED", server_default=text("'UNVERIFIED'"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    first_free_claimed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    apps = relationship("App", back_populates="developer_account")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "play_developer_account_id",
+            name="uq_developer_accounts_play_developer_account_id",
+        ),
+        CheckConstraint(
+            "identity_method IN ('USER_PROVIDED','PUBLIC_PUBLISHER')",
+            name="ck_developer_accounts_identity_method",
+        ),
+        CheckConstraint(
+            "verification_status IN ('UNVERIFIED','VERIFIED')",
+            name="ck_developer_accounts_verification_status",
+        ),
+    )
+
+
 class App(Base):
     __tablename__ = "apps"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     owner_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    developer_account_id: Mapped[str | None] = mapped_column(
+        ForeignKey("developer_accounts.id", ondelete="SET NULL"), index=True, nullable=True
+    )
+    entitlement_status: Mapped[str] = mapped_column(
+        String(24), default="LEGACY", server_default=text("'LEGACY'"), nullable=False
+    )
     circle_id: Mapped[str | None] = mapped_column(
         ForeignKey("circles.id", ondelete="SET NULL"), index=True, nullable=True
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     package_name: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     opt_in_url: Mapped[str] = mapped_column(Text, nullable=False)
+    core_workflow_steps: Mapped[list[str]] = mapped_column(
+        JSON, default=list, server_default=text("'[]'"), nullable=False
+    )
     google_group_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     google_group_mode: Mapped[str] = mapped_column(
         String(24), default="LAUNCH_CIRCLE", nullable=False
@@ -46,7 +95,7 @@ class App(Base):
         DateTime(timezone=True), nullable=True
     )
     status: Mapped[str] = mapped_column(String(32), default="WAITING_FOR_TESTERS", nullable=False)
-    tester_target: Mapped[int] = mapped_column(Integer, default=15, nullable=False)
+    tester_target: Mapped[int] = mapped_column(Integer, default=14, nullable=False)
     testing_start_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -68,6 +117,7 @@ class App(Base):
     )
 
     owner = relationship("User", back_populates="owned_apps")
+    developer_account = relationship("DeveloperAccount", back_populates="apps")
     circle = relationship("Circle", back_populates="apps")
     assignments = relationship(
         "TesterAssignment", back_populates="app", cascade="all, delete-orphan"
@@ -75,8 +125,22 @@ class App(Base):
     feedback_entries = relationship("Feedback", back_populates="app", cascade="all, delete-orphan")
     changes = relationship("AppChange", back_populates="app", cascade="all, delete-orphan")
     events = relationship("BackendEvent", back_populates="app", cascade="all, delete-orphan")
+    coordination_logs = relationship(
+        "DeveloperCoordinationLog", back_populates="app", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
+        CheckConstraint(
+            "entitlement_status IN ('LEGACY','FIRST_APP_FREE','ADDITIONAL_PAID','MANAGED')",
+            name="ck_apps_entitlement_status",
+        ),
+        Index(
+            "uq_apps_first_app_free_per_developer_account",
+            "developer_account_id",
+            unique=True,
+            sqlite_where=text("entitlement_status = 'FIRST_APP_FREE'"),
+            postgresql_where=text("entitlement_status = 'FIRST_APP_FREE'"),
+        ),
         CheckConstraint(
             "status IN ('DRAFT','WAITING_FOR_TESTERS','TESTING','AT_RISK',"
             "'TESTING_COMPLETE','PRODUCTION_READY')",
@@ -86,6 +150,140 @@ class App(Base):
         CheckConstraint(
             "google_group_mode IN (\x27LAUNCH_CIRCLE\x27,\x27OWN_GROUP\x27,\x27EMAIL_LIST\x27)",
             name="ck_apps_google_group_mode",
+        ),
+    )
+
+
+class AdditionalAppPurchase(Base):
+    __tablename__ = "additional_app_purchases"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    developer_account_id: Mapped[str] = mapped_column(
+        ForeignKey("developer_accounts.id", ondelete="CASCADE"), index=True
+    )
+    google_play_purchase_token: Mapped[str | None] = mapped_column(String(512), unique=True, nullable=True)
+    google_play_order_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
+    google_play_product_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(16), default="PENDING", server_default=text("'PENDING'"), nullable=False
+    )
+    amount_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    app_id: Mapped[str | None] = mapped_column(
+        ForeignKey("apps.id", ondelete="SET NULL"), unique=True, nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('PENDING','PAID','CONSUMED','FAILED','EXPIRED')",
+            name="ck_additional_app_purchases_status",
+        ),
+        Index(
+            "ix_additional_app_purchases_owner_status",
+            "owner_id",
+            "developer_account_id",
+            "status",
+        ),
+    )
+
+
+class ManagedCredit(Base):
+    """A single Managed Launch discount earned from one paid Additional App test payment."""
+
+    __tablename__ = "managed_credits"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    developer_account_id: Mapped[str] = mapped_column(
+        ForeignKey("developer_accounts.id", ondelete="CASCADE"), index=True
+    )
+    source_additional_app_purchase_id: Mapped[str] = mapped_column(
+        ForeignKey("additional_app_purchases.id", ondelete="CASCADE"), unique=True, nullable=False
+    )
+    source_google_play_order_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(16), default="AVAILABLE", server_default=text("'AVAILABLE'"), nullable=False
+    )
+    redeemed_app_id: Mapped[str | None] = mapped_column(
+        ForeignKey("apps.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    redeemed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("status IN ('AVAILABLE','REDEEMED')", name="ck_managed_credits_status"),
+        Index("ix_managed_credits_owner_status", "owner_id", "status"),
+    )
+
+
+class ManagedCheckout(Base):
+    """A one-time Google Play Managed Launch purchase for one app."""
+
+    __tablename__ = "managed_checkouts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    app_id: Mapped[str] = mapped_column(ForeignKey("apps.id", ondelete="CASCADE"), index=True)
+    managed_credit_id: Mapped[str | None] = mapped_column(
+        ForeignKey("managed_credits.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    google_play_purchase_token: Mapped[str | None] = mapped_column(String(512), unique=True, nullable=True)
+    google_play_order_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
+    google_play_product_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(16), default="PENDING", server_default=text("'PENDING'"), nullable=False
+    )
+    list_price_total: Mapped[int] = mapped_column(Integer, default=1500, server_default=text("1500"), nullable=False)
+    amount_total: Mapped[int] = mapped_column(Integer, default=1500, nullable=False)
+    credit_amount: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="usd", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('PENDING','PAID','FAILED','EXPIRED')",
+            name="ck_managed_checkouts_status",
+        ),
+        CheckConstraint(
+            "list_price_total = 1500 AND credit_amount IN (0,100) "
+            "AND amount_total = list_price_total - credit_amount AND currency = 'usd' "
+            "AND ((credit_amount = 0 AND managed_credit_id IS NULL) "
+            "OR (credit_amount = 100 AND managed_credit_id IS NOT NULL))",
+            name="ck_managed_checkouts_pricing",
+        ),
+        Index(
+            "uq_managed_checkouts_pending_credit",
+            "managed_credit_id",
+            unique=True,
+            sqlite_where=text("managed_credit_id IS NOT NULL AND status = 'PENDING'"),
+            postgresql_where=text("managed_credit_id IS NOT NULL AND status = 'PENDING'"),
+        ),
+        Index(
+            "uq_managed_checkouts_pending_app",
+            "app_id",
+            unique=True,
+            sqlite_where=text("status = 'PENDING'"),
+            postgresql_where=text("status = 'PENDING'"),
+        ),
+        Index(
+            "uq_managed_checkouts_paid_app",
+            "app_id",
+            unique=True,
+            sqlite_where=text("status = 'PAID'"),
+            postgresql_where=text("status = 'PAID'"),
         ),
     )
 
@@ -192,6 +390,8 @@ class Feedback(Base):
     app_id: Mapped[str] = mapped_column(ForeignKey("apps.id", ondelete="CASCADE"), index=True)
     launch_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     core_feature_ok: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    completion_result: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    time_spent_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
     issue_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     suggestion_text: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -210,6 +410,35 @@ class Feedback(Base):
         CheckConstraint(
             "core_feature_ok IS NULL OR core_feature_ok IN ('YES','PARTLY','NO')",
             name="ck_feedback_core_feature_ok",
+        ),
+        CheckConstraint(
+            "completion_result IS NULL OR completion_result IN "
+            "('COMPLETED','COMPLETED_WITH_DIFFICULTY','COULD_NOT_COMPLETE')",
+            name="ck_feedback_completion_result",
+        ),
+    )
+
+
+class DeveloperCoordinationLog(Base):
+    __tablename__ = "developer_coordination_logs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    app_id: Mapped[str] = mapped_column(ForeignKey("apps.id", ondelete="CASCADE"), index=True)
+    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    category: Mapped[str] = mapped_column(String(24), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+
+    app = relationship("App", back_populates="coordination_logs")
+    owner = relationship("User")
+
+    __table_args__ = (
+        CheckConstraint("minutes >= 1 AND minutes <= 480", name="ck_coordination_log_minutes"),
+        CheckConstraint(
+            "category IN ('COORDINATION','REPLACEMENT','RETEST','OTHER')",
+            name="ck_coordination_log_category",
         ),
     )
 
@@ -301,7 +530,7 @@ class CircleMember(Base):
         CheckConstraint(
             "status IN ('ACTIVE','LEFT','REMOVED')", name="ck_circle_members_status"
         ),
-        Index("uq_circle_member_user", "circle_id", "user_id", unique=True),
+        UniqueConstraint("circle_id", "user_id", name="uq_circle_member_user"),
     )
 
 

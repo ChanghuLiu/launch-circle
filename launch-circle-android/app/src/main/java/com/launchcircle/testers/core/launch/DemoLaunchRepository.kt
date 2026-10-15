@@ -1,6 +1,7 @@
 package com.launchcircle.testers.core.launch
 
 import com.launchcircle.testers.core.model.CreateAppRequest
+import com.launchcircle.testers.core.model.AdditionalAppCheckout
 import com.launchcircle.testers.core.model.FeedbackRequest
 import com.launchcircle.testers.core.model.LaunchApp
 import com.launchcircle.testers.core.model.LaunchDashboard
@@ -13,6 +14,9 @@ import com.launchcircle.testers.core.model.PilotConfig
 import com.launchcircle.testers.core.model.TestMission
 import com.launchcircle.testers.core.model.TestAssignment
 import com.launchcircle.testers.core.model.TesterAssignment
+import com.launchcircle.testers.core.model.WorkloadSummary
+import com.launchcircle.testers.core.model.ManagedOfferSummary
+import com.launchcircle.testers.core.model.ManagedCheckout
 
 class DemoLaunchRepository : LaunchRepository {
     private val config = PilotConfig()
@@ -28,14 +32,20 @@ class DemoLaunchRepository : LaunchRepository {
             "mission-1", "assignment-1", "notes", "Notes Escape",
             "https://play.google.com/apps/testing/com.demo.notes", "CORE_FEATURE",
             3, "AVAILABLE", null, null, 5, "ACTIVE",
+            goal = "Complete the main workflow in Notes Escape.",
+            steps = listOf("Open a note.", "Save it and confirm it appears in the list."),
         ),
         TestMission(
             "mission-2", "assignment-2", "camera", "Hidden Camera Detector",
             "https://play.google.com/apps/testing/com.demo.camera", "INSTALL_FIRST_IMPRESSION",
             1, "AVAILABLE", null, null, 3,
+            goal = "See how easy it is to get started with Hidden Camera Detector.",
+            steps = listOf("Open the app.", "Try its first main action.", "Note anything confusing."),
         ),
     )
     private val feedbackRows = mutableListOf<MissionFeedback>()
+    private var developerCoordinationMinutes = 0
+    private var coordinationEntries = 0
     private var invite = LaunchInvite(
         "invite-1", "LC-8H4K2", "PENDING",
         "https://launchcircle.app/join/LC-8H4K2",
@@ -56,7 +66,28 @@ class DemoLaunchRepository : LaunchRepository {
     override suspend fun pilotConfig() = config
     override suspend fun launches() = apps.toList()
 
+    override suspend fun createAdditionalAppCheckout(developerAccountId: String): AdditionalAppCheckout =
+        throw IllegalStateException("Checkout is available only with the real backend.")
+
+    override suspend fun additionalAppCheckout(purchaseId: String): AdditionalAppCheckout =
+        throw IllegalStateException("Checkout is available only with the real backend.")
+
+    override suspend fun createManagedCheckout(appId: String): ManagedCheckout =
+        throw IllegalStateException("Checkout is available only with the real backend.")
+
+    override suspend fun managedCheckout(checkoutId: String): ManagedCheckout =
+        throw IllegalStateException("Checkout is available only with the real backend.")
+
+    override suspend fun verifyGooglePlayPurchase(purchaseId: String, purchaseType: String, purchaseToken: String) {
+        throw IllegalStateException("Google Play purchases are available only with the real backend.")
+    }
+
     override suspend fun createApp(request: CreateAppRequest): LaunchApp {
+        if (apps.any { it.play_developer_account_id == request.play_developer_account_id }) {
+            throw IllegalStateException(
+                "This Developer Account already used its free app. Additional apps cost \$1; checkout isn't available yet."
+            )
+        }
         val app = LaunchApp(
             id = "demo-" + (apps.size + 1),
             owner_id = "demo-owner",
@@ -65,25 +96,52 @@ class DemoLaunchRepository : LaunchRepository {
             opt_in_url = request.opt_in_url,
             google_group_url = request.google_group_url ?: config.google_group_join_url,
             status = "WAITING_FOR_TESTERS",
-            tester_target = 15,
+            tester_target = 14,
             testing_start_at = null,
             testing_end_at = null,
+            core_workflow_steps = request.core_workflow_steps,
             google_group_mode = request.google_group_mode,
+            circle_id = request.circle_id ?: circle.id,
+            play_developer_account_id = request.play_developer_account_id,
+            entitlement_status = "FIRST_APP_FREE",
         )
         apps.add(0, app)
         return app
     }
 
-    override suspend fun dashboard(appId: String): LaunchDashboard = when (appId) {
-        "cold" -> dashboard("WAITING_FOR_TESTERS", 0, 0, 0, 15, 0)
-        "early" -> dashboard("WAITING_FOR_TESTERS", 5, 5, 32, 9, 0)
-        "healthy" -> dashboard("TESTING", 13, 15, 64, 8, 6, missions = 21, available = 25)
-        "risk" -> dashboard("AT_RISK", 12, 15, 55, 8, 6, risk = 2, replacements = 1)
-        "ready" -> dashboard("PRODUCTION_READY", 13, 15, 100, 0, 14, missions = 78, available = 78)
-        else -> dashboard("WAITING_FOR_TESTERS", 0, 0, 15, 14, 0)
+    override suspend fun dashboard(appId: String): LaunchDashboard {
+        val value = when (appId) {
+            "cold" -> dashboard("WAITING_FOR_TESTERS", 0, 0, 0, 15, 0)
+            "early" -> dashboard("WAITING_FOR_TESTERS", 5, 5, 32, 9, 0)
+            "healthy" -> dashboard("TESTING", 13, 15, 64, 8, 6, missions = 21, available = 25)
+            "risk" -> dashboard("AT_RISK", 12, 15, 55, 8, 6, risk = 2, replacements = 1)
+            "ready" -> dashboard("PRODUCTION_READY", 13, 15, 100, 0, 14, missions = 78, available = 78)
+            else -> dashboard("WAITING_FOR_TESTERS", 0, 0, 15, 14, 0)
+        }
+        return value.copy(
+            tester_minutes_reported = feedbackRows.sumOf { it.time_spent_minutes ?: 0 },
+            developer_coordination_minutes = developerCoordinationMinutes,
+            coordination_entries = coordinationEntries,
+        )
     }
 
+    override suspend fun recordCoordinationTime(
+        appId: String,
+        minutes: Int,
+        category: String,
+    ) = WorkloadSummary(
+        app_id = appId,
+        developer_coordination_minutes = (developerCoordinationMinutes + minutes).also {
+            developerCoordinationMinutes = it
+        },
+        coordination_entries = (coordinationEntries + 1).also { coordinationEntries = it },
+    )
+
+    override suspend fun recordManagedOfferViewed(appId: String, trigger: String) =
+        ManagedOfferSummary(app_id = appId, triggers = listOf(trigger))
+
     override suspend fun circle(appId: String) = circle
+    override suspend fun circles() = listOf(circle)
 
     override suspend fun confirmGoogleGroup(appId: String): LaunchApp {
         val index = apps.indexOfFirst { it.id == appId }
@@ -146,10 +204,14 @@ class DemoLaunchRepository : LaunchRepository {
             "notes", "CORE_FEATURE", request.launch_ok,
             request.core_feature_ok, request.rating, request.issue_text,
             request.suggestion_text, "2026-08-19T12:00:00Z",
+            completion_result = request.completion_result,
+            time_spent_minutes = request.time_spent_minutes,
         )
         feedbackRows += row
         return row
     }
+
+    override suspend fun createCircleInvite() = invite.copy(circle_id = circle.id)
 
     override suspend fun createInvite(appId: String) = invite.copy(circle_id = circle.id)
 

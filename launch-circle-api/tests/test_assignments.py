@@ -1,4 +1,5 @@
 from datetime import date, datetime, timezone
+import hashlib
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -7,6 +8,11 @@ from app.core.database import SessionLocal
 from app.main import app as fastapi_app
 from app.models.launch import CircleMember, TesterAssignment as DbTesterAssignment
 from app.services.clock import get_now
+
+
+def play_account_id_for_test(owner: dict, suffix: str) -> str:
+    digest = hashlib.sha256(f"{owner['id']}:{suffix}".encode()).digest()[:8]
+    return str(int.from_bytes(digest, "big"))
 
 
 def register(client: TestClient, email: str, name: str) -> dict:
@@ -38,6 +44,7 @@ def create_app(client: TestClient, owner: dict, suffix: str) -> dict:
             "name": f"Assignment App {suffix}",
             "package_name": f"com.example.assignment{package_suffix}",
             "opt_in_url": f"https://play.google.com/apps/testing/com.example.assignment{package_suffix}",
+            "play_developer_account_id": play_account_id_for_test(owner, package_suffix),
         },
     )
     assert response.status_code == 201, response.text

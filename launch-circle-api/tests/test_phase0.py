@@ -21,16 +21,22 @@ def register(client, email: str, display_name: str) -> dict:
     }
 
 
-def create_launch(client, owner: dict) -> dict:
+def create_launch(
+    client, owner: dict, core_workflow_steps: list[str] | None = None
+) -> dict:
+    request_body = {
+        "name": "BLE Signal Analyzer",
+        "package_name": "com.example.bleanalyzer",
+        "opt_in_url": "https://play.google.com/apps/testing/com.example.bleanalyzer",
+        "play_developer_account_id": "1000000000000000001",
+        "google_group_url": "https://groups.google.com/g/ble-testers",
+    }
+    if core_workflow_steps is not None:
+        request_body["core_workflow_steps"] = core_workflow_steps
     response = client.post(
         "/apps",
         headers=owner["headers"],
-        json={
-            "name": "BLE Signal Analyzer",
-            "package_name": "com.example.bleanalyzer",
-            "opt_in_url": "https://play.google.com/apps/testing/com.example.bleanalyzer",
-            "google_group_url": "https://groups.google.com/g/ble-testers",
-        },
+        json=request_body,
     )
     assert response.status_code == 201, response.text
     return response.json()
@@ -53,7 +59,13 @@ def join_circle(client, owner: dict, member: dict) -> None:
 def test_phase0_vertical_slice_and_cold_start_dashboard(client):
     owner = register(client, "owner@example.com", "Developer A")
     tester = register(client, "tester@example.com", "Developer B")
-    app = create_launch(client, owner)
+    workflow = [
+        "Open the signal scan screen.",
+        "Scan for nearby BLE devices.",
+        "Open a device and inspect its signal details.",
+    ]
+    app = create_launch(client, owner, workflow)
+    assert app["core_workflow_steps"] == workflow
     join_circle(client, owner, tester)
 
     cold = client.get(f"/apps/{app['id']}/dashboard", headers=owner["headers"])
@@ -86,6 +98,10 @@ def test_phase0_vertical_slice_and_cold_start_dashboard(client):
     )
     first = missions.json()[0]
     assert first["status"] == "AVAILABLE"
+    core_mission = missions.json()[1]
+    assert core_mission["goal"] == "Complete the main workflow in BLE Signal Analyzer."
+    assert core_mission["steps"] == workflow
+    assert len(first["steps"]) <= 4
 
     today = client.get("/test-missions/today", headers=tester["headers"])
     assert today.status_code == 200
@@ -101,13 +117,17 @@ def test_phase0_vertical_slice_and_cold_start_dashboard(client):
         json={
             "launch_ok": True,
             "core_feature_ok": "partly",
+            "completion_result": "completed_with_difficulty",
             "rating": 4,
             "issue_text": "Permission explanation was unclear.",
             "suggestion_text": "Add a short onboarding note.",
+            "time_spent_minutes": 7,
         },
     )
     assert submitted.status_code == 201, submitted.text
     assert submitted.json()["core_feature_ok"] == "PARTLY"
+    assert submitted.json()["completion_result"] == "COMPLETED_WITH_DIFFICULTY"
+    assert submitted.json()["time_spent_minutes"] == 7
     assert submitted.json()["tester_label"].startswith("Tester #")
 
     feedback = client.get(f"/apps/{app['id']}/feedback", headers=owner["headers"])
@@ -125,6 +145,28 @@ def test_phase0_vertical_slice_and_cold_start_dashboard(client):
     assert data["completed_missions"] == 1
     assert data["feedback_count"] == 1
     assert data["production_readiness"] == 30
+    assert data["tester_minutes_reported"] == 7
+
+    coordination = client.post(
+        f"/apps/{app['id']}/coordination-time",
+        headers=owner["headers"],
+        json={"minutes": 13, "category": "COORDINATION"},
+    )
+    assert coordination.status_code == 201, coordination.text
+    assert coordination.json()["developer_coordination_minutes"] == 13
+    assert coordination.json()["coordination_entries"] == 1
+
+    workload = client.get(f"/apps/{app['id']}/workload", headers=owner["headers"])
+    assert workload.status_code == 200, workload.text
+    assert workload.json()["tester_minutes_reported"] == 7
+    assert workload.json()["developer_coordination_minutes"] == 13
+
+    viewed = client.post(
+        f"/apps/{app['id']}/managed-offer/viewed",
+        headers=owner["headers"],
+        json={"trigger": "PRIORITY"},
+    )
+    assert viewed.status_code == 200, viewed.text
 
 
 def test_owner_assignment_and_duplicate_assignment_are_rejected(client):

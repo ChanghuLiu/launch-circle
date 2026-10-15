@@ -56,6 +56,7 @@ def test_owner_circle_persists_and_fifteen_active_members_are_capacity_bound(cli
             "name": "Circle App",
             "package_name": "com.example.circleapp",
             "opt_in_url": "https://play.google.com/apps/testing/com.example.circleapp",
+            "play_developer_account_id": "1000000000000000003",
         },
     )
     assert app_response.status_code == 201, app_response.text
@@ -105,6 +106,60 @@ def test_invite_rejects_self_reuse_and_expiry_and_acceptance_is_idempotent(clien
         fastapi_app.dependency_overrides.pop(get_now, None)
 
 
+def test_joined_member_can_create_an_app_in_shared_circle_with_fourteen_tester_target(client):
+    owner = register(client, "shared-circle-owner@example.com", "Owner")
+    member = register(client, "shared-circle-member@example.com", "Member")
+    invite = create_circle_invite(client, owner, member["email"])
+    accepted = accept(client, invite, member)
+    assert accepted.status_code == 200, accepted.text
+    circle_id = accepted.json()["circle_id"]
+
+    member_circles = client.get("/circles", headers=member["headers"])
+    assert member_circles.status_code == 200
+    assert circle_id in {circle["id"] for circle in member_circles.json()}
+
+    created = client.post(
+        "/apps",
+        headers=member["headers"],
+        json={
+            "name": "Shared Circle App",
+            "package_name": "com.example.sharedcircleapp",
+            "opt_in_url": "https://play.google.com/apps/testing/com.example.sharedcircleapp",
+            "play_developer_account_id": "1000000000000000024",
+            "circle_id": circle_id,
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["circle_id"] == circle_id
+    assert created.json()["tester_target"] == 14
+
+    matched = client.post(
+        f"/apps/{created.json()['id']}/match-testers",
+        headers=member["headers"],
+    )
+    assert matched.status_code == 200, matched.text
+    assert matched.json()["assigned_now"] == 1
+    testers = client.get(
+        f"/apps/{created.json()['id']}/testers",
+        headers=member["headers"],
+    )
+    assert [row["tester_id"] for row in testers.json()] == [owner["id"]]
+
+    outsider = register(client, "shared-circle-outsider@example.com", "Outsider")
+    denied = client.post(
+        "/apps",
+        headers=outsider["headers"],
+        json={
+            "name": "Unauthorized Circle App",
+            "package_name": "com.example.unauthorizedcircleapp",
+            "opt_in_url": "https://play.google.com/apps/testing/com.example.unauthorizedcircleapp",
+            "play_developer_account_id": "1000000000000000025",
+            "circle_id": circle_id,
+        },
+    )
+    assert denied.status_code == 403
+
+
 def test_matching_only_uses_active_members_of_the_app_circle(client):
     owner = register(client, "matching-owner@example.com", "Owner")
     member = register(client, "matching-member@example.com", "Member")
@@ -119,6 +174,7 @@ def test_matching_only_uses_active_members_of_the_app_circle(client):
             "name": "Matching App",
             "package_name": "com.example.matchingapp",
             "opt_in_url": "https://play.google.com/apps/testing/com.example.matchingapp",
+            "play_developer_account_id": "1000000000000000004",
             "tester_target": 15,
         },
     )

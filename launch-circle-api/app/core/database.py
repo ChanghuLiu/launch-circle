@@ -66,6 +66,10 @@ def ensure_sqlite_phase1_schema() -> None:
         "users": {
             "is_active": "BOOLEAN NOT NULL DEFAULT 1",
             "last_successful_test_at": "DATETIME",
+            "acquisition_source": "VARCHAR(120) NOT NULL DEFAULT 'UNKNOWN'",
+            "acquisition_medium": "VARCHAR(120)",
+            "acquisition_campaign": "VARCHAR(120)",
+            "attribution_captured_at": "DATETIME",
         },
         "apps": {
             "report_generated_at": "DATETIME",
@@ -75,6 +79,13 @@ def ensure_sqlite_phase1_schema() -> None:
             "google_group_mode": "VARCHAR(24) NOT NULL DEFAULT \x27LAUNCH_CIRCLE\x27",
             "google_group_configured": "BOOLEAN NOT NULL DEFAULT 0",
             "google_group_confirmed_at": "DATETIME",
+            "core_workflow_steps": "JSON NOT NULL DEFAULT '[]'",
+            "developer_account_id": "VARCHAR(36) REFERENCES developer_accounts(id) ON DELETE SET NULL",
+            "entitlement_status": "VARCHAR(24) NOT NULL DEFAULT 'LEGACY'",
+        },
+        "feedback": {
+            "completion_result": "VARCHAR(32)",
+            "time_spent_minutes": "INTEGER",
         },
         "tester_assignments": {
             "circle_id": "VARCHAR(36) REFERENCES circles(id) ON DELETE SET NULL",
@@ -101,6 +112,15 @@ def ensure_sqlite_phase1_schema() -> None:
                     connection.exec_driver_sql(
                         f"ALTER TABLE \"{table}\" ADD COLUMN \"{column}\" {definition}"
                     )
+        connection.exec_driver_sql(
+            'CREATE INDEX IF NOT EXISTS ix_apps_developer_account_id '
+            'ON "apps" (developer_account_id)'
+        )
+        connection.exec_driver_sql(
+            'CREATE UNIQUE INDEX IF NOT EXISTS uq_apps_first_app_free_per_developer_account '
+            'ON "apps" (developer_account_id) '
+            "WHERE entitlement_status = 'FIRST_APP_FREE'"
+        )
         # Backfill one durable owner circle and owner membership for existing
         # accounts, then associate legacy apps and invites with that circle.
         users = connection.exec_driver_sql('SELECT id, display_name FROM "users"').all()

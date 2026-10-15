@@ -31,6 +31,7 @@ def create_launch(client, owner: dict) -> dict:
             "name": "Pilot App",
             "package_name": "com.launchcircle.pilot",
             "opt_in_url": "https://play.google.com/apps/testing/com.launchcircle.pilot",
+            "play_developer_account_id": "1000000000000000002",
         },
     )
     assert response.status_code == 201, response.text

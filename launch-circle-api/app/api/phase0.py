@@ -13,48 +13,93 @@ from app.core.config import Settings, get_settings
 from app.core.database import get_db
 from app.core.security import create_access_token, create_refresh_token, get_current_user
 from app.models.launch import (
-    App, AppChange, BackendEvent, Circle, CircleMember, Feedback, Invite, TesterAssignment,
+    AdditionalAppPurchase,
+    App,
+    AppChange,
+    BackendEvent,
+    Circle,
+    CircleMember,
+    DeveloperAccount,
+    DeveloperCoordinationLog,
+    Feedback,
+    Invite,
+    ManagedCheckout,
+    ManagedCredit,
+    TesterAssignment,
     TestMission,
 )
 from app.models.user import User
 from app.schemas.auth import TokenPair
 from app.schemas.phase0 import (
+    AdditionalAppCheckoutCreate,
+    AdditionalAppCheckoutRead,
     AppChangeCreate,
     AppChangeRead,
     AppCreate,
     AppRead,
     AppUpdate,
+    AssignmentCoverageRead,
     AssignmentRead,
     CircleMemberRead,
     CircleRead,
+    CoordinationTimeCreate,
     DashboardRead,
-    DropAssignmentRequest,
     DevelopmentUserRead,
+    DropAssignmentRequest,
     FeedbackCreate,
     FeedbackRead,
+    GoogleGroupConfirmation,
+    GooglePlayPurchaseVerify,
+    HealthRefreshRead,
     InviteCreate,
     InviteRead,
-    AssignmentCoverageRead,
-    HealthRefreshRead,
-    GoogleGroupConfirmation,
     LoginRequest,
+    ManagedCheckoutRead,
+    ManagedOfferRead,
+    ManagedOfferViewCreate,
     MatchingRead,
     MissionRead,
     PilotConfigRead,
     RegisterRequest,
     TestAssignmentRead,
+    WorkloadRead,
 )
 from app.services.assignments import assignment_day, todays_assignments
+from app.services.circles import (
+    CIRCLE_MAX_MEMBERS,
+    active_member,
+    active_member_count,
+    ensure_owner_circle,
+)
 from app.services.clock import aware, get_now
-from app.services.circles import CIRCLE_MAX_MEMBERS, active_member, active_member_count, ensure_owner_circle
+from app.services.commercial import (
+    MANAGED_LIST_PRICE_CENTS,
+    managed_offer_snapshot,
+    workload_snapshot,
+)
 from app.services.events import emit_event, emit_pilot_event
+from app.services.google_play_billing import (
+    GooglePlayBillingUnavailable,
+    GooglePlayPackageNotOwned,
+    consume_product_purchase,
+    get_one_time_product,
+    get_product_purchase,
+    product_for,
+    validate_catalog_product,
+    verify_app_package_ownership,
+)
 from app.services.lifecycle import evaluate_lifecycle
 from app.services.matching import match_testers, matching_summary
-from app.services.missions import MISSION_MINUTES, generate_missions, refresh_mission_availability
-from app.services.reporting import production_application_draft, production_report
-from app.services.recovery import evaluate_app_recovery, evaluate_circle_recovery
-from app.services.tester_health import participation_state, record_activity, refresh_app_health
+from app.services.missions import (
+    MISSION_MINUTES,
+    generate_missions,
+    mission_instructions,
+    refresh_mission_availability,
+)
 from app.services.readiness import calculate_readiness
+from app.services.recovery import evaluate_app_recovery, evaluate_circle_recovery
+from app.services.reporting import production_application_draft, production_report
+from app.services.tester_health import participation_state, record_activity, refresh_app_health
 
 router = APIRouter()
 settings = get_settings()
@@ -134,9 +179,14 @@ def app_read(app: App) -> AppRead:
         id=app.id,
         owner_id=app.owner_id,
         circle_id=app.circle_id,
+        play_developer_account_id=(
+            app.developer_account.play_developer_account_id if app.developer_account else None
+        ),
+        entitlement_status=app.entitlement_status,
         name=app.name,
         package_name=app.package_name,
         opt_in_url=app.opt_in_url,
+        core_workflow_steps=app.core_workflow_steps or [],
         google_group_url=app.google_group_url,
         google_group_mode=app.google_group_mode,
         google_group_configured=app.google_group_configured,
@@ -173,7 +223,10 @@ def assignment_read(item: TesterAssignment, now: datetime | None = None) -> Assi
         opted_in_at=item.opted_in_at,
         installed_at=item.installed_at,
         completed_at=item.completed_at,
-        health_status=item.health_status,
+        health_status={
+            "GOOD": "HEALTHY",
+            "INACTIVE": "CRITICAL",
+        }.get(item.health_status, item.health_status),
         is_replacement=item.replacement_for_id is not None,
         replacement_for_id=item.replacement_for_id,
         last_activity_at=item.last_activity_at,
@@ -211,6 +264,9 @@ def test_assignment_read(
 def mission_read(mission: TestMission) -> MissionRead:
     assignment = mission.assignment
     app = assignment.app
+    goal, steps = mission_instructions(
+        mission.mission_type, app.name, app.core_workflow_steps
+    )
     return MissionRead(
         id=mission.id,
         assignment_id=assignment.id,
@@ -224,6 +280,8 @@ def mission_read(mission: TestMission) -> MissionRead:
         due_at=mission.due_at,
         completed_at=mission.completed_at,
         estimated_minutes=MISSION_MINUTES[mission.mission_type],
+        goal=goal,
+        steps=steps,
     )
 
 
@@ -239,6 +297,8 @@ def feedback_read(item: Feedback) -> FeedbackRead:
         rating=item.rating,
         issue_text=item.issue_text,
         suggestion_text=item.suggestion_text,
+        completion_result=item.completion_result,
+        time_spent_minutes=item.time_spent_minutes,
         created_at=item.created_at,
     )
 
@@ -343,6 +403,23 @@ def me(current_user: User = Depends(get_current_user)) -> DevelopmentUserRead:
     return user_read(current_user)
 
 
+@router.get("/circles", response_model=list[CircleRead])
+def list_circles(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[CircleRead]:
+    circles = db.scalars(
+        select(Circle)
+        .join(CircleMember, CircleMember.circle_id == Circle.id)
+        .where(
+            CircleMember.user_id == current_user.id,
+            CircleMember.status == "ACTIVE",
+        )
+        .order_by(CircleMember.joined_at.desc(), Circle.id)
+    ).all()
+    return [circle_read(db, circle) for circle in circles]
+
+
 @router.get("/circles/{circle_id}", response_model=CircleRead)
 def get_circle(
     circle_id: str,
@@ -404,18 +481,493 @@ def leave_circle(
     return circle_read(db, circle)
 
 
+def additional_app_checkout_read(purchase: AdditionalAppPurchase) -> AdditionalAppCheckoutRead:
+    product_id, amount = product_for(settings, "ADDITIONAL_APP")
+    return AdditionalAppCheckoutRead(
+        id=purchase.id,
+        status=(
+            "EXPIRED"
+            if purchase.status in {"PAID", "CONSUMED"} and not purchase.google_play_purchase_token
+            else purchase.status
+        ),
+        product_id=product_id,
+        amount_total=amount, currency="USD", app_id=purchase.app_id,
+    )
+
+
+@router.post("/payments/additional-app-checkout", response_model=AdditionalAppCheckoutRead)
+def start_additional_app_checkout(
+    body: AdditionalAppCheckoutCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AdditionalAppCheckoutRead:
+    canonical_developer_id = settings.google_play_developer_account_id.strip()
+    if settings.is_deployment and (
+        not canonical_developer_id
+        or body.play_developer_account_id.strip() != canonical_developer_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="The Play developer account is not verified for this service.",
+        )
+    developer_account = db.scalar(
+        select(DeveloperAccount)
+        .where(DeveloperAccount.play_developer_account_id == body.play_developer_account_id.strip())
+        .with_for_update()
+    )
+    if developer_account is None:
+        raise HTTPException(status_code=409, detail="Create the first free app before buying an additional-app entitlement.")
+    if developer_account.verification_status != "VERIFIED":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Verify this app through the connected Google Play developer account first.",
+        )
+    linked_app_count = db.scalar(
+        select(func.count(App.id)).where(App.developer_account_id == developer_account.id)
+    ) or 0
+    if linked_app_count == 0 and developer_account.first_free_claimed_at is None:
+        raise HTTPException(status_code=409, detail="The first app for this Developer Account is free.")
+    paid_purchase = db.scalar(
+        select(AdditionalAppPurchase.id).where(
+            AdditionalAppPurchase.owner_id == current_user.id,
+            AdditionalAppPurchase.developer_account_id == developer_account.id,
+            AdditionalAppPurchase.status.in_({"PAID", "CONSUMED"}),
+            AdditionalAppPurchase.app_id.is_(None),
+            AdditionalAppPurchase.google_play_purchase_token.is_not(None),
+        )
+    )
+    if paid_purchase is not None:
+        raise HTTPException(status_code=409, detail="An additional-app entitlement is already available.")
+    purchase = db.scalar(
+        select(AdditionalAppPurchase)
+        .where(
+            AdditionalAppPurchase.owner_id == current_user.id,
+            AdditionalAppPurchase.developer_account_id == developer_account.id,
+            AdditionalAppPurchase.status == "PENDING",
+            AdditionalAppPurchase.google_play_product_id == settings.google_play_additional_app_product_id,
+        )
+        .order_by(AdditionalAppPurchase.created_at.desc()).limit(1).with_for_update()
+    )
+    if purchase is None:
+        purchase = AdditionalAppPurchase(
+            owner_id=current_user.id, developer_account_id=developer_account.id,
+            google_play_product_id=settings.google_play_additional_app_product_id,
+            amount_total=100, currency="usd",
+        )
+        db.add(purchase)
+        db.commit()
+        db.refresh(purchase)
+    return additional_app_checkout_read(purchase)
+
+
+@router.get("/payments/additional-app-checkout/{purchase_id}", response_model=AdditionalAppCheckoutRead)
+def get_additional_app_checkout(
+    purchase_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db),
+) -> AdditionalAppCheckoutRead:
+    purchase = db.get(AdditionalAppPurchase, purchase_id)
+    if purchase is None or purchase.owner_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Purchase not found")
+    return additional_app_checkout_read(purchase)
+
+
+def _consume_verified_product(product_id: str | None, purchase_token: str) -> None:
+    if not product_id:
+        raise HTTPException(status_code=409, detail="Verified Google Play purchase is missing its product ID")
+    try:
+        purchase = get_product_purchase(settings, product_id, purchase_token)
+        if purchase.get("productId") != product_id or int(purchase.get("purchaseState", -1)) != 0:
+            raise HTTPException(status_code=409, detail="Google Play purchase is no longer valid")
+        if int(purchase.get("consumptionState", 0)) != 1:
+            consume_product_purchase(settings, product_id, purchase_token)
+    except GooglePlayBillingUnavailable as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+def managed_checkout_read(checkout: ManagedCheckout) -> ManagedCheckoutRead:
+    product_id, _ = product_for(settings, "MANAGED_LAUNCH", checkout.credit_amount > 0)
+    return ManagedCheckoutRead(
+        id=checkout.id,
+        status=(
+            "EXPIRED"
+            if checkout.status == "PAID" and not checkout.google_play_purchase_token
+            else checkout.status
+        ),
+        app_id=checkout.app_id,
+        product_id=product_id, amount_total=checkout.amount_total,
+        list_product_id=settings.google_play_managed_product_id,
+        currency="USD", list_price_total=checkout.list_price_total,
+        credit_amount=checkout.credit_amount,
+    )
+
+
+@router.post("/apps/{app_id}/managed-checkout", response_model=ManagedCheckoutRead)
+def start_managed_checkout(
+    app_id: str, current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), now: datetime = Depends(get_now),
+) -> ManagedCheckoutRead:
+    app = owned_app(db, app_id, current_user)
+    already_purchased = db.scalar(select(ManagedCheckout.id).where(
+        ManagedCheckout.app_id == app.id, ManagedCheckout.status == "PAID",
+        ManagedCheckout.google_play_purchase_token.is_not(None),
+    ))
+    if already_purchased:
+        raise HTTPException(status_code=409, detail="Managed Launch is already paid for this app")
+    checkout = db.scalar(
+        select(ManagedCheckout).where(
+            ManagedCheckout.app_id == app.id, ManagedCheckout.status == "PENDING"
+        ).order_by(ManagedCheckout.created_at.desc()).limit(1).with_for_update()
+    )
+    if checkout is not None and checkout.google_play_product_id is None:
+        checkout.status = "EXPIRED"
+        db.flush()
+        checkout = None
+    if checkout is None:
+        credit = db.scalar(
+            select(ManagedCredit)
+            .join(
+                AdditionalAppPurchase,
+                AdditionalAppPurchase.id == ManagedCredit.source_additional_app_purchase_id,
+            )
+            .where(
+                ManagedCredit.owner_id == current_user.id,
+                ManagedCredit.status == "AVAILABLE",
+                ManagedCredit.source_google_play_order_id.is_not(None),
+                AdditionalAppPurchase.app_id == app.id,
+                AdditionalAppPurchase.developer_account_id == app.developer_account_id,
+                AdditionalAppPurchase.status == "CONSUMED",
+                ~select(ManagedCheckout.id).where(
+                    ManagedCheckout.managed_credit_id == ManagedCredit.id,
+                    ManagedCheckout.status == "PENDING",
+                ).exists(),
+            ).order_by(ManagedCredit.created_at, ManagedCredit.id).limit(1).with_for_update()
+        )
+        credit_amount = 100 if credit is not None else 0
+        checkout = ManagedCheckout(
+            app_id=app.id, managed_credit_id=credit.id if credit else None,
+            google_play_product_id=product_for(
+                settings, "MANAGED_LAUNCH", bool(credit)
+            )[0],
+            list_price_total=MANAGED_LIST_PRICE_CENTS, credit_amount=credit_amount,
+            amount_total=MANAGED_LIST_PRICE_CENTS-credit_amount, currency="usd",
+        )
+        db.add(checkout)
+        db.commit()
+        db.refresh(checkout)
+    return managed_checkout_read(checkout)
+
+
+@router.get("/payments/managed-checkout/{checkout_id}", response_model=ManagedCheckoutRead)
+def get_managed_checkout(
+    checkout_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db),
+) -> ManagedCheckoutRead:
+    checkout = db.get(ManagedCheckout, checkout_id)
+    app = db.get(App, checkout.app_id) if checkout is not None else None
+    if checkout is None or app is None or app.owner_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Managed purchase not found")
+    if checkout.status == "PAID" and checkout.google_play_purchase_token:
+        _consume_verified_product(checkout.google_play_product_id, checkout.google_play_purchase_token)
+    return managed_checkout_read(checkout)
+
+
+@router.post("/payments/google-play/verify")
+def verify_google_play_purchase(
+    body: GooglePlayPurchaseVerify, current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), now: datetime = Depends(get_now),
+) -> dict[str, str | int]:
+    if body.purchase_type == "ADDITIONAL_APP":
+        record = db.scalar(
+            select(AdditionalAppPurchase)
+            .where(AdditionalAppPurchase.id == body.purchase_id)
+            .with_for_update()
+        )
+        if record is None or record.owner_id != current_user.id:
+            raise HTTPException(status_code=404, detail="Purchase not found")
+        expected_product_id, expected_amount = product_for(settings, "ADDITIONAL_APP")
+        app = None
+    else:
+        record = db.scalar(
+            select(ManagedCheckout)
+            .where(ManagedCheckout.id == body.purchase_id)
+            .with_for_update()
+        )
+        app = db.get(App, record.app_id) if record else None
+        if record is None or app is None or app.owner_id != current_user.id:
+            raise HTTPException(status_code=404, detail="Managed purchase not found")
+        expected_product_id, expected_amount = product_for(
+            settings, "MANAGED_LAUNCH", record.credit_amount > 0
+        )
+    if record.amount_total != expected_amount or (record.currency or "").lower() != "usd":
+        raise HTTPException(status_code=409, detail="Purchase amount does not match the configured Google Play product")
+    if record.status not in {"PENDING", "PAID", "CONSUMED"}:
+        raise HTTPException(status_code=409, detail="Purchase is no longer payable")
+    if record.status in {"PAID", "CONSUMED"}:
+        if record.google_play_purchase_token != body.purchase_token:
+            raise HTTPException(status_code=409, detail="Purchase intent is already linked to another token")
+        _consume_verified_product(expected_product_id, body.purchase_token)
+        return {"status": record.status, "product_id": expected_product_id, "amount_total": expected_amount}
+    token_owner = db.scalar(select(AdditionalAppPurchase.id).where(
+        AdditionalAppPurchase.google_play_purchase_token == body.purchase_token
+    )) or db.scalar(select(ManagedCheckout.id).where(
+        ManagedCheckout.google_play_purchase_token == body.purchase_token
+    ))
+    if token_owner:
+        raise HTTPException(status_code=409, detail="Google Play purchase token is already linked")
+    try:
+        purchase = get_product_purchase(settings, expected_product_id, body.purchase_token)
+    except GooglePlayBillingUnavailable as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    if purchase.get("productId") != expected_product_id:
+        raise HTTPException(status_code=400, detail="Google Play product does not match this purchase")
+    if int(purchase.get("purchaseState", -1)) != 0:
+        raise HTTPException(status_code=409, detail="Google Play purchase is not complete")
+    if int(purchase.get("quantity", 1)) != 1:
+        raise HTTPException(status_code=400, detail="Only single-quantity Google Play purchases are accepted")
+    is_test_purchase = purchase.get("purchaseType") == 0
+    if is_test_purchase and settings.app_env.lower() != "pilot":
+        raise HTTPException(
+            status_code=403,
+            detail="Google Play test purchases are only accepted by the pilot service.",
+        )
+    region_code = purchase.get("regionCode")
+    if not region_code and not is_test_purchase:
+        raise HTTPException(status_code=400, detail="Google Play purchase is missing its region")
+    try:
+        catalog_product = get_one_time_product(settings, expected_product_id)
+    except GooglePlayBillingUnavailable as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    catalog_is_valid = catalog_product.get("productId") == expected_product_id
+    if region_code:
+        catalog_is_valid = catalog_is_valid and validate_catalog_product(
+            catalog_product, region_code, expected_amount
+        )
+    elif not is_test_purchase:
+        catalog_is_valid = False
+    if not catalog_is_valid:
+        raise HTTPException(
+            status_code=503,
+            detail="Google Play product is unavailable or its configured price does not match this offer",
+        )
+    expected_binding = hashlib.sha256(f"launch-circle:{record.id}".encode()).hexdigest()
+    if purchase.get("obfuscatedExternalAccountId") != expected_binding:
+        raise HTTPException(status_code=403, detail="Google Play purchase is not bound to this purchase intent")
+    order_id = purchase.get("orderId")
+    if not order_id and is_test_purchase:
+        # Test orders may not have a Google order ID. Use a stable, non-secret
+        # identifier for bookkeeping; never store the raw purchase token here.
+        order_id = f"TEST-GPLAY-{hashlib.sha256(body.purchase_token.encode()).hexdigest()}"
+    if not order_id:
+        raise HTTPException(status_code=400, detail="Google Play purchase is missing its order ID")
+    record.google_play_purchase_token = body.purchase_token
+    record.google_play_order_id = order_id
+    record.google_play_product_id = expected_product_id
+    record.amount_total = expected_amount
+    record.currency = "usd"
+    record.status = "PAID"
+    record.paid_at = now
+    if body.purchase_type == "ADDITIONAL_APP":
+        credit = db.scalar(select(ManagedCredit).where(
+            ManagedCredit.source_additional_app_purchase_id == record.id
+        ).with_for_update())
+        if credit is None:
+            db.add(ManagedCredit(
+                owner_id=record.owner_id, developer_account_id=record.developer_account_id,
+                source_additional_app_purchase_id=record.id,
+                source_google_play_order_id=order_id,
+            ))
+        owner_id = record.owner_id
+    else:
+        credit = db.get(ManagedCredit, record.managed_credit_id) if record.managed_credit_id else None
+        if record.credit_amount and credit is None:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Reserved Managed credit is unavailable")
+        if credit is not None:
+            if credit.status == "AVAILABLE":
+                credit.status = "REDEEMED"
+                credit.redeemed_app_id = record.app_id
+                credit.redeemed_at = now
+            elif credit.status != "REDEEMED" or credit.redeemed_app_id != record.app_id:
+                db.rollback()
+                raise HTTPException(status_code=409, detail="Reserved Managed credit was already used")
+        app.entitlement_status = "MANAGED"
+        owner_id = app.owner_id
+    emit_pilot_event(
+        db, owner_id,
+        "additional_app_payment_success" if body.purchase_type == "ADDITIONAL_APP" else "managed_payment_success",
+        f"google-play-purchase-paid:{body.purchase_type}:{record.id}",
+        app_id=record.app_id if body.purchase_type == "MANAGED_LAUNCH" else None,
+        payload={"google_play_order_id": order_id, "google_play_product_id": expected_product_id,
+                 "amount_total": expected_amount, "currency": "USD", "payment_channel": "GOOGLE_PLAY",
+                 "same_app_additional_app_purchase_applied": (
+                     body.purchase_type == "MANAGED_LAUNCH" and record.credit_amount == 100
+                 )},
+    )
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        saved_record = (
+            db.get(AdditionalAppPurchase, body.purchase_id)
+            if body.purchase_type == "ADDITIONAL_APP"
+            else db.get(ManagedCheckout, body.purchase_id)
+        )
+        if (
+            saved_record is None
+            or saved_record.status not in {"PAID", "CONSUMED"}
+            or saved_record.google_play_purchase_token != body.purchase_token
+            or saved_record.google_play_order_id != order_id
+        ):
+            raise HTTPException(status_code=409, detail="Google Play purchase is already linked")
+        _consume_verified_product(expected_product_id, body.purchase_token)
+        return {
+            "status": saved_record.status,
+            "product_id": expected_product_id,
+            "amount_total": expected_amount,
+        }
+    _consume_verified_product(expected_product_id, body.purchase_token)
+    return {"status": record.status, "product_id": expected_product_id, "amount_total": expected_amount}
+
+
 @router.post("/apps", response_model=AppRead, status_code=status.HTTP_201_CREATED)
 def create_app(
     body: AppCreate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    now: datetime = Depends(get_now),
 ) -> AppRead:
+    canonical_developer_id = settings.google_play_developer_account_id.strip()
+    if settings.is_deployment and (
+        not canonical_developer_id
+        or body.play_developer_account_id != canonical_developer_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="The Play developer account is not verified for this service.",
+        )
+    try:
+        verify_app_package_ownership(settings, body.package_name)
+    except GooglePlayPackageNotOwned as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This app package is not accessible in the connected Google Play developer account.",
+        ) from exc
+    except GooglePlayBillingUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Google Play account verification is temporarily unavailable. Try again later.",
+        ) from exc
+
+    selected_circle = None
+    if body.circle_id is not None:
+        selected_circle = db.get(Circle, body.circle_id)
+        if selected_circle is None:
+            raise HTTPException(status_code=404, detail="Circle not found")
+        if active_member(db, selected_circle.id, current_user.id) is None:
+            raise HTTPException(status_code=403, detail="You are not an active member of this circle")
+
+    if db.scalar(select(App.id).where(App.package_name == body.package_name)):
+        raise HTTPException(status_code=409, detail="Package name is already registered")
+
+    developer_account = db.scalar(
+        select(DeveloperAccount)
+        .where(
+            DeveloperAccount.play_developer_account_id == body.play_developer_account_id
+        )
+        .with_for_update()
+    )
+    if developer_account is None:
+        developer_account = DeveloperAccount(
+            play_developer_account_id=body.play_developer_account_id,
+            identity_method="PUBLIC_PUBLISHER",
+            verification_status="VERIFIED",
+        )
+        db.add(developer_account)
+        try:
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            developer_account = db.scalar(
+                select(DeveloperAccount)
+                .where(
+                    DeveloperAccount.play_developer_account_id
+                    == body.play_developer_account_id
+                )
+                .with_for_update()
+            )
+            if developer_account is None:
+                raise
+
+    # A package access check above is the evidence for these fields. Never
+    # convert an unverified client claim into a verified publisher identity.
+    developer_account.identity_method = "PUBLIC_PUBLISHER"
+    developer_account.verification_status = "VERIFIED"
+
+    legacy_apps = list(
+        db.scalars(
+            select(App).where(
+                App.owner_id == current_user.id,
+                App.developer_account_id.is_(None),
+            )
+        )
+    )
+    for legacy_app in legacy_apps:
+        legacy_app.developer_account = developer_account
+    if legacy_apps and developer_account.first_free_claimed_at is None:
+        developer_account.first_free_claimed_at = now
+
+    linked_app_count = db.scalar(
+        select(func.count(App.id)).where(App.developer_account_id == developer_account.id)
+    ) or 0
+    paid_purchase = None
+    if linked_app_count > 0 or developer_account.first_free_claimed_at is not None:
+        paid_purchase = db.scalar(
+            select(AdditionalAppPurchase)
+            .where(
+                AdditionalAppPurchase.owner_id == current_user.id,
+                AdditionalAppPurchase.developer_account_id == developer_account.id,
+                AdditionalAppPurchase.status == "PAID",
+                AdditionalAppPurchase.app_id.is_(None),
+                AdditionalAppPurchase.google_play_purchase_token.is_not(None),
+            )
+            .order_by(AdditionalAppPurchase.created_at, AdditionalAppPurchase.id)
+            .with_for_update()
+        )
+        if paid_purchase is None:
+            first_app = db.scalar(
+                select(App)
+                .where(App.developer_account_id == developer_account.id)
+                .order_by(App.created_at, App.id)
+                .limit(1)
+            )
+            emit_pilot_event(
+                db,
+                current_user.id,
+                "additional_app_paywall_viewed",
+                f"additional-app-paywall:{developer_account.id}:{linked_app_count + 1}",
+                app_id=first_app.id if first_app else None,
+                payload={
+                    "app_index": linked_app_count + 1,
+                    "source": current_user.acquisition_source or "UNKNOWN",
+                    "developer_identity_method": developer_account.identity_method,
+                },
+            )
+            db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail=(
+                    "This Developer Account has already used its first free app. "
+                    "An additional app requires the $1 Google Play entitlement."
+                ),
+            )
+
     app = App(
         owner_id=current_user.id,
-        circle_id=ensure_owner_circle(db, current_user).id,
+        developer_account=developer_account,
+        entitlement_status="ADDITIONAL_PAID" if paid_purchase else "FIRST_APP_FREE",
+        circle_id=(selected_circle or ensure_owner_circle(db, current_user)).id,
         name=body.name,
         package_name=body.package_name,
         opt_in_url=str(body.opt_in_url),
+        core_workflow_steps=body.core_workflow_steps,
         google_group_url=str(body.google_group_url) if body.google_group_url else (
             settings.launch_circle_google_group_join_url
             if body.google_group_mode == "LAUNCH_CIRCLE" else None
@@ -424,12 +976,44 @@ def create_app(
         status="WAITING_FOR_TESTERS",
         tester_target=body.tester_target,
     )
+    developer_account.first_free_claimed_at = now
     db.add(app)
     try:
+        db.flush()
+        if paid_purchase is not None:
+            paid_purchase.status = "CONSUMED"
+            paid_purchase.app_id = app.id
+        submission_event = (
+            "additional_app_submitted" if paid_purchase is not None else "first_app_submitted"
+        )
+        submission_prefix = "additional" if paid_purchase is not None else "first"
+        emit_pilot_event(
+            db,
+            current_user.id,
+            submission_event,
+            f"{submission_prefix}-app-submitted:{app.id}",
+            app_id=app.id,
+            payload={
+                "source": current_user.acquisition_source or "UNKNOWN",
+                "package": body.package_name,
+                "developer_identity_method": developer_account.identity_method,
+                "entitlement_status": app.entitlement_status,
+            },
+        )
         db.commit()
     except IntegrityError as exc:
         db.rollback()
-        raise HTTPException(status_code=409, detail="Package name is already registered") from exc
+        if db.scalar(select(App.id).where(App.package_name == body.package_name)):
+            raise HTTPException(
+                status_code=409, detail="Package name is already registered"
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=(
+                "This Developer Account has already used its first free app. "
+                "An additional app requires the $1 Google Play entitlement."
+            ),
+        ) from exc
     db.refresh(app)
     return app_read(app)
 
@@ -481,6 +1065,8 @@ def update_app(
     app = owned_app(db, app_id, current_user)
     values = body.model_dump(exclude_unset=True)
     for name, value in values.items():
+        if name == "core_workflow_steps" and value is None:
+            continue
         if name in {"opt_in_url", "google_group_url"} and value is not None:
             value = str(value)
         setattr(app, name, value)
@@ -1184,6 +1770,94 @@ def get_production_application_draft(
 ) -> dict:
     app = owned_app(db, app_id, current_user)
     return production_application_draft(db, app, now)
+
+
+@router.get("/apps/{app_id}/workload", response_model=WorkloadRead)
+def app_workload(
+    app_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> WorkloadRead:
+    app = owned_app(db, app_id, current_user)
+    return WorkloadRead(app_id=app.id, **workload_snapshot(db, app))
+
+
+@router.post(
+    "/apps/{app_id}/coordination-time",
+    response_model=WorkloadRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def record_coordination_time(
+    app_id: str,
+    body: CoordinationTimeCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    now: datetime = Depends(get_now),
+) -> WorkloadRead:
+    app = owned_app(db, app_id, current_user)
+    entry = DeveloperCoordinationLog(
+        app_id=app.id,
+        owner_id=current_user.id,
+        minutes=body.minutes,
+        category=body.category,
+        created_at=now,
+    )
+    db.add(entry)
+    db.flush()
+    emit_pilot_event(
+        db,
+        current_user.id,
+        "developer_coordination_time_logged",
+        f"coordination-time:{entry.id}",
+        app_id=app.id,
+        payload={"minutes": body.minutes, "category": body.category},
+    )
+    db.commit()
+    return WorkloadRead(app_id=app.id, **workload_snapshot(db, app))
+
+
+@router.get("/apps/{app_id}/managed-offer", response_model=ManagedOfferRead)
+def app_managed_offer(
+    app_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ManagedOfferRead:
+    app = owned_app(db, app_id, current_user)
+    return ManagedOfferRead(app_id=app.id, **managed_offer_snapshot(db, app))
+
+
+@router.post(
+    "/apps/{app_id}/managed-offer/viewed",
+    response_model=ManagedOfferRead,
+)
+def record_managed_offer_view(
+    app_id: str,
+    body: ManagedOfferViewCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    now: datetime = Depends(get_now),
+) -> ManagedOfferRead:
+    app = owned_app(db, app_id, current_user)
+    snapshot = managed_offer_snapshot(db, app)
+    if body.trigger != "PRIORITY" and body.trigger not in snapshot["triggers"]:
+        raise HTTPException(status_code=409, detail="This Managed offer is no longer active")
+    identity_method = (
+        app.developer_account.identity_method if app.developer_account else "UNKNOWN"
+    )
+    emit_pilot_event(
+        db,
+        current_user.id,
+        "managed_offer_viewed",
+        f"managed-offer-viewed:{app.id}:{current_user.id}:{body.trigger}:{now.date().isoformat()}",
+        app_id=app.id,
+        payload={
+            "trigger": body.trigger,
+            "source": current_user.acquisition_source or "UNKNOWN",
+            "developer_identity_method": identity_method,
+        },
+    )
+    db.commit()
+    return ManagedOfferRead(app_id=app.id, **snapshot)
 
 
 @router.get("/apps/{app_id}/events")

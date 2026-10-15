@@ -24,25 +24,26 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.launchcircle.testers.R
 
-data class OnboardingPage(val title: String, val body: String)
+data class OnboardingPage(val title: Int, val body: Int)
 
 object PilotOnboarding {
     val pages = listOf(
         OnboardingPage(
-            "Need 12 testers for Google Play?",
-            "Launch Circle connects Android developers who help test each other’s apps.",
+            R.string.onboarding_title_1,
+            R.string.onboarding_body_1,
         ),
         OnboardingPage(
-            "One group. Ongoing access.",
-            "Join the shared Google Group once, then participate in multiple developer testing cycles.",
+            R.string.onboarding_title_2,
+            R.string.onboarding_body_2,
         ),
         OnboardingPage(
-            "Test others. Get tested.",
-            "Complete a few meaningful test missions and build a reliable developer testing network.",
+            R.string.onboarding_title_3,
+            R.string.onboarding_body_3,
         ),
     )
 }
@@ -57,23 +58,23 @@ fun FirstRunOnboarding(onComplete: () -> Unit) {
     ) {
         Image(
             painter = painterResource(R.drawable.launch_circle_logo),
-            contentDescription = "Launch Circle logo",
+            contentDescription = stringResource(R.string.launch_circle_logo),
             modifier = Modifier.size(80.dp),
         )
         Spacer(Modifier.height(16.dp))
         Text(
-            "Launch Circle",
+            stringResource(R.string.launch_circle),
             style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.primary,
         )
         Spacer(Modifier.height(20.dp))
         Text(
-            content.title,
+            stringResource(content.title),
             style = MaterialTheme.typography.displaySmall,
             fontWeight = FontWeight.Bold,
         )
         Text(
-            content.body,
+            stringResource(content.body),
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.padding(top = 12.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -82,7 +83,7 @@ fun FirstRunOnboarding(onComplete: () -> Unit) {
         ProductionJourney()
         Spacer(Modifier.height(24.dp))
         Text(
-            (page + 1).toString() + " of " + PilotOnboarding.pages.size,
+            stringResource(R.string.page_of_pages, page + 1, PilotOnboarding.pages.size),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -92,7 +93,7 @@ fun FirstRunOnboarding(onComplete: () -> Unit) {
             },
             modifier = Modifier.fillMaxWidth().padding(top = 10.dp).height(52.dp),
         ) {
-            Text(if (page == PilotOnboarding.pages.lastIndex) "Get Started" else "Continue")
+            Text(stringResource(if (page == PilotOnboarding.pages.lastIndex) R.string.get_started else R.string.continue_))
         }
     }
 }
@@ -107,11 +108,11 @@ private fun ProductionJourney() {
             Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            JourneyStep("12", "testers")
+            JourneyStep("12", stringResource(R.string.testers))
             Text("↓", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
-            JourneyStep("14", "days")
+            JourneyStep("14", stringResource(R.string.days))
             Text("↓", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
-            JourneyStep("✓", "production")
+            JourneyStep("✓", stringResource(R.string.production))
         }
     }
 }

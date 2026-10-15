@@ -21,6 +21,8 @@ import com.launchcircle.testers.core.auth.AuthRepository
 import com.launchcircle.testers.core.auth.GoogleSignInManager
 import com.launchcircle.testers.core.model.DeviceUpdateRequest
 import com.launchcircle.testers.core.network.ApiFactory
+import com.launchcircle.testers.core.storage.InstallAttributionStore
+import com.launchcircle.testers.core.storage.PlayInstallAttributionReader
 import com.launchcircle.testers.core.storage.TokenStore
 import com.launchcircle.testers.core.launch.DemoLaunchRepository
 import com.launchcircle.testers.core.launch.RealLaunchRepository
@@ -38,12 +40,17 @@ import com.launchcircle.testers.ui.theme.LaunchCircleTheme
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val api = ApiFactory.create(BuildConfig.API_BASE_URL)
         val tokenStore = TokenStore(applicationContext)
-        val repository = AuthRepository(api, tokenStore)
+        val attributionStore = InstallAttributionStore(applicationContext)
+        val installAttributionReader = PlayInstallAttributionReader(this, attributionStore)
+        val repository = AuthRepository(api, tokenStore) {
+            installAttributionReader.fetch() ?: attributionStore.current()
+        }
         val launchRepository = if (BuildConfig.USE_DEMO_REPOSITORY) {
             DemoLaunchRepository()
         } else {
@@ -110,6 +117,10 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
     }
 }
 
