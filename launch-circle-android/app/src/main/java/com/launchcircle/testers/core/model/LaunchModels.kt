@@ -32,6 +32,7 @@ data class LaunchApp(
     val circle_id: String? = null,
     val play_developer_account_id: String? = null,
     val entitlement_status: String = "LEGACY",
+    val developer_account_unlimited: Boolean = false,
 )
 
 data class CreateAppRequest(

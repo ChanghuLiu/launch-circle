@@ -114,6 +114,7 @@ class AppRead(BaseModel):
     circle_id: str
     play_developer_account_id: str | None = None
     entitlement_status: str = "LEGACY"
+    developer_account_unlimited: bool = False
     name: str
     package_name: str
     opt_in_url: str

@@ -12,6 +12,7 @@ Kotlin and Jetpack Compose client for **Launch Circle: 12 Testers**.
 - invite creation, share, direct invite-code acceptance, and join confirmation
 - Launch Circle Google Group onboarding
 - Google Play one-time checkout for additional apps and Managed Launch
+- a visible unlimited-app badge for packages owned by an allowlisted, server-verified Play publisher
 - real Retrofit and in-memory demo repositories
 
 ## Backend modes

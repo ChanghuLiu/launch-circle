@@ -74,6 +74,7 @@
     <string name="additional_app_purchase_confirmed">Purchase confirmed. Return to Add App and submit the app details to use this entitlement.</string>
     <string name="additional_app_purchase_cancelled">Google Play purchase was cancelled or expired. Return to Add App to try again.</string>
     <string name="additional_app_purchase_verification">This one-time purchase is verified by Launch Circle before the entitlement is granted.</string>
+    <string name="publisher_account_unlimited">Verified Google Play publisher · unlimited apps</string>
     <string name="loading_google_play_price">Loading Google Play price…</string>
     <string name="buy_with_google_play">Buy with Google Play</string>
     <string name="apply_purchase">Apply purchase</string>
@@ -269,4 +270,5 @@
     <string name="mission_prompt_retest">Recheck the latest developer changes.</string>
     <string name="mission_prompt_final_feedback">Summarize the full testing experience.</string>
     <string name="mission_prompt_generic">Complete the assigned test and share your feedback.</string>
+    <string name="verified_play_publisher_unlimited">Verified Google Play publisher · unlimited apps</string>
 </resources>

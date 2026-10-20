@@ -183,6 +183,14 @@ def app_read(app: App) -> AppRead:
             app.developer_account.play_developer_account_id if app.developer_account else None
         ),
         entitlement_status=app.entitlement_status,
+        developer_account_unlimited=(
+            app.developer_account.verification_status == "VERIFIED"
+            and settings.has_unlimited_play_developer_account(
+                app.developer_account.play_developer_account_id
+            )
+            if app.developer_account
+            else False
+        ),
         name=app.name,
         package_name=app.package_name,
         opt_in_url=app.opt_in_url,
@@ -521,6 +529,13 @@ def start_additional_app_checkout(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Verify this app through the connected Google Play developer account first.",
+        )
+    if settings.has_unlimited_play_developer_account(
+        developer_account.play_developer_account_id
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="This verified Google Play developer account has unlimited app registration; no purchase is required.",
         )
     linked_app_count = db.scalar(
         select(func.count(App.id)).where(App.developer_account_id == developer_account.id)
@@ -918,7 +933,12 @@ def create_app(
         select(func.count(App.id)).where(App.developer_account_id == developer_account.id)
     ) or 0
     paid_purchase = None
-    if linked_app_count > 0 or developer_account.first_free_claimed_at is not None:
+    developer_account_unlimited = settings.has_unlimited_play_developer_account(
+        developer_account.play_developer_account_id
+    )
+    if not developer_account_unlimited and (
+        linked_app_count > 0 or developer_account.first_free_claimed_at is not None
+    ):
         paid_purchase = db.scalar(
             select(AdditionalAppPurchase)
             .where(
@@ -962,7 +982,11 @@ def create_app(
     app = App(
         owner_id=current_user.id,
         developer_account=developer_account,
-        entitlement_status="ADDITIONAL_PAID" if paid_purchase else "FIRST_APP_FREE",
+        entitlement_status=(
+            "PUBLISHER_UNLIMITED"
+            if developer_account_unlimited
+            else "ADDITIONAL_PAID" if paid_purchase else "FIRST_APP_FREE"
+        ),
         circle_id=(selected_circle or ensure_owner_circle(db, current_user)).id,
         name=body.name,
         package_name=body.package_name,

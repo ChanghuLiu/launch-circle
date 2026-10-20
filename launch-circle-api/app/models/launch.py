@@ -131,7 +131,7 @@ class App(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "entitlement_status IN ('LEGACY','FIRST_APP_FREE','ADDITIONAL_PAID','MANAGED')",
+            "entitlement_status IN ('LEGACY','FIRST_APP_FREE','ADDITIONAL_PAID','MANAGED','PUBLISHER_UNLIMITED')",
             name="ck_apps_entitlement_status",
         ),
         Index(

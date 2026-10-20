@@ -58,6 +58,46 @@ def test_first_app_free_is_anchored_to_developer_account_not_login_email(client)
     assert client.get("/apps", headers=second_login["headers"]).json() == []
 
 
+def test_allowlisted_play_publisher_can_add_multiple_apps_without_additional_app_purchase(
+    client, monkeypatch
+):
+    owner = register(client, "unlimited@example.com", "Unlimited Publisher")
+    publisher_id = "8195223677488114201"
+    monkeypatch.setattr(
+        phase0_settings,
+        "google_play_unlimited_developer_account_ids",
+        publisher_id,
+    )
+    assert phase0_settings.has_unlimited_play_developer_account(publisher_id)
+
+    first = create_app(client, owner, "com.example.publisherone", publisher_id)
+    second = create_app(client, owner, "com.example.publishertwo", publisher_id)
+
+    assert first.status_code == 201, first.text
+    assert second.status_code == 201, second.text
+    assert first.json()["entitlement_status"] == "PUBLISHER_UNLIMITED"
+    assert second.json()["entitlement_status"] == "PUBLISHER_UNLIMITED"
+    assert first.json()["developer_account_unlimited"] is True
+    assert second.json()["developer_account_unlimited"] is True
+    assert len(client.get("/apps", headers=owner["headers"]).json()) == 2
+
+
+def test_unlisted_play_publisher_still_has_additional_app_limit(client, monkeypatch):
+    owner = register(client, "limited@example.com", "Limited Publisher")
+    monkeypatch.setattr(
+        phase0_settings,
+        "google_play_unlimited_developer_account_ids",
+        "8195223677488114201",
+    )
+    publisher_id = "9988776655443322110"
+    first = create_app(client, owner, "com.example.firstlimited", publisher_id)
+    second = create_app(client, owner, "com.example.secondlimited", publisher_id)
+
+    assert first.status_code == 201, first.text
+    assert first.json()["developer_account_unlimited"] is False
+    assert second.status_code == 402, second.text
+
+
 def test_first_free_claim_survives_app_removal(client):
     owner = register(client, "claim@example.com", "Claim")
     created = create_app(

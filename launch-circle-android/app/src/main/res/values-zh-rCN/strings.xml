@@ -269,4 +269,5 @@
     <string name="mission_prompt_retest">复查开发者最近的更改。</string>
     <string name="mission_prompt_final_feedback">总结完整的测试体验。</string>
     <string name="mission_prompt_generic">完成分配的测试并分享反馈。</string>
+    <string name="verified_play_publisher_unlimited">已验证的 Google Play 发布者 · App 不限量</string>
 </resources>

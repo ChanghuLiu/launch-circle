@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     # server-side; a client-supplied developer ID is only a claim until the
     # package can be verified with this account's Android Publisher access.
     google_play_developer_account_id: str = ""
+    # Publisher IDs that can register any package owned by that verified Play
+    # publisher without the per-additional-app purchase. Keep this allowlist
+    # server-side; package ownership is still checked against the Publisher API.
+    google_play_unlimited_developer_account_ids: str = ""
     google_play_additional_app_product_id: str = "additional_app_1"
     google_play_managed_product_id: str = "managed_launch_15"
     google_play_managed_credit_product_id: str = "managed_launch_14"
@@ -72,6 +76,17 @@ class Settings(BaseSettings):
     def launch_circle_invite_base_url(self) -> str:
         return self.invite_base_url.rstrip(chr(47))
 
+    @property
+    def unlimited_play_developer_account_ids(self) -> frozenset[str]:
+        return frozenset(
+            value.strip()
+            for value in self.google_play_unlimited_developer_account_ids.split(",")
+            if value.strip()
+        )
+
+    def has_unlimited_play_developer_account(self, account_id: str | None) -> bool:
+        return bool(account_id and account_id.strip() in self.unlimited_play_developer_account_ids)
+
     @model_validator(mode="after")
     def validate_deployment_safety(self) -> "Settings":
         if not self.is_deployment:
@@ -97,6 +112,13 @@ class Settings(BaseSettings):
         if not self.google_play_developer_account_id.isdigit():
             raise ValueError(
                 "GOOGLE_PLAY_DEVELOPER_ACCOUNT_ID must identify the verified publisher account"
+            )
+        if any(
+            not account_id.isdigit()
+            for account_id in self.unlimited_play_developer_account_ids
+        ):
+            raise ValueError(
+                "GOOGLE_PLAY_UNLIMITED_DEVELOPER_ACCOUNT_IDS must contain numeric publisher IDs"
             )
         return self
 

@@ -38,6 +38,8 @@ Create a Google OAuth Web client ID for backend token audience verification and 
 
 Google Play Billing is the only supported payment channel. Configure `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` in the protected server environment, or use Workload Identity Federation by setting `GOOGLE_APPLICATION_CREDENTIALS` to Google's external-account credential configuration file. The latter contains no private key and uses the server's workload identity. Configure `GOOGLE_PLAY_DEVELOPER_ACCOUNT_ID` to the canonical numeric publisher account ID. Before granting the first-app entitlement, the backend checks that the submitted account ID matches this server setting and that the configured Publisher API identity can read the app's Play review record. This is a read-only ownership check; it does not create an edit or change Play metadata. Configure the three one-time products in Play Console. The backend verifies each purchase with the Android Publisher API before granting an entitlement or redeeming a credit. See `../PILOT_DEPLOYMENT.md` for product IDs, price requirements, and setup.
 
+`GOOGLE_PLAY_UNLIMITED_DEVELOPER_ACCOUNT_IDS` is an optional comma-separated allowlist of numeric Play publisher IDs. Apps owned by those accounts still pass the server's Android Publisher package-ownership check, but do not consume a paid Additional App entitlement; their API response carries `developer_account_unlimited=true` and Launch Circle shows an account badge. Keep the allowlist server-side. Do not use a client-supplied email as ownership proof. This exemption applies only to app registration, not Managed Launch credits or other paid services.
+
 ## Checks
 
 ```bash
