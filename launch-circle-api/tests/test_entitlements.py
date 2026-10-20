@@ -81,6 +81,14 @@ def test_allowlisted_play_publisher_can_add_multiple_apps_without_additional_app
     assert second.json()["developer_account_unlimited"] is True
     assert len(client.get("/apps", headers=owner["headers"]).json()) == 2
 
+    checkout = client.post(
+        "/payments/additional-app-checkout",
+        headers=owner["headers"],
+        json={"play_developer_account_id": publisher_id},
+    )
+    assert checkout.status_code == 409
+    assert "unlimited" in checkout.json()["detail"].lower()
+
 
 def test_unlisted_play_publisher_still_has_additional_app_limit(client, monkeypatch):
     owner = register(client, "limited@example.com", "Limited Publisher")
