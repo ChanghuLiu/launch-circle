@@ -4,9 +4,9 @@ Status: technical pilot complete for review. The new functionality remains defau
 
 ## Final automated verification
 
-- Backend: 88 tests passed, zero failures. Coverage includes idempotent replay/conflicts, actor/tenant/source/build restrictions, incomplete pass rejection, owner report access, enrollment continuity, scoped run details, exact original-step retests, and delayed retests of missed missions without rewriting their history.
+- Backend: 90 tests passed, zero failures. Coverage includes idempotent replay/conflicts, actor/tenant/source/build restrictions, incomplete pass rejection, owner report access, enrollment continuity, scoped run details, exact original-step retests, and delayed retests of missed missions without rewriting their history.
 - A 12-synthetic-participant × 3-app scenario verifies independent enrollment and no duplicate person counts across daily assignments. This is a data-model test, not recruitment proof.
-- Android: 32 unit tests passed; final debug APK assembly and lintDebug succeeded. Report formatting retains original observations, sources, synthetic labels, retest linkage and unconfirmed Google eligibility.
+- Android: 34 unit tests passed; final debug APK assembly and lintDebug succeeded. Report formatting retains original observations, sources, synthetic labels, retest linkage and unconfirmed Google eligibility.
 - Ruff checks for new backend modules/scripts/tests and Git whitespace checks passed.
 - Additive migration 0015: empty database upgrade and downgrade/re-upgrade with an existing synthetic user retained that user's data.
 - Existing phase0.py lint debt remains 122 B008 warnings, identical to baseline. Existing test warnings concern Starlette/httpx deprecation and SQLAlchemy class names considered for pytest collection.
@@ -55,3 +55,13 @@ Credentials, sessions and raw device/request evidence remain outside Git. Only l
 ## Remaining real-world work
 
 CUSTOMER_PILOT_RUNBOOK.md defines the 2–3-app handoff. Actual campaign links/builds/workflows and consenting real participant identities have not been supplied. Recruitment, Google enrollment verification, a real continuous testing period and production rollout remain outstanding. Current circle capacity includes the owner and permits 14 other testers. The evidence UI is internal-pilot English; large-campaign pagination and performance remain future work.
+
+## Readiness review follow-up
+
+PR #1 is open, draft and mergeable against its existing release baseline. GitHub reports no checks; this repository has no hosted workflow configured. Test results in this record are local verification on TradeWind, not GitHub CI approval.
+
+The system document-picker flow now stages report bytes in a separate app-private cache directory and saves only a small pending-file reference across activity recreation. K12 was rotated to landscape while the Android save window was open: the resulting 4,461-byte JSON retained both original Notes Escape observations and zero manual participants. The staged private file was removed after saving and original rotation settings were restored. Extra save/share actions are disabled while an export is pending. The final APK cancellation check confirmed the draft was removed, saving was re-enabled and no success was displayed.
+
+New JVM tests restore a large Unicode report through a recreated staging store and reject path traversal references. Backend tests delete synthetic publisher/tester accounts with enrollment, failure, fix and owner-submitted retest evidence: associated evidence is removed, other campaigns survive, and deleted credentials stop working. These deletion tests only use disposable test databases; no real account was deleted.
+
+This review does not add real participants or remove the customer-input, real Google sign-in, localization or production-rollout limits above.

@@ -47,7 +47,7 @@ With the evidence flag enabled, open My Launch → Testing evidence. The owner c
 
 A partial original failure is retested against exactly its original step scope, rather than claiming full-mission coverage. Changing the candidate away from the fix build disables retest context until the versions agree. Backend package, actor, assignment, build, step and idempotency checks remain authoritative.
 
-Prepare latest report creates an owner-scoped snapshot. Save report JSON or Save readable report opens Android document storage; Share report opens the chooser with a temporary read grant to the report file only. The chooser does not automatically send to a recipient. App-private sharing files are isolated under evidence-reports and old files are pruned when preparing another share. Refresh the report snapshot after new observations. CLI export remains available.
+Prepare latest report creates an owner-scoped snapshot. Save report JSON or Save readable report opens Android document storage; a private staged file preserves report content across rotation, with only its small reference in saved state; Share report opens the chooser with a temporary read grant to the report file only. The chooser does not automatically send to a recipient. App-private sharing files are isolated under evidence-reports and old files are pruned when preparing another share. Refresh the report snapshot after new observations. CLI export remains available.
 
 ## Device evidence and exports
 

@@ -330,3 +330,107 @@ def test_valid_linked_retest_survives_original_missed_window_without_rewriting_h
     assert saved.status_code == 201, saved.text
     with SessionLocal() as db:
         assert db.get(Mission, mission["id"]).status == "MISSED"
+
+
+@pytest.mark.parametrize("deleted_role", ["owner", "tester"])
+def test_account_deletion_cascades_evidence_without_touching_other_campaign(
+    client, pilot, deleted_role
+):
+    from app.models.evidence import CampaignBuild, MissionRun, MissionRunFix
+    from app.models.launch import App
+    from app.models.launch import TesterAssignment as Assignment
+    from app.models.launch import TestMission as Mission
+
+    owner, tester, other, launch, assignment, mission = pilot
+    enrollment = client.post(
+        f"/assignments/{assignment['id']}/enrollment-evidence",
+        headers=tester["headers"],
+        json={"event": "JOINED", "note": "Synthetic deletion test"},
+    ).json()
+    failure = client.post(
+        f"/missions/{mission['id']}/runs",
+        headers=tester["headers"],
+        json=run_body(mission, result="FAIL"),
+    ).json()
+    fix = {"target_version_code": 2, "description": "Synthetic deletion test fix"}
+    client.post(f"/runs/{failure['id']}/fix", headers=owner["headers"], json=fix)
+    client.post(f"/apps/{launch['id']}/evidence/build", headers=owner["headers"], json=fix)
+    retest_body = run_body(mission, key="deletion-retest", version=2, source="CODEX_ASSISTED")
+    retest_body["retest_of_id"] = failure["id"]
+    retest = client.post(
+        f"/missions/{mission['id']}/runs", headers=owner["headers"], json=retest_body
+    )
+    assert retest.status_code == 201, retest.text
+    with SessionLocal() as db:
+        unrelated_app = App(
+            owner_id=other["id"],
+            name="Unrelated synthetic app",
+            package_name="com.example.unrelated.deletion",
+            opt_in_url="https://example.com/test",
+        )
+        db.add(unrelated_app)
+        db.flush()
+        unrelated_assignment = Assignment(app_id=unrelated_app.id, tester_id=other["id"])
+        db.add(unrelated_assignment)
+        db.flush()
+        unrelated_mission = Mission(
+            assignment_id=unrelated_assignment.id, mission_type="DAY_1_SMOKE", scheduled_day=1
+        )
+        db.add(unrelated_mission)
+        db.flush()
+        unrelated_run = MissionRun(
+            mission_id=unrelated_mission.id,
+            submitted_by_id=other["id"],
+            idempotency_key="unrelated-test-run",
+            payload_hash="0" * 64,
+            execution_source="AUTOMATED_RUNNER",
+            result="FAIL",
+            package_name=unrelated_app.package_name,
+            version_code=5,
+            device_key="unrelated-synthetic-device",
+            device_model="Synthetic",
+            android_api=27,
+            details={"steps": [], "note": "Synthetic deletion isolation test"},
+        )
+        unrelated_enrollment = EnrollmentEvidence(
+            assignment_id=unrelated_assignment.id,
+            recorded_by_id=other["id"],
+            event="JOINED",
+            source="SELF_REPORTED",
+            note="Synthetic",
+        )
+        unrelated_build = CampaignBuild(
+            app_id=unrelated_app.id, version_code=5, recorded_by_id=other["id"]
+        )
+        db.add_all([unrelated_run, unrelated_enrollment, unrelated_build])
+        db.flush()
+        unrelated_fix = MissionRunFix(
+            run_id=unrelated_run.id,
+            recorded_by_id=other["id"],
+            target_version_code=6,
+            description="Unrelated synthetic fix",
+        )
+        db.add(unrelated_fix)
+        db.commit()
+        keep = (unrelated_app.id, unrelated_run.id, unrelated_enrollment.id, unrelated_fix.id)
+    deleted = owner if deleted_role == "owner" else tester
+    response = client.delete("/v1/me", headers=deleted["headers"])
+    assert response.status_code == 200, response.text
+    assert client.get("/v1/me", headers=deleted["headers"]).status_code == 401
+    with SessionLocal() as db:
+        assert (
+            db.scalar(select(EnrollmentEvidence).where(EnrollmentEvidence.id == enrollment["id"]))
+            is None
+        )
+        assert db.scalar(select(MissionRun).where(MissionRun.id == failure["id"])) is None
+        assert db.scalar(select(MissionRun).where(MissionRun.id == retest.json()["id"])) is None
+        assert db.scalar(select(MissionRunFix).where(MissionRunFix.run_id == failure["id"])) is None
+        assert (db.get(CampaignBuild, launch["id"]) is None) == (deleted_role == "owner")
+        assert db.get(App, keep[0]) is not None
+        assert db.get(CampaignBuild, keep[0]) is not None
+        assert db.scalar(select(MissionRun).where(MissionRun.id == keep[1])) is not None
+        assert (
+            db.scalar(select(EnrollmentEvidence).where(EnrollmentEvidence.id == keep[2]))
+            is not None
+        )
+        assert db.get(MissionRunFix, keep[3]) is not None
