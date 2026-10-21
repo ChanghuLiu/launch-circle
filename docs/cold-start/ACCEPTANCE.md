@@ -23,9 +23,9 @@ Samsung SM_J327W, Android API 27, Notes Escape package com.notesescape.sdocx, in
 
 One CODEX_ASSISTED PASS was accepted for this narrow navigation mission. Replaying the saved request returned the same run ID. Summary recorded one run and one reported device, zero manual participants and no confirmed Google eligibility. No conversion/export, full Notes Escape regression, or Play enrollment was tested.
 
-The parallel Launch Circle debug app was installed without removing or clearing the normal app. Guided assignment UI was observed using explicitly synthetic development sessions. That inspection found a legacy daily-todo status mismatch; an independent assignment-state endpoint and client query fixed it. The final APK was rebuilt and tested, but final device UI verification of that fix remains pending because the original phone disconnected. No fabricated final UI pass is claimed.
+The parallel Launch Circle debug app was installed without removing or clearing the normal app. Guided assignment UI was observed using explicitly synthetic development sessions. That inspection found a legacy daily-todo status mismatch; an independent assignment-state endpoint and client query fixed it. The original phone disconnected before final UI verification. Follow-up verification on TCL K12 (T434J, Android API 36) completed that check: the final parallel APK installed successfully, the synthetic active assignment displayed mission days without a repeated opt-in confirmation, and the Day 1 form displayed candidate version 14. Untouched steps remained NOT_RUN and the actual Save button node was disabled. No HUMAN_MANUAL evidence was submitted during this assisted UI inspection.
 
-A second device's black screenshot did not count as UI coverage. Later-connected phones were not treated as substitutes for the completed device observations.
+The initial black screenshot did not count as UI coverage. The reconnected TCL K12 subsequently produced readable UI hierarchies and the explicit follow-up checks above. This adds Launch Circle UI coverage; it does not extend the earlier Notes Escape workflow result to another device.
 
 ## Reports and handoff
 
