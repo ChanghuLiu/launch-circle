@@ -41,6 +41,18 @@ import retrofit2.http.Path
 import retrofit2.http.PUT
 
 interface LaunchCircleApi {
+    @GET("assignments/{assignmentId}/evidence-status")
+    suspend fun evidenceAssignmentStatus(@Header("Authorization") authorization: String, @Path("assignmentId") assignmentId: String): com.launchcircle.testers.core.model.AssignmentEvidenceStatus
+
+    @GET("missions/{missionId}/evidence-context")
+    suspend fun evidenceContext(@Header("Authorization") authorization: String, @Path("missionId") missionId: String): com.launchcircle.testers.core.model.MissionEvidenceContext
+
+    @POST("missions/{missionId}/runs")
+    suspend fun submitMissionRun(@Header("Authorization") authorization: String, @Path("missionId") missionId: String, @Body body: com.launchcircle.testers.core.model.MissionRunRequest): com.launchcircle.testers.core.model.MissionRunRecord
+
+    @POST("assignments/{assignmentId}/enrollment-evidence")
+    suspend fun recordEnrollmentEvidence(@Header("Authorization") authorization: String, @Path("assignmentId") assignmentId: String, @Body body: com.launchcircle.testers.core.model.EnrollmentEvidenceRequest): Map<String, Any>
+
     @GET("pilot-config")
     suspend fun pilotConfig(): PilotConfig
 

@@ -348,6 +348,7 @@ def assigned_to(db: Session, assignment_id: str, user: User) -> TesterAssignment
 @router.get("/pilot-config", response_model=PilotConfigRead)
 def pilot_config() -> PilotConfigRead:
     return PilotConfigRead(
+        cold_start_evidence_enabled=get_settings().cold_start_evidence_enabled,
         product_name="Launch Circle: 12 Testers",
         google_group_email=settings.launch_circle_google_group_email,
         google_group_join_url=settings.launch_circle_google_group_join_url,

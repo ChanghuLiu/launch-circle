@@ -260,4 +260,6 @@
     <string name="mission_prompt_retest">Geliştiricinin en son değişikliklerini tekrar kontrol edin.</string>
     <string name="mission_prompt_final_feedback">Tüm test deneyiminizi özetleyin.</string>
     <string name="mission_prompt_generic">Size atanan testi tamamlayıp geri bildiriminizi paylaşın.</string>
+    <string name="publisher_account_unlimited">Doğrulanmış Google Play yayıncısı · sınırsız uygulama</string>
+    <string name="verified_play_publisher_unlimited">Doğrulanmış Google Play yayıncısı · sınırsız uygulama</string>
 </resources>

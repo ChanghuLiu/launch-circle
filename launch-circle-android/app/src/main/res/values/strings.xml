@@ -271,4 +271,19 @@
     <string name="mission_prompt_final_feedback">Summarize the full testing experience.</string>
     <string name="mission_prompt_generic">Complete the assigned test and share your feedback.</string>
     <string name="verified_play_publisher_unlimited">Verified Google Play publisher · unlimited apps</string>
+    <string translatable="false" name="evidence_guided_test">Complete a guided test and record what actually happened.</string>
+    <string translatable="false" name="evidence_mission_day">Day %1$d mission</string>
+    <string translatable="false" name="evidence_no_missions">No missions are available yet. Ask the coordinator to check this assignment.</string>
+    <string translatable="false" name="evidence_loading">Loading the assigned test…</string>
+    <string translatable="false" name="evidence_record_result">Record test result</string>
+    <string translatable="false" name="evidence_open_app_listing">Open app on Google Play</string>
+    <string translatable="false" name="evidence_candidate_missing">The app owner needs to confirm the test build before results can be saved.</string>
+    <string translatable="false" name="evidence_candidate_build">Expected version code: %1$d</string>
+    <string translatable="false" name="evidence_observed_build">Tested app version code</string>
+    <string translatable="false" name="evidence_actual_observation">What happened in this step?</string>
+    <string translatable="false" name="evidence_step_result">Result: %1$s · tap to change</string>
+    <string translatable="false" name="evidence_note">Feedback or blocking reason</string>
+    <string translatable="false" name="evidence_observation_help">Record each step. Explain any blocked or unexecuted step. An incomplete test cannot pass.</string>
+    <string translatable="false" name="evidence_saved">Test evidence saved. Your observations are recorded separately from automated checks.</string>
+    <string translatable="false" name="evidence_save">Save test evidence</string>
 </resources>

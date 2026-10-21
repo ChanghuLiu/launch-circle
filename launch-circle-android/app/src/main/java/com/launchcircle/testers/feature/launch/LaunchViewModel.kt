@@ -46,6 +46,9 @@ data class LaunchUiState(
     val availableCircles: List<LaunchCircle> = emptyList(),
     val selectedMission: TestMission? = null,
     val selectedAssignment: TestAssignment? = null,
+    val assignmentMissions: List<TestMission> = emptyList(),
+    val evidenceContext: com.launchcircle.testers.core.model.MissionEvidenceContext? = null,
+    val evidenceSavedId: String? = null,
     val testers: List<TesterAssignment> = emptyList(),
     val feedback: List<MissionFeedback> = emptyList(),
     val today: List<TestMission> = emptyList(),
@@ -432,8 +435,36 @@ class LaunchViewModel(
         _state.value = _state.value.copy(
             destination = LaunchDestination.ASSIGNMENT,
             selectedAssignment = assignment,
+            assignmentMissions = emptyList(),
             error = null,
         )
+        if (_state.value.pilotConfig.cold_start_evidence_enabled) runTask {
+            _state.value.copy(
+                selectedAssignment = assignment.copy(status = repository.evidenceAssignmentStatus(assignment.id)),
+                assignmentMissions = repository.missions(assignment.id),
+            )
+        }
+    }
+
+    fun confirmAssignmentOptIn() = runTask {
+        val assignment = checkNotNull(_state.value.selectedAssignment)
+        val updated = repository.optIn(assignment.id)
+        repository.recordEnrollmentEvidence(assignment.id)
+        _state.value.copy(selectedAssignment = assignment.copy(status = updated.status))
+    }
+
+    fun confirmAssignmentInstalled() = runTask {
+        val assignment = checkNotNull(_state.value.selectedAssignment)
+        val updated = repository.installed(assignment.id)
+        _state.value.copy(
+            selectedAssignment = assignment.copy(status = updated.status),
+            assignmentMissions = repository.missions(assignment.id),
+        )
+    }
+
+    fun submitMissionEvidence(request: com.launchcircle.testers.core.model.MissionRunRequest) = withMission { mission ->
+        val saved = repository.submitMissionRun(mission.id, request)
+        _state.value.copy(evidenceSavedId = saved.id)
     }
 
     fun completeAssignment() = runTask {
@@ -452,8 +483,13 @@ class LaunchViewModel(
         _state.value = _state.value.copy(
             destination = LaunchDestination.MISSION,
             selectedMission = mission,
+            evidenceContext = null,
+            evidenceSavedId = null,
             error = null,
         )
+        if (_state.value.pilotConfig.cold_start_evidence_enabled) runTask {
+            _state.value.copy(evidenceContext = repository.evidenceContext(mission.id))
+        }
     }
 
     fun startMission() = withMission { mission ->

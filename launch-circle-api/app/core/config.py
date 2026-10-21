@@ -4,7 +4,6 @@ from urllib.parse import urlparse
 from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 DEVELOPMENT_JWT_SECRET = "development-only-change-me"
 DEPLOYMENT_ENVIRONMENTS = {"pilot", "production"}
 
@@ -54,6 +53,7 @@ class Settings(BaseSettings):
         default="https://groups.google.com/g/launch-circle-12-testers",
         validation_alias=AliasChoices("GOOGLE_GROUP_URL", "LAUNCH_CIRCLE_GOOGLE_GROUP_JOIN_URL"),
     )
+    cold_start_evidence_enabled: bool = False
     development_auth_enabled: bool = True
 
     @property

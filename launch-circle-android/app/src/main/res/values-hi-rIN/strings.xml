@@ -260,4 +260,6 @@
     <string name="mission_prompt_retest">डेवलपर के नए बदलाव फिर से जाँचें।</string>
     <string name="mission_prompt_final_feedback">परीक्षण के पूरे अनुभव का सार दें।</string>
     <string name="mission_prompt_generic">दिए गए परीक्षण को पूरा करें और फ़ीडबैक साझा करें।</string>
+    <string name="publisher_account_unlimited">सत्यापित Google Play प्रकाशक · असीमित ऐप्स</string>
+    <string name="verified_play_publisher_unlimited">सत्यापित Google Play प्रकाशक · असीमित ऐप्स</string>
 </resources>

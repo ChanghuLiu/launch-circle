@@ -279,6 +279,7 @@ data class MatchingResult(
 data class GoogleGroupConfirmationRequest(val configured: Boolean = true)
 
 data class PilotConfig(
+    val cold_start_evidence_enabled: Boolean = false,
     val product_name: String = "Launch Circle: 12 Testers",
     val google_group_email: String = "launch-circle-12-testers@googlegroups.com",
     val google_group_join_url: String = "https://groups.google.com/g/launch-circle-12-testers",

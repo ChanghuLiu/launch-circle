@@ -260,4 +260,6 @@
     <string name="mission_prompt_retest">أعد التحقق من أحدث تغييرات المطور.</string>
     <string name="mission_prompt_final_feedback">لخّص تجربة الاختبار كاملة.</string>
     <string name="mission_prompt_generic">أكمل الاختبار المحدد وشارك ملاحظاتك.</string>
+    <string name="publisher_account_unlimited">ناشر Google Play موثّق · تطبيقات غير محدودة</string>
+    <string name="verified_play_publisher_unlimited">ناشر Google Play موثّق · تطبيقات غير محدودة</string>
 </resources>

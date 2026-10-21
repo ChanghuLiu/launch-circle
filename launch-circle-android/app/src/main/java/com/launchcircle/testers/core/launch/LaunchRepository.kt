@@ -25,6 +25,12 @@ import com.launchcircle.testers.core.storage.TokenStore
 import retrofit2.HttpException
 
 interface LaunchRepository {
+    suspend fun evidenceAssignmentStatus(assignmentId: String): String = error("Evidence pilot is not supported")
+
+    suspend fun evidenceContext(missionId: String): com.launchcircle.testers.core.model.MissionEvidenceContext = error("Evidence pilot is not supported")
+    suspend fun submitMissionRun(missionId: String, request: com.launchcircle.testers.core.model.MissionRunRequest): com.launchcircle.testers.core.model.MissionRunRecord = error("Evidence pilot is not supported")
+    suspend fun recordEnrollmentEvidence(assignmentId: String): Unit = error("Evidence pilot is not supported")
+
     suspend fun pilotConfig(): PilotConfig
     suspend fun launches(): List<LaunchApp>
     suspend fun createApp(request: CreateAppRequest): LaunchApp
@@ -73,6 +79,24 @@ class RealLaunchRepository(
         }
     }
 
+    override suspend fun evidenceAssignmentStatus(assignmentId: String) = authenticated {
+        api.evidenceAssignmentStatus(it, assignmentId).assignment_status
+    }
+    override suspend fun evidenceContext(missionId: String) = authenticated { api.evidenceContext(it, missionId) }
+    override suspend fun submitMissionRun(missionId: String, request: com.launchcircle.testers.core.model.MissionRunRequest) = authenticated {
+        api.submitMissionRun(it, missionId, request.copy(
+            device_key = tokenStore.evidenceDeviceKey(),
+            device_model = android.os.Build.MODEL,
+            android_api = android.os.Build.VERSION.SDK_INT,
+        ))
+    }
+    override suspend fun recordEnrollmentEvidence(assignmentId: String) = authenticated {
+        api.recordEnrollmentEvidence(it, assignmentId,
+            com.launchcircle.testers.core.model.EnrollmentEvidenceRequest(
+                event = "JOINED", note = "Tester confirmed joining through the Play testing link",
+            ))
+        Unit
+    }
     override suspend fun pilotConfig() = api.pilotConfig()
     override suspend fun launches() = authenticated { api.apps(it) }
     override suspend fun createApp(request: CreateAppRequest) = authenticated { api.createApp(it, request) }

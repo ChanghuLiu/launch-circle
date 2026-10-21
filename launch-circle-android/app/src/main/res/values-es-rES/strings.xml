@@ -260,4 +260,6 @@
     <string name="mission_prompt_retest">Revisa los últimos cambios del desarrollador.</string>
     <string name="mission_prompt_final_feedback">Resume toda la experiencia de prueba.</string>
     <string name="mission_prompt_generic">Completa la prueba asignada y comparte tus comentarios.</string>
+    <string name="publisher_account_unlimited">Editor de Google Play verificado · aplicaciones ilimitadas</string>
+    <string name="verified_play_publisher_unlimited">Editor de Google Play verificado · aplicaciones ilimitadas</string>
 </resources>

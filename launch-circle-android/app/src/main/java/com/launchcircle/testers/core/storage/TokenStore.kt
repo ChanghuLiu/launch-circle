@@ -18,6 +18,13 @@ class TokenStore(context: Context) {
         refreshToken = refresh
     }
 
+    private val evidencePreferences = context.getSharedPreferences("launch_circle_evidence", Context.MODE_PRIVATE)
+
+    fun evidenceDeviceKey(): String = evidencePreferences.getString("device_key", null)
+        ?: java.util.UUID.randomUUID().toString().also {
+            evidencePreferences.edit().putString("device_key", it).apply()
+        }
+
     fun clear() {
         preferences.edit().clear().apply()
     }

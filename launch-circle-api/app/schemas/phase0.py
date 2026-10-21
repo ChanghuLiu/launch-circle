@@ -287,6 +287,7 @@ class GoogleGroupConfirmation(BaseModel):
 
 
 class PilotConfigRead(BaseModel):
+    cold_start_evidence_enabled: bool = False
     product_name: str
     google_group_email: str
     google_group_join_url: str
