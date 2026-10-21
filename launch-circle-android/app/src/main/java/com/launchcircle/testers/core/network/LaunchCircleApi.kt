@@ -41,6 +41,36 @@ import retrofit2.http.Path
 import retrofit2.http.PUT
 
 interface LaunchCircleApi {
+    @GET("missions/{missionId}/runs")
+    suspend fun evidenceRuns(@Header("Authorization") authorization: String, @Path("missionId") missionId: String): List<com.launchcircle.testers.core.model.EvidenceRunFull>
+
+    @GET("runs/{runId}/detail")
+    suspend fun evidenceRunDetail(@Header("Authorization") authorization: String, @Path("runId") runId: String): com.launchcircle.testers.core.model.EvidenceRunDetail
+
+    @GET("apps/{appId}/evidence-report")
+    suspend fun evidenceReport(@Header("Authorization") authorization: String, @Path("appId") appId: String): okhttp3.ResponseBody
+
+    @GET("apps/{appId}/evidence-summary")
+    suspend fun evidenceSummary(@Header("Authorization") authorization: String, @Path("appId") appId: String): com.launchcircle.testers.core.model.CampaignEvidenceSummary
+
+    @POST("apps/{appId}/evidence/build")
+    suspend fun setEvidenceBuild(@Header("Authorization") authorization: String, @Path("appId") appId: String, @Body body: com.launchcircle.testers.core.model.EvidenceBuildRequest): Map<String, Any>
+
+    @POST("runs/{runId}/fix")
+    suspend fun declareEvidenceFix(@Header("Authorization") authorization: String, @Path("runId") runId: String, @Body body: com.launchcircle.testers.core.model.EvidenceBuildRequest): Map<String, Any>
+
+    @GET("assignments/{assignmentId}/evidence-status")
+    suspend fun evidenceAssignmentStatus(@Header("Authorization") authorization: String, @Path("assignmentId") assignmentId: String): com.launchcircle.testers.core.model.AssignmentEvidenceStatus
+
+    @GET("missions/{missionId}/evidence-context")
+    suspend fun evidenceContext(@Header("Authorization") authorization: String, @Path("missionId") missionId: String): com.launchcircle.testers.core.model.MissionEvidenceContext
+
+    @POST("missions/{missionId}/runs")
+    suspend fun submitMissionRun(@Header("Authorization") authorization: String, @Path("missionId") missionId: String, @Body body: com.launchcircle.testers.core.model.MissionRunRequest): com.launchcircle.testers.core.model.MissionRunRecord
+
+    @POST("assignments/{assignmentId}/enrollment-evidence")
+    suspend fun recordEnrollmentEvidence(@Header("Authorization") authorization: String, @Path("assignmentId") assignmentId: String, @Body body: com.launchcircle.testers.core.model.EnrollmentEvidenceRequest): Map<String, Any>
+
     @GET("pilot-config")
     suspend fun pilotConfig(): PilotConfig
 

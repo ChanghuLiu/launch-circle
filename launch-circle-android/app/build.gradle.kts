@@ -70,6 +70,12 @@ android {
     }
 
     buildTypes {
+        getByName("debug") {
+            if (providers.gradleProperty("launchCircleEvidencePilotBuild").orElse("false").get().toBoolean()) {
+                applicationIdSuffix = ".evidencepilot"
+                versionNameSuffix = "-evidencepilot"
+            }
+        }
         getByName("release") {
             // Release artifacts always use the HTTPS pilot backend and Google authentication.
             buildConfigField(

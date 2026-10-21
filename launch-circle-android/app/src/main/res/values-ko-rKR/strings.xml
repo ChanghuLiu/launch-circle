@@ -260,4 +260,6 @@
     <string name="mission_prompt_retest">개발자의 최신 변경사항을 다시 확인하세요.</string>
     <string name="mission_prompt_final_feedback">전체 테스트 경험을 요약하세요.</string>
     <string name="mission_prompt_generic">배정된 테스트를 완료하고 피드백을 공유하세요.</string>
+    <string name="publisher_account_unlimited">인증된 Google Play 게시자 · 앱 수 제한 없음</string>
+    <string name="verified_play_publisher_unlimited">인증된 Google Play 게시자 · 앱 수 제한 없음</string>
 </resources>

@@ -213,6 +213,7 @@ fun LaunchWorkspace(
                                     viewModel::recordCoordinationTime,
                                     { trigger -> viewModel.recordManagedOfferViewed(selected.id, trigger) },
                                     { viewModel.startManagedCheckout(selected.id) },
+                                    if (state.pilotConfig.cold_start_evidence_enabled) viewModel::showEvidence else null,
                                 )
                             }
                         }
@@ -220,10 +221,18 @@ fun LaunchWorkspace(
                             state.todayAssignments, state.pilotConfig, viewModel::showAssignment,
                         )
                         LaunchDestination.ASSIGNMENT -> state.selectedAssignment?.let {
-                            AssignmentScreen(it, viewModel::completeAssignment)
+                            if (state.pilotConfig.cold_start_evidence_enabled) {
+                                EvidenceAssignmentScreen(it, state.assignmentMissions, state.loading,
+                                    viewModel::confirmAssignmentOptIn, viewModel::confirmAssignmentInstalled,
+                                    viewModel::showMission)
+                            } else AssignmentScreen(it, viewModel::completeAssignment)
                         }
                         LaunchDestination.MISSION -> state.selectedMission?.let {
-                            Mission(
+                            if (state.pilotConfig.cold_start_evidence_enabled) {
+                                MissionEvidenceScreen(state.evidenceContext, state.loading,
+                                    state.evidenceSavedId, viewModel::submitMissionEvidence,
+                                    onHistory = viewModel::showMissionEvidenceHistory)
+                            } else Mission(
                                 it, viewModel::startMission, viewModel::confirmOptIn,
                                 viewModel::confirmInstalled, viewModel::submitFeedback,
                             )
@@ -234,6 +243,19 @@ fun LaunchWorkspace(
                             rows = state.testers,
                             circle = state.circle,
                         )
+                        LaunchDestination.EVIDENCE -> PublisherEvidenceScreen(
+                            state.campaignEvidence, state.loading, state.evidenceNotice,
+                            viewModel::refreshEvidence, viewModel::setEvidenceBuild,
+                            viewModel::declareEvidenceFix, viewModel::showEvidenceDetail,
+                            state.evidenceReportJson, viewModel::prepareEvidenceReport,
+                        )
+                        LaunchDestination.EVIDENCE_HISTORY -> EvidenceHistoryScreen(
+                            state.evidenceRuns, viewModel::showEvidenceDetail)
+                        LaunchDestination.EVIDENCE_DETAIL -> EvidenceRunDetailScreen(
+                            state.evidenceDetail, state.loading, viewModel::beginEvidenceRetest)
+                        LaunchDestination.EVIDENCE_RETEST -> EvidenceRetestScreen(
+                            state.evidenceDetail, state.loading, state.evidenceSavedId,
+                            viewModel::submitEvidenceRetest)
                         LaunchDestination.FEEDBACK -> Feedback(state.feedback)
                         LaunchDestination.ACCOUNT -> AccountScreen(
                             profile = profile,
@@ -782,6 +804,7 @@ private fun Dashboard(
     onCoordinationTime: (Int, String) -> Unit,
     onManagedOfferViewed: (String) -> Unit,
     onManagedCheckout: () -> Unit,
+    onEvidence: (() -> Unit)?,
 ) {
     var coordinationMinutesText by rememberSaveable(app.id) { mutableStateOf("") }
     var showPriorityOffer by rememberSaveable(app.id) { mutableStateOf(false) }
@@ -802,6 +825,11 @@ private fun Dashboard(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+        if (onEvidence != null) item {
+            OutlinedButton(onClick = onEvidence, enabled = !loading, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.publisher_evidence_title))
+            }
         }
         item {
             Card(

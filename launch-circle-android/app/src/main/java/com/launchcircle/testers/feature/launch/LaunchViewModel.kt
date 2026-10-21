@@ -28,7 +28,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 enum class LaunchDestination {
-    MY_LAUNCHES, ADD_APP, DASHBOARD, TODAY_TESTS, ASSIGNMENT, MISSION, TESTERS, FEEDBACK, ACCOUNT
+    MY_LAUNCHES, ADD_APP, DASHBOARD, TODAY_TESTS, ASSIGNMENT, MISSION, TESTERS, FEEDBACK, ACCOUNT, EVIDENCE, EVIDENCE_DETAIL, EVIDENCE_RETEST, EVIDENCE_HISTORY
 }
 
 enum class PilotSurface {
@@ -46,6 +46,15 @@ data class LaunchUiState(
     val availableCircles: List<LaunchCircle> = emptyList(),
     val selectedMission: TestMission? = null,
     val selectedAssignment: TestAssignment? = null,
+    val assignmentMissions: List<TestMission> = emptyList(),
+    val evidenceContext: com.launchcircle.testers.core.model.MissionEvidenceContext? = null,
+    val evidenceSavedId: String? = null,
+    val campaignEvidence: com.launchcircle.testers.core.model.CampaignEvidenceSummary? = null,
+    val evidenceNotice: String? = null,
+    val evidenceDetail: com.launchcircle.testers.core.model.EvidenceRunDetail? = null,
+    val evidenceReportJson: String? = null,
+    val evidenceRuns: List<com.launchcircle.testers.core.model.EvidenceRunFull> = emptyList(),
+    val evidenceDetailReturn: LaunchDestination = LaunchDestination.EVIDENCE,
     val testers: List<TesterAssignment> = emptyList(),
     val feedback: List<MissionFeedback> = emptyList(),
     val today: List<TestMission> = emptyList(),
@@ -420,6 +429,69 @@ class LaunchViewModel(
         )
     }
 
+    fun showEvidence() {
+        if (!_state.value.pilotConfig.cold_start_evidence_enabled) return
+        _state.value = _state.value.copy(destination = LaunchDestination.EVIDENCE,
+            campaignEvidence = null, evidenceNotice = null, evidenceReportJson = null, error = null)
+        refreshEvidence()
+    }
+
+    fun showMissionEvidenceHistory() = runTask {
+        val mission = checkNotNull(_state.value.selectedMission)
+        _state.value.copy(destination = LaunchDestination.EVIDENCE_HISTORY,
+            evidenceRuns = repository.evidenceRuns(mission.id))
+    }
+
+    fun showEvidenceDetail(runId: String) {
+        val origin = if (_state.value.destination == LaunchDestination.EVIDENCE_HISTORY)
+            LaunchDestination.EVIDENCE_HISTORY else LaunchDestination.EVIDENCE
+        _state.value = _state.value.copy(destination = LaunchDestination.EVIDENCE_DETAIL,
+            evidenceDetailReturn = origin, evidenceDetail = null, error = null, evidenceSavedId = null)
+        runTask { _state.value.copy(evidenceDetail = repository.evidenceRunDetail(runId)) }
+    }
+
+    fun beginEvidenceRetest() {
+        val detail = _state.value.evidenceDetail ?: return
+        if (detail.retest_context == null) return
+        _state.value = _state.value.copy(destination = LaunchDestination.EVIDENCE_RETEST,
+            evidenceSavedId = null, error = null)
+    }
+
+    fun submitEvidenceRetest(request: com.launchcircle.testers.core.model.MissionRunRequest) = runTask {
+        val detail = checkNotNull(_state.value.evidenceDetail)
+        val context = checkNotNull(detail.retest_context)
+        val saved = repository.submitMissionRun(context.mission_id, request.copy(retest_of_id = detail.run.id))
+        _state.value.copy(evidenceSavedId = saved.id,
+            campaignEvidence = if (_state.value.launches.any { it.id == detail.app_id })
+                repository.evidenceSummary(detail.app_id) else _state.value.campaignEvidence)
+    }
+
+    fun prepareEvidenceReport() = runTask {
+        val app = checkNotNull(_state.value.selectedApp)
+        _state.value.copy(evidenceReportJson = repository.evidenceReport(app.id))
+    }
+
+    fun refreshEvidence() = runTask {
+        val app = checkNotNull(_state.value.selectedApp)
+        _state.value.copy(campaignEvidence = repository.evidenceSummary(app.id))
+    }
+
+    fun setEvidenceBuild(version: Int, description: String) = runTask {
+        require(version > 0 && description.isNotBlank())
+        val app = checkNotNull(_state.value.selectedApp)
+        repository.setEvidenceBuild(app.id, version, description.trim())
+        _state.value.copy(campaignEvidence = repository.evidenceSummary(app.id),
+            evidenceNotice = "Candidate version saved")
+    }
+
+    fun declareEvidenceFix(runId: String, version: Int, description: String) = runTask {
+        require(version > 0 && description.isNotBlank())
+        val app = checkNotNull(_state.value.selectedApp)
+        repository.declareEvidenceFix(runId, version, description.trim())
+        _state.value.copy(campaignEvidence = repository.evidenceSummary(app.id),
+            evidenceNotice = "Fix declared; a passing retest is still required")
+    }
+
     fun showToday() = runTask {
         _state.value.copy(
             destination = LaunchDestination.TODAY_TESTS,
@@ -432,8 +504,36 @@ class LaunchViewModel(
         _state.value = _state.value.copy(
             destination = LaunchDestination.ASSIGNMENT,
             selectedAssignment = assignment,
+            assignmentMissions = emptyList(),
             error = null,
         )
+        if (_state.value.pilotConfig.cold_start_evidence_enabled) runTask {
+            _state.value.copy(
+                selectedAssignment = assignment.copy(status = repository.evidenceAssignmentStatus(assignment.id)),
+                assignmentMissions = repository.missions(assignment.id),
+            )
+        }
+    }
+
+    fun confirmAssignmentOptIn() = runTask {
+        val assignment = checkNotNull(_state.value.selectedAssignment)
+        val updated = repository.optIn(assignment.id)
+        repository.recordEnrollmentEvidence(assignment.id)
+        _state.value.copy(selectedAssignment = assignment.copy(status = updated.status))
+    }
+
+    fun confirmAssignmentInstalled() = runTask {
+        val assignment = checkNotNull(_state.value.selectedAssignment)
+        val updated = repository.installed(assignment.id)
+        _state.value.copy(
+            selectedAssignment = assignment.copy(status = updated.status),
+            assignmentMissions = repository.missions(assignment.id),
+        )
+    }
+
+    fun submitMissionEvidence(request: com.launchcircle.testers.core.model.MissionRunRequest) = withMission { mission ->
+        val saved = repository.submitMissionRun(mission.id, request)
+        _state.value.copy(evidenceSavedId = saved.id)
     }
 
     fun completeAssignment() = runTask {
@@ -452,8 +552,13 @@ class LaunchViewModel(
         _state.value = _state.value.copy(
             destination = LaunchDestination.MISSION,
             selectedMission = mission,
+            evidenceContext = null,
+            evidenceSavedId = null,
             error = null,
         )
+        if (_state.value.pilotConfig.cold_start_evidence_enabled) runTask {
+            _state.value.copy(evidenceContext = repository.evidenceContext(mission.id))
+        }
     }
 
     fun startMission() = withMission { mission ->
@@ -652,7 +757,11 @@ class LaunchViewModel(
             LaunchDestination.ASSIGNMENT -> LaunchDestination.TODAY_TESTS
             LaunchDestination.MISSION -> LaunchDestination.TODAY_TESTS
             LaunchDestination.TESTERS,
-            LaunchDestination.FEEDBACK -> LaunchDestination.DASHBOARD
+            LaunchDestination.FEEDBACK,
+            LaunchDestination.EVIDENCE -> LaunchDestination.DASHBOARD
+            LaunchDestination.EVIDENCE_DETAIL -> _state.value.evidenceDetailReturn
+            LaunchDestination.EVIDENCE_RETEST -> LaunchDestination.EVIDENCE_DETAIL
+            LaunchDestination.EVIDENCE_HISTORY -> LaunchDestination.MISSION
             LaunchDestination.MY_LAUNCHES -> LaunchDestination.MY_LAUNCHES
         }
         _state.value = _state.value.copy(destination = target, error = null)
