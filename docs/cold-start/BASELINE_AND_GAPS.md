@@ -15,7 +15,7 @@ Current circles.max_members=15 includes the owner: at most 14 other testers per 
 - Device keys identify reported client/lab installations, not verified physical hardware; reinstall and separate reporting clients can produce different keys. Canonical device identity is future work.
 - This pilot does not automatically recruit a shared cohort, verify human uniqueness, or replace existing matching.
 - Evidence UI is internal-pilot English; complete localization remains pending.
-- Publisher summary, candidate-build selection and fix declaration are available in the gated Android evidence screen. Linked retest submission and report export remain API/CLI workflows; full run-detail viewing and complete publisher management remain future work.
+- The gated Android evidence UI now supports publisher summaries, candidate builds, fix declarations, original run details, linked retests and native report save/share. Assigned testers have mission history and retest access. Shared cohort recruitment and Google verification remain outside these evidence workflows.
 - Authentication uses existing sessions. Dedicated machine credentials are not introduced.
 - Manual form metadata is reported by the client; it is not hardware attestation.
 - Legacy completion records do not establish a successful core workflow.

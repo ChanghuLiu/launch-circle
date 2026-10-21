@@ -85,3 +85,15 @@ data class CampaignEvidenceIssue(
 )
 
 data class EvidenceBuildRequest(val target_version_code: Int, val description: String)
+
+
+data class EvidenceRunDetails(val steps: List<MissionStepEvidence>, val note: String, val expected_version_code: Int)
+data class EvidenceRunFull(
+    val id: String, val mission_id: String, val result: String, val execution_source: String,
+    val package_name: String, val version_code: Int, val device_model: String, val android_api: Int,
+    val details: EvidenceRunDetails, val recorded_at: String, val retest_of_id: String?,
+)
+data class EvidenceRunDetail(
+    val run: EvidenceRunFull, val app_id: String, val app_name: String,
+    val can_submit_manual: Boolean, val fix: EvidenceBuildRequest?, val retest_context: MissionEvidenceContext?,
+)

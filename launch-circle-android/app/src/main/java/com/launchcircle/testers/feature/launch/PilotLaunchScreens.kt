@@ -230,7 +230,8 @@ fun LaunchWorkspace(
                         LaunchDestination.MISSION -> state.selectedMission?.let {
                             if (state.pilotConfig.cold_start_evidence_enabled) {
                                 MissionEvidenceScreen(state.evidenceContext, state.loading,
-                                    state.evidenceSavedId, viewModel::submitMissionEvidence)
+                                    state.evidenceSavedId, viewModel::submitMissionEvidence,
+                                    onHistory = viewModel::showMissionEvidenceHistory)
                             } else Mission(
                                 it, viewModel::startMission, viewModel::confirmOptIn,
                                 viewModel::confirmInstalled, viewModel::submitFeedback,
@@ -245,8 +246,16 @@ fun LaunchWorkspace(
                         LaunchDestination.EVIDENCE -> PublisherEvidenceScreen(
                             state.campaignEvidence, state.loading, state.evidenceNotice,
                             viewModel::refreshEvidence, viewModel::setEvidenceBuild,
-                            viewModel::declareEvidenceFix,
+                            viewModel::declareEvidenceFix, viewModel::showEvidenceDetail,
+                            state.evidenceReportJson, viewModel::prepareEvidenceReport,
                         )
+                        LaunchDestination.EVIDENCE_HISTORY -> EvidenceHistoryScreen(
+                            state.evidenceRuns, viewModel::showEvidenceDetail)
+                        LaunchDestination.EVIDENCE_DETAIL -> EvidenceRunDetailScreen(
+                            state.evidenceDetail, state.loading, viewModel::beginEvidenceRetest)
+                        LaunchDestination.EVIDENCE_RETEST -> EvidenceRetestScreen(
+                            state.evidenceDetail, state.loading, state.evidenceSavedId,
+                            viewModel::submitEvidenceRetest)
                         LaunchDestination.FEEDBACK -> Feedback(state.feedback)
                         LaunchDestination.ACCOUNT -> AccountScreen(
                             profile = profile,

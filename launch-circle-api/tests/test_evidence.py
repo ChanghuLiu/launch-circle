@@ -251,3 +251,82 @@ def test_assignment_status_and_export_do_not_confuse_daily_todo_with_enrollment(
     assert report["runs"][0]["execution_source"] == "CODEX_ASSISTED"
     assert report["summary"]["manual_reported_participants"] == 0
     assert "submitted_by_id" not in report["runs"][0]
+
+
+def test_run_detail_scopes_original_observations_and_fix_context(client, pilot):
+    owner, tester, other, launch, _, mission = pilot
+    body = run_body(mission, result="FAIL")
+    failed = client.post(
+        f"/missions/{mission['id']}/runs", headers=tester["headers"], json=body
+    ).json()
+    path = f"/runs/{failed['id']}/detail"
+    assert client.get(path, headers=other["headers"]).status_code == 404
+    detail = client.get(path, headers=owner["headers"]).json()
+    assert detail["run"]["details"]["steps"] == body["steps"]
+    assert detail["can_submit_manual"] is False
+    assert detail["retest_context"] is None
+    assert client.get(path, headers=tester["headers"]).json()["can_submit_manual"] is True
+    fix = {"target_version_code": 2, "description": "Synthetic fix declaration"}
+    assert (
+        client.post(f"/runs/{failed['id']}/fix", headers=owner["headers"], json=fix).status_code
+        == 200
+    )
+    assert client.get(path, headers=owner["headers"]).json()["retest_context"] is None
+    client.post(f"/apps/{launch['id']}/evidence/build", headers=owner["headers"], json=fix)
+    detail = client.get(path, headers=owner["headers"]).json()
+    assert detail["fix"] == fix
+    assert detail["retest_context"]["steps"] == [s["instruction"] for s in body["steps"]]
+    assert detail["retest_context"]["expected_version_code"] == 2
+
+
+def test_partial_failure_retest_repeats_original_scope_without_claiming_full_mission(client, pilot):
+    owner, tester, _, launch, _, mission = pilot
+    body = run_body(mission, result="FAIL")
+    body["steps"] = body["steps"][:1]
+    failed = client.post(
+        f"/missions/{mission['id']}/runs", headers=tester["headers"], json=body
+    ).json()
+    fix = {"target_version_code": 2, "description": "Synthetic partial failure fix"}
+    client.post(f"/runs/{failed['id']}/fix", headers=owner["headers"], json=fix)
+    client.post(f"/apps/{launch['id']}/evidence/build", headers=owner["headers"], json=fix)
+    retest = run_body(mission, key="partial-retest", version=2)
+    retest["retest_of_id"] = failed["id"]
+    assert (
+        client.post(
+            f"/missions/{mission['id']}/runs", headers=tester["headers"], json=retest
+        ).status_code
+        == 409
+    )
+    retest["steps"] = retest["steps"][:1]
+    saved = client.post(f"/missions/{mission['id']}/runs", headers=tester["headers"], json=retest)
+    assert saved.status_code == 201, saved.text
+    assert len(saved.json()["details"]["steps"]) == 1
+    summary = client.get(f"/apps/{launch['id']}/evidence-summary", headers=owner["headers"]).json()
+    assert summary["issues"][0]["state"] == "VERIFIED_FIXED"
+    assert summary["internal_readiness"] == "REVIEW_REQUIRED"
+
+
+def test_valid_linked_retest_survives_original_missed_window_without_rewriting_history(
+    client, pilot
+):
+    from app.models.launch import TestMission as Mission
+
+    owner, tester, _, launch, _, mission = pilot
+    body = run_body(mission, result="FAIL")
+    failure = client.post(
+        f"/missions/{mission['id']}/runs", headers=tester["headers"], json=body
+    ).json()
+    fix = {"target_version_code": 2, "description": "Synthetic delayed fix"}
+    client.post(f"/runs/{failure['id']}/fix", headers=owner["headers"], json=fix)
+    client.post(f"/apps/{launch['id']}/evidence/build", headers=owner["headers"], json=fix)
+    with SessionLocal() as db:
+        db.get(Mission, mission["id"]).status = "MISSED"
+        db.commit()
+    retry = run_body(mission, key="after-window", version=2)
+    path = f"/missions/{mission['id']}/runs"
+    assert client.post(path, headers=tester["headers"], json=retry).status_code == 409
+    retry["retest_of_id"] = failure["id"]
+    saved = client.post(path, headers=tester["headers"], json=retry)
+    assert saved.status_code == 201, saved.text
+    with SessionLocal() as db:
+        assert db.get(Mission, mission["id"]).status == "MISSED"

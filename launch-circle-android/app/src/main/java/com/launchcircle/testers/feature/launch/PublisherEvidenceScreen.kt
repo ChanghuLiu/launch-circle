@@ -33,6 +33,9 @@ fun PublisherEvidenceScreen(
     onRefresh: () -> Unit,
     onBuild: (Int, String) -> Unit,
     onFix: (String, Int, String) -> Unit,
+    onDetail: (String) -> Unit,
+    reportJson: String?,
+    onReport: () -> Unit,
 ) {
     LazyColumn(
         Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp),
@@ -45,6 +48,7 @@ fun PublisherEvidenceScreen(
                 Text(stringResource(R.string.publisher_evidence_refresh))
             }
             notice?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+            EvidenceReportActions(reportJson, loading, onReport)
         }
         if (summary != null) {
             item {
@@ -95,6 +99,9 @@ fun PublisherEvidenceScreen(
                         Text(issue.state, style = MaterialTheme.typography.titleMedium)
                         Text(stringResource(R.string.publisher_evidence_failure, issue.reported_version_code))
                         Text(stringResource(R.string.publisher_evidence_run_id, issue.run_id))
+                        OutlinedButton(onClick = { onDetail(issue.run_id) }, enabled = !loading) {
+                            Text(stringResource(R.string.evidence_view_details))
+                        }
                         if (issue.fixed_version_code != null) {
                             Text(stringResource(R.string.publisher_evidence_fix_build, issue.fixed_version_code))
                             Text(stringResource(R.string.publisher_evidence_retest,

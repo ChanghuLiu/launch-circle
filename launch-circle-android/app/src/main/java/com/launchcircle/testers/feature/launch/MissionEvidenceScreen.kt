@@ -78,6 +78,9 @@ fun MissionEvidenceScreen(
     loading: Boolean,
     savedId: String?,
     onSubmit: (MissionRunRequest) -> Unit,
+    executionSource: String? = "HUMAN_MANUAL",
+    retestOfId: String? = null,
+    onHistory: (() -> Unit)? = null,
 ) {
     if (context == null) {
         Text(stringResource(R.string.evidence_loading), modifier = Modifier.padding(20.dp))
@@ -91,7 +94,7 @@ fun MissionEvidenceScreen(
         mutableStateOf(List(context.steps.size) { "NOT_RUN" })
     }
     var note by rememberSaveable(context.mission_id) { mutableStateOf("") }
-    var requestKey by rememberSaveable(context.mission_id) {
+    var requestKey by rememberSaveable(context.mission_id, executionSource, retestOfId) {
         mutableStateOf(UUID.randomUUID().toString())
     }
     val uri = LocalUriHandler.current
@@ -105,6 +108,9 @@ fun MissionEvidenceScreen(
     ) {
         Text(stringResource(R.string.evidence_record_result), style = MaterialTheme.typography.headlineSmall)
         Text(context.goal)
+        if (onHistory != null) OutlinedButton(onClick = onHistory, enabled = !loading) {
+            Text(stringResource(R.string.evidence_history))
+        }
         OutlinedButton(onClick = {
             uri.openUri("https://play.google.com/store/apps/details?id=${context.package_name}")
         }) { Text(stringResource(R.string.evidence_open_app_listing)) }
@@ -147,12 +153,14 @@ fun MissionEvidenceScreen(
         Text(stringResource(R.string.evidence_observation_help))
         if (savedId != null) Text(stringResource(R.string.evidence_saved))
         Button(
-            enabled = !readOnly && expectedBuild != null && observedBuild != null && observedBuild > 0 &&
+            enabled = !readOnly && executionSource != null && expectedBuild != null && observedBuild != null && observedBuild > 0 &&
                 result != null && observations.all { it.isNotBlank() } &&
-                (expectedBuild == observedBuild || result == "BLOCKED"),
+                (expectedBuild == observedBuild || result == "BLOCKED") &&
+                (retestOfId == null || expectedBuild == observedBuild),
             onClick = {
                 onSubmit(MissionRunRequest(
                     idempotency_key = requestKey, result = checkNotNull(result),
+                    execution_source = checkNotNull(executionSource), retest_of_id = retestOfId,
                     package_name = context.package_name, version_code = checkNotNull(observedBuild),
                     expected_version_code = checkNotNull(expectedBuild),
                     steps = context.steps.mapIndexed { index, instruction ->

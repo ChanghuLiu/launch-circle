@@ -34,6 +34,7 @@ All evidence routes require authentication, the enabled feature flag, and matchi
 | GET /missions/{id}/evidence-context | Assigned steps, package and candidate version |
 | POST /missions/{id}/runs | Append validated, idempotent observations |
 | GET /missions/{id}/runs | Read scoped history |
+| GET /runs/{id}/detail | Scoped original observations, fix and retest context |
 | POST /runs/{id}/fix | Owner declares target fix build |
 | GET /apps/{id}/evidence-summary | Separate participant, build, device and source totals |
 | GET /apps/{id}/evidence-report | Owner-scoped summary and run details |
@@ -42,7 +43,11 @@ HUMAN_MANUAL requires the assigned tester identity. CODEX_ASSISTED and AUTOMATED
 
 ## Publisher evidence screen
 
-With the evidence flag enabled, open My Launch → Testing evidence. The owner can refresh participant observations separately from device/build results, inspect source totals and failing run states, set a positive candidate version code, and declare a target fix version with a description. Fix declarations remain unverified until the existing linked-retest API receives a passing observation on that build. A declared fix is shown read-only after recording. Reports still export through the CLI below; no automatic approval state is displayed.
+With the evidence flag enabled, open My Launch → Testing evidence. The owner can refresh participant observations separately from device/build results, inspect source totals and failing run states, set a positive candidate version code, and declare a target fix version with a description. Fix declarations remain unverified until a linked retest passes on that build. A declared fix is shown read-only after recording. Open View recorded steps → Retest recorded failure, explicitly select the recording source, repeat the original steps and save. Assigned testers can reach the same detail/retest flow from their mission → Recorded runs and retests. Owner-only summaries are not requested by tester submissions.
+
+A partial original failure is retested against exactly its original step scope, rather than claiming full-mission coverage. Changing the candidate away from the fix build disables retest context until the versions agree. Backend package, actor, assignment, build, step and idempotency checks remain authoritative.
+
+Prepare latest report creates an owner-scoped snapshot. Save report JSON or Save readable report opens Android document storage; Share report opens the chooser with a temporary read grant to the report file only. The chooser does not automatically send to a recipient. App-private sharing files are isolated under evidence-reports and old files are pruned when preparing another share. Refresh the report snapshot after new observations. CLI export remains available.
 
 ## Device evidence and exports
 
@@ -60,3 +65,9 @@ The device adapter reads installed package/version and device facts through ADB.
 Recruit and confirm actual participants, independently confirm Play opt-in for each app, set a candidate build, run assigned core workflows, triage failures, upload fixes and record retests. Use Play Console to assess applicable eligibility. The app's 14-day estimate uses recorded events, cannot backdate participation, and always reports google_eligibility_confirmed=false.
 
 See BASELINE_AND_GAPS.md and ACCEPTANCE.md before rollout.
+
+## Repeatable synthetic UI validation
+
+The development-only scripts.seed_evidence_ui_fixture command creates a separate, clearly labeled synthetic publisher/tester/app with a pre-seeded failure. It is restricted to the isolated evidence-pilot SQLite database, loopback API, development mode and enabled flag. Its data is never real customer testing or a real observed defect. Use a fresh private --session-file path. Never run it against production or include its identities/results in a real campaign.
+
+See CUSTOMER_PILOT_RUNBOOK.md for the real pilot handoff and remaining required inputs.

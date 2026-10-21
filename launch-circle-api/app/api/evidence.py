@@ -168,7 +168,11 @@ def submit_run(
         return existing
     assignment = mission.assignment
     refresh_mission_availability(db, [mission], now)
-    if body.result in {"PASS", "FAIL"} and mission.status not in {"AVAILABLE", "COMPLETED"}:
+    if (
+        body.result in {"PASS", "FAIL"}
+        and not body.retest_of_id
+        and mission.status not in {"AVAILABLE", "COMPLETED"}
+    ):
         raise HTTPException(409, "Mission is not available for execution")
     if assignment.status == "DROPPED":
         raise HTTPException(409, "Cannot submit new runs for a dropped assignment")
@@ -186,7 +190,11 @@ def submit_run(
     _, required_steps = mission_instructions(
         mission.mission_type, assignment.app.name, assignment.app.core_workflow_steps
     )
-    if body.result == "PASS" and [step.instruction for step in body.steps] != required_steps:
+    if (
+        body.result == "PASS"
+        and not body.retest_of_id
+        and [step.instruction for step in body.steps] != required_steps
+    ):
         raise HTTPException(409, "PASS requires evidence for every assigned mission step")
     if body.retest_of_id:
         parent, parent_mission = find_run(db, body.retest_of_id, actor)
@@ -388,6 +396,7 @@ def evidence_summary(
     )
     return {
         "app_id": app_id,
+        "app_name": app.name,
         "package_name": app.package_name,
         "candidate_version_code": build.version_code if build else None,
         "assigned_participants": len({item.tester_id for item in assignments}),
@@ -431,6 +440,7 @@ def evidence_summary(
             "Recorded enrollment is not proof of current Google opt-in or actual tester identity.",
             "Runner results do not become manual feedback or increase tester counts.",
             "Build-scoped coverage and owner fix declarations do not guarantee approval.",
+            "A passing retest verifies its original recorded steps, not the full mission or app.",
         ],
     }
 
@@ -460,4 +470,32 @@ def evidence_report(app_id: str, actor: Actor, db: Database, now: Clock):
         "generated_at": aware(now).isoformat(),
         "summary": summary,
         "runs": [MissionRunRead.model_validate(row).model_dump(mode="json") for row in rows],
+    }
+
+
+@router.get("/runs/{run_id}/detail")
+def run_detail(run_id: str, actor: Actor, db: Database):
+    row, mission = find_run(db, run_id, actor)
+    assignment = mission.assignment
+    fix = db.scalar(select(MissionRunFix).where(MissionRunFix.run_id == row.id))
+    build = db.get(CampaignBuild, assignment.app_id)
+    return {
+        "run": MissionRunRead.model_validate(row).model_dump(mode="json"),
+        "app_id": assignment.app_id,
+        "app_name": assignment.app.name,
+        "can_submit_manual": actor.id == assignment.tester_id,
+        "fix": {"target_version_code": fix.target_version_code, "description": fix.description}
+        if fix
+        else None,
+        "retest_context": {
+            "mission_id": mission.id,
+            "assignment_id": assignment.id,
+            "package_name": assignment.app.package_name,
+            "expected_version_code": build.version_code if build else None,
+            "assignment_status": assignment.status,
+            "goal": "Repeat the original failing observations on the declared fix build.",
+            "steps": [step["instruction"] for step in row.details["steps"]],
+        }
+        if row.result == "FAIL" and fix and build and build.version_code == fix.target_version_code
+        else None,
     }

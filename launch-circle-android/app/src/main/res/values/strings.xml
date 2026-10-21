@@ -314,4 +314,24 @@
     <string name="publisher_evidence_load_failed" translatable="false">Evidence could not be loaded. Try Refresh evidence.</string>
     <string name="publisher_evidence_version_input" translatable="false">Target version code</string>
     <string name="publisher_evidence_description" translatable="false">Change or fix description</string>
+    <string name="evidence_view_details" translatable="false">View recorded steps</string>
+    <string name="evidence_run_metadata" translatable="false">Result: %1$s; source: %2$s; version: %3$d; device: %4$s (API %5$d)</string>
+    <string name="evidence_detail_expected" translatable="false">Expected: %1$s</string>
+    <string name="evidence_detail_actual" translatable="false">Observed: %1$s</string>
+    <string name="evidence_detail_result" translatable="false">Result: %1$s</string>
+    <string name="evidence_retest_of" translatable="false">Retest of run: %1$s</string>
+    <string name="evidence_retest_scope" translatable="false">Retest the original recorded steps. A pass verifies this scope only; it does not certify the entire app.</string>
+    <string name="evidence_retest_unavailable" translatable="false">Declare a fix and set the candidate to that fix version before retesting.</string>
+    <string name="evidence_begin_retest" translatable="false">Retest recorded failure</string>
+    <string name="evidence_source_manual" translatable="false">Record as assigned tester manual observation</string>
+    <string name="evidence_source_assisted" translatable="false">Record as assisted observation</string>
+    <string name="evidence_prepare_report" translatable="false">Prepare latest report</string>
+    <string name="evidence_save_json" translatable="false">Save report JSON</string>
+    <string name="evidence_save_text" translatable="false">Save readable report</string>
+    <string name="evidence_share_report" translatable="false">Share report</string>
+    <string name="evidence_report_snapshot" translatable="false">This is a report snapshot. Prepare again after recording new results.</string>
+    <string name="evidence_report_saved" translatable="false">Report saved</string>
+    <string name="evidence_report_failed" translatable="false">Report could not be saved or shared. Please try again.</string>
+    <string name="evidence_history" translatable="false">Recorded runs and retests</string>
+    <string name="evidence_history_empty" translatable="false">No test observations recorded yet.</string>
 </resources>
