@@ -25,6 +25,10 @@ import com.launchcircle.testers.core.storage.TokenStore
 import retrofit2.HttpException
 
 interface LaunchRepository {
+    suspend fun evidenceSummary(appId: String): com.launchcircle.testers.core.model.CampaignEvidenceSummary = error("Evidence pilot is not supported")
+    suspend fun setEvidenceBuild(appId: String, version: Int, description: String): Unit = error("Evidence pilot is not supported")
+    suspend fun declareEvidenceFix(runId: String, version: Int, description: String): Unit = error("Evidence pilot is not supported")
+
     suspend fun evidenceAssignmentStatus(assignmentId: String): String = error("Evidence pilot is not supported")
 
     suspend fun evidenceContext(missionId: String): com.launchcircle.testers.core.model.MissionEvidenceContext = error("Evidence pilot is not supported")
@@ -79,6 +83,15 @@ class RealLaunchRepository(
         }
     }
 
+    override suspend fun evidenceSummary(appId: String) = authenticated { api.evidenceSummary(it, appId) }
+    override suspend fun setEvidenceBuild(appId: String, version: Int, description: String) = authenticated {
+        api.setEvidenceBuild(it, appId, com.launchcircle.testers.core.model.EvidenceBuildRequest(version, description))
+        Unit
+    }
+    override suspend fun declareEvidenceFix(runId: String, version: Int, description: String) = authenticated {
+        api.declareEvidenceFix(it, runId, com.launchcircle.testers.core.model.EvidenceBuildRequest(version, description))
+        Unit
+    }
     override suspend fun evidenceAssignmentStatus(assignmentId: String) = authenticated {
         api.evidenceAssignmentStatus(it, assignmentId).assignment_status
     }

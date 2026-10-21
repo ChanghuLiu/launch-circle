@@ -213,6 +213,7 @@ fun LaunchWorkspace(
                                     viewModel::recordCoordinationTime,
                                     { trigger -> viewModel.recordManagedOfferViewed(selected.id, trigger) },
                                     { viewModel.startManagedCheckout(selected.id) },
+                                    if (state.pilotConfig.cold_start_evidence_enabled) viewModel::showEvidence else null,
                                 )
                             }
                         }
@@ -240,6 +241,11 @@ fun LaunchWorkspace(
                             dashboard = state.selectedApp?.let { state.dashboards[it.id] },
                             rows = state.testers,
                             circle = state.circle,
+                        )
+                        LaunchDestination.EVIDENCE -> PublisherEvidenceScreen(
+                            state.campaignEvidence, state.loading, state.evidenceNotice,
+                            viewModel::refreshEvidence, viewModel::setEvidenceBuild,
+                            viewModel::declareEvidenceFix,
                         )
                         LaunchDestination.FEEDBACK -> Feedback(state.feedback)
                         LaunchDestination.ACCOUNT -> AccountScreen(
@@ -789,6 +795,7 @@ private fun Dashboard(
     onCoordinationTime: (Int, String) -> Unit,
     onManagedOfferViewed: (String) -> Unit,
     onManagedCheckout: () -> Unit,
+    onEvidence: (() -> Unit)?,
 ) {
     var coordinationMinutesText by rememberSaveable(app.id) { mutableStateOf("") }
     var showPriorityOffer by rememberSaveable(app.id) { mutableStateOf(false) }
@@ -809,6 +816,11 @@ private fun Dashboard(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+        if (onEvidence != null) item {
+            OutlinedButton(onClick = onEvidence, enabled = !loading, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.publisher_evidence_title))
+            }
         }
         item {
             Card(

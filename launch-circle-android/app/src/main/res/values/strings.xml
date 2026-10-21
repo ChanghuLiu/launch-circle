@@ -286,4 +286,32 @@
     <string translatable="false" name="evidence_observation_help">Record each step. Explain any blocked or unexecuted step. An incomplete test cannot pass.</string>
     <string translatable="false" name="evidence_saved">Test evidence saved. Your observations are recorded separately from automated checks.</string>
     <string translatable="false" name="evidence_save">Save test evidence</string>
+    <string name="publisher_evidence_title" translatable="false">Testing evidence</string>
+    <string name="publisher_evidence_limit" translatable="false">Enrollment observations are not Google verification. Device runs do not add real participants. Check eligibility in Play Console.</string>
+    <string name="publisher_evidence_refresh" translatable="false">Refresh evidence</string>
+    <string name="publisher_evidence_candidate" translatable="false">Candidate version code: %1$s</string>
+    <string name="publisher_evidence_unset" translatable="false">Not recorded</string>
+    <string name="publisher_evidence_people" translatable="false">Participant observations</string>
+    <string name="publisher_evidence_assigned" translatable="false">Assigned participants: %1$d</string>
+    <string name="publisher_evidence_joined" translatable="false">Reported joined participants: %1$d</string>
+    <string name="publisher_evidence_confirmed" translatable="false">Owner-confirmed joined: %1$d</string>
+    <string name="publisher_evidence_continuity" translatable="false">Reported continuous 14 days: %1$d</string>
+    <string name="publisher_evidence_manual" translatable="false">Participants reporting manual runs: %1$d</string>
+    <string name="publisher_evidence_devices" translatable="false">Device observations</string>
+    <string name="publisher_evidence_coverage" translatable="false">Reported devices on candidate build: %1$d</string>
+    <string name="publisher_evidence_runs" translatable="false">Recorded runs across all builds: %1$d</string>
+    <string name="publisher_evidence_sources" translatable="false">All-build sources — Manual: %1$d; assisted: %2$d; automated: %3$d</string>
+    <string name="publisher_evidence_results" translatable="false">Candidate results — Pass: %1$d; fail: %2$d; blocked: %3$d; not run: %4$d</string>
+    <string name="publisher_evidence_set_build" translatable="false">Set candidate version</string>
+    <string name="publisher_evidence_issues" translatable="false">Failures and retests</string>
+    <string name="publisher_evidence_fix_help" translatable="false">A fix declaration needs a linked passing retest on the declared build before it is verified.</string>
+    <string name="publisher_evidence_no_issues" translatable="false">No failing runs recorded.</string>
+    <string name="publisher_evidence_failure" translatable="false">Failure observed on version code %1$d</string>
+    <string name="publisher_evidence_run_id" translatable="false">Run: %1$s</string>
+    <string name="publisher_evidence_fix_build" translatable="false">Declared fix version code: %1$d</string>
+    <string name="publisher_evidence_retest" translatable="false">Latest retest result: %1$s</string>
+    <string name="publisher_evidence_declare_fix" translatable="false">Declare fix for retesting</string>
+    <string name="publisher_evidence_load_failed" translatable="false">Evidence could not be loaded. Try Refresh evidence.</string>
+    <string name="publisher_evidence_version_input" translatable="false">Target version code</string>
+    <string name="publisher_evidence_description" translatable="false">Change or fix description</string>
 </resources>

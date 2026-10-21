@@ -41,6 +41,15 @@ import retrofit2.http.Path
 import retrofit2.http.PUT
 
 interface LaunchCircleApi {
+    @GET("apps/{appId}/evidence-summary")
+    suspend fun evidenceSummary(@Header("Authorization") authorization: String, @Path("appId") appId: String): com.launchcircle.testers.core.model.CampaignEvidenceSummary
+
+    @POST("apps/{appId}/evidence/build")
+    suspend fun setEvidenceBuild(@Header("Authorization") authorization: String, @Path("appId") appId: String, @Body body: com.launchcircle.testers.core.model.EvidenceBuildRequest): Map<String, Any>
+
+    @POST("runs/{runId}/fix")
+    suspend fun declareEvidenceFix(@Header("Authorization") authorization: String, @Path("runId") runId: String, @Body body: com.launchcircle.testers.core.model.EvidenceBuildRequest): Map<String, Any>
+
     @GET("assignments/{assignmentId}/evidence-status")
     suspend fun evidenceAssignmentStatus(@Header("Authorization") authorization: String, @Path("assignmentId") assignmentId: String): com.launchcircle.testers.core.model.AssignmentEvidenceStatus
 

@@ -40,6 +40,10 @@ All evidence routes require authentication, the enabled feature flag, and matchi
 
 HUMAN_MANUAL requires the assigned tester identity. CODEX_ASSISTED and AUTOMATED_RUNNER remain explicitly labeled. Idempotent retries must reuse the exact request and key. A fix declaration alone never verifies a fix: a linked passing retest on the declared build and matching steps is required.
 
+## Publisher evidence screen
+
+With the evidence flag enabled, open My Launch → Testing evidence. The owner can refresh participant observations separately from device/build results, inspect source totals and failing run states, set a positive candidate version code, and declare a target fix version with a description. Fix declarations remain unverified until the existing linked-retest API receives a passing observation on that build. A declared fix is shown read-only after recording. Reports still export through the CLI below; no automatic approval state is displayed.
+
 ## Device evidence and exports
 
 Run the mission externally first; the adapter does not execute arbitrary app workflows or generate observations. Save the real step instruction, expected behavior, actual observation and result in JSON. Set LAUNCH_CIRCLE_ACCESS_TOKEN privately in the environment; never pass tokens as command arguments.

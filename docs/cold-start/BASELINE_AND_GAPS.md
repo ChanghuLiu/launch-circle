@@ -15,7 +15,7 @@ Current circles.max_members=15 includes the owner: at most 14 other testers per 
 - Device keys identify reported client/lab installations, not verified physical hardware; reinstall and separate reporting clients can produce different keys. Canonical device identity is future work.
 - This pilot does not automatically recruit a shared cohort, verify human uniqueness, or replace existing matching.
 - Evidence UI is internal-pilot English; complete localization remains pending.
-- Owner build declaration and fix/retest APIs are available; comprehensive publisher evidence management UI remains future work.
+- Publisher summary, candidate-build selection and fix declaration are available in the gated Android evidence screen. Linked retest submission and report export remain API/CLI workflows; full run-detail viewing and complete publisher management remain future work.
 - Authentication uses existing sessions. Dedicated machine credentials are not introduced.
 - Manual form metadata is reported by the client; it is not hardware attestation.
 - Legacy completion records do not establish a successful core workflow.

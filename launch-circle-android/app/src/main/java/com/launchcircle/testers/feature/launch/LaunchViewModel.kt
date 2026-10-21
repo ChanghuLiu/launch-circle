@@ -28,7 +28,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 enum class LaunchDestination {
-    MY_LAUNCHES, ADD_APP, DASHBOARD, TODAY_TESTS, ASSIGNMENT, MISSION, TESTERS, FEEDBACK, ACCOUNT
+    MY_LAUNCHES, ADD_APP, DASHBOARD, TODAY_TESTS, ASSIGNMENT, MISSION, TESTERS, FEEDBACK, ACCOUNT, EVIDENCE
 }
 
 enum class PilotSurface {
@@ -49,6 +49,8 @@ data class LaunchUiState(
     val assignmentMissions: List<TestMission> = emptyList(),
     val evidenceContext: com.launchcircle.testers.core.model.MissionEvidenceContext? = null,
     val evidenceSavedId: String? = null,
+    val campaignEvidence: com.launchcircle.testers.core.model.CampaignEvidenceSummary? = null,
+    val evidenceNotice: String? = null,
     val testers: List<TesterAssignment> = emptyList(),
     val feedback: List<MissionFeedback> = emptyList(),
     val today: List<TestMission> = emptyList(),
@@ -423,6 +425,34 @@ class LaunchViewModel(
         )
     }
 
+    fun showEvidence() {
+        if (!_state.value.pilotConfig.cold_start_evidence_enabled) return
+        _state.value = _state.value.copy(destination = LaunchDestination.EVIDENCE,
+            campaignEvidence = null, evidenceNotice = null, error = null)
+        refreshEvidence()
+    }
+
+    fun refreshEvidence() = runTask {
+        val app = checkNotNull(_state.value.selectedApp)
+        _state.value.copy(campaignEvidence = repository.evidenceSummary(app.id))
+    }
+
+    fun setEvidenceBuild(version: Int, description: String) = runTask {
+        require(version > 0 && description.isNotBlank())
+        val app = checkNotNull(_state.value.selectedApp)
+        repository.setEvidenceBuild(app.id, version, description.trim())
+        _state.value.copy(campaignEvidence = repository.evidenceSummary(app.id),
+            evidenceNotice = "Candidate version saved")
+    }
+
+    fun declareEvidenceFix(runId: String, version: Int, description: String) = runTask {
+        require(version > 0 && description.isNotBlank())
+        val app = checkNotNull(_state.value.selectedApp)
+        repository.declareEvidenceFix(runId, version, description.trim())
+        _state.value.copy(campaignEvidence = repository.evidenceSummary(app.id),
+            evidenceNotice = "Fix declared; a passing retest is still required")
+    }
+
     fun showToday() = runTask {
         _state.value.copy(
             destination = LaunchDestination.TODAY_TESTS,
@@ -688,7 +718,8 @@ class LaunchViewModel(
             LaunchDestination.ASSIGNMENT -> LaunchDestination.TODAY_TESTS
             LaunchDestination.MISSION -> LaunchDestination.TODAY_TESTS
             LaunchDestination.TESTERS,
-            LaunchDestination.FEEDBACK -> LaunchDestination.DASHBOARD
+            LaunchDestination.FEEDBACK,
+            LaunchDestination.EVIDENCE -> LaunchDestination.DASHBOARD
             LaunchDestination.MY_LAUNCHES -> LaunchDestination.MY_LAUNCHES
         }
         _state.value = _state.value.copy(destination = target, error = null)

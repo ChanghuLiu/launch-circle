@@ -58,3 +58,30 @@ fun missionEvidenceOutcome(results: List<String>): String? = when {
     results.all { it == "NOT_RUN" } -> "NOT_RUN"
     else -> null
 }
+
+
+data class CampaignEvidenceSummary(
+    val app_id: String,
+    val package_name: String,
+    val candidate_version_code: Int?,
+    val assigned_participants: Int,
+    val reported_joined_participants: Int,
+    val owner_confirmed_joined_participants: Int,
+    val reported_continuous_14_days: Int,
+    val manual_reported_participants: Int,
+    val total_runs: Int,
+    val current_build_device_coverage: Int,
+    val current_build_results: Map<String, Int>,
+    val execution_sources: Map<String, Int>,
+    val issues: List<CampaignEvidenceIssue>,
+)
+
+data class CampaignEvidenceIssue(
+    val run_id: String,
+    val reported_version_code: Int,
+    val fixed_version_code: Int?,
+    val state: String,
+    val last_retest_result: String?,
+)
+
+data class EvidenceBuildRequest(val target_version_code: Int, val description: String)

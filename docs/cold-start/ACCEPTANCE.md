@@ -40,3 +40,11 @@ On the connected TCL K12 (T434J, API 36), Notes Escape version code 14 displayed
 The adapter read installed version/device facts and submitted these actual observations as CODEX_ASSISTED. Exact saved-request replay returned the same run ID, 5fde1ade-bc6c-4809-a5bf-8cb4af548071. The owner report then exported successfully with two total runs and two reported devices, both assisted. Manual participant count and reported joined participant count remained zero; Google eligibility remained unconfirmed. No human test result was entered through the UI.
 
 This closes the connected-device evidence submission/replay/export check. Recruitment, Google enrollment verification and a real customer testing campaign remain outstanding.
+
+## Publisher evidence UI follow-up
+
+The gated My Launch → Testing evidence screen was added for app owners. It separates participant observations, candidate-build device/results and all-build execution sources, includes refresh and candidate version selection, and lists failure/retest states with one-time fix declaration controls. Backend authorization and fix/retest validation remain unchanged.
+
+TCL K12 displayed the expected pilot data: assigned participants 1 (synthetic), joined participants 0, owner-confirmed joined 0, continuous 14 days 0, manual reporting participants 0, candidate-build devices 2 and assisted runs 2. The UI displayed no recorded failures. Saving candidate version 14 succeeded with an HTTP 200 response and a visible Candidate version saved notice. The candidate form asks only for version code; fix descriptions are collected only for fix declarations, where the backend persists them.
+
+Android unit tests (31), final debug assembly and lintDebug were rerun successfully. Failure-card submission was not exercised against fabricated device failures on the phone; existing backend tests cover owner isolation and linked fix/retest validation. This remains an internal English pilot, default-off and undeployed.
