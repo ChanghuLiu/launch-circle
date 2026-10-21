@@ -25,10 +25,18 @@ One CODEX_ASSISTED PASS was accepted for this narrow navigation mission. Replayi
 
 The parallel Launch Circle debug app was installed without removing or clearing the normal app. Guided assignment UI was observed using explicitly synthetic development sessions. That inspection found a legacy daily-todo status mismatch; an independent assignment-state endpoint and client query fixed it. The original phone disconnected before final UI verification. Follow-up verification on TCL K12 (T434J, Android API 36) completed that check: the final parallel APK installed successfully, the synthetic active assignment displayed mission days without a repeated opt-in confirmation, and the Day 1 form displayed candidate version 14. Untouched steps remained NOT_RUN and the actual Save button node was disabled. No HUMAN_MANUAL evidence was submitted during this assisted UI inspection.
 
-The initial black screenshot did not count as UI coverage. The reconnected TCL K12 subsequently produced readable UI hierarchies and the explicit follow-up checks above. This adds Launch Circle UI coverage; it does not extend the earlier Notes Escape workflow result to another device.
+The initial black screenshot did not count as UI coverage. The reconnected TCL K12 subsequently produced readable UI hierarchies and the explicit follow-up checks above. That check initially added Launch Circle UI coverage. The separate actual K12 Notes Escape navigation check below subsequently added device-specific workflow evidence.
 
 ## Reports and handoff
 
 The refreshed owner session successfully exported private JSON and Markdown containing the one observed run. Credentials, session files, device request envelopes and customer-free internal reports remain outside Git.
 
 Production feature flag remains default-off. No release upload or production deployment was performed.
+
+## K12 evidence round trip follow-up
+
+On the connected TCL K12 (T434J, API 36), Notes Escape version code 14 displayed its main screen and selection controls. Tapping Select .sdocx files opened com.google.android.go.documentsui. Android Back returned to Notes Escape with No .sdocx files selected and the selection action still present. No blocker was observed within this narrow navigation scope. No conversion or export operation was exercised.
+
+The adapter read installed version/device facts and submitted these actual observations as CODEX_ASSISTED. Exact saved-request replay returned the same run ID, 5fde1ade-bc6c-4809-a5bf-8cb4af548071. The owner report then exported successfully with two total runs and two reported devices, both assisted. Manual participant count and reported joined participant count remained zero; Google eligibility remained unconfirmed. No human test result was entered through the UI.
+
+This closes the connected-device evidence submission/replay/export check. Recruitment, Google enrollment verification and a real customer testing campaign remain outstanding.
