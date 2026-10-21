@@ -58,7 +58,7 @@ CUSTOMER_PILOT_RUNBOOK.md defines the 2–3-app handoff. Actual campaign links/b
 
 ## Readiness review follow-up
 
-PR #1 is open, draft and mergeable against its existing release baseline. GitHub reports no checks; this repository has no hosted workflow configured. Test results in this record are local verification on TradeWind, not GitHub CI approval.
+PR #1 remains a draft against its existing release baseline. The local results above were recorded before hosted CI existed. The repository now includes .github/workflows/ci.yml; check the live PR status for hosted results. CI verifies the backend on Python 3.12 and 3.14, upgrades a fresh SQLite database, and runs Android unit tests, debug assembly and lint. It uploads test/lint reports with seven-day retention, uses read-only repository permissions and no production secrets, and never deploys. The Android platform is installed using its published platforms;android-37.0 package ID.
 
 The system document-picker flow now stages report bytes in a separate app-private cache directory and saves only a small pending-file reference across activity recreation. K12 was rotated to landscape while the Android save window was open: the resulting 4,461-byte JSON retained both original Notes Escape observations and zero manual participants. The staged private file was removed after saving and original rotation settings were restored. Extra save/share actions are disabled while an export is pending. The final APK cancellation check confirmed the draft was removed, saving was re-enabled and no success was displayed.
 

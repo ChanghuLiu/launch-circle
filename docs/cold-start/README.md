@@ -71,3 +71,9 @@ See BASELINE_AND_GAPS.md and ACCEPTANCE.md before rollout.
 The development-only scripts.seed_evidence_ui_fixture command creates a separate, clearly labeled synthetic publisher/tester/app with a pre-seeded failure. It is restricted to the isolated evidence-pilot SQLite database, loopback API, development mode and enabled flag. Its data is never real customer testing or a real observed defect. Use a fresh private --session-file path. Never run it against production or include its identities/results in a real campaign.
 
 See CUSTOMER_PILOT_RUNBOOK.md for the real pilot handoff and remaining required inputs.
+
+## Hosted verification
+
+.github/workflows/ci.yml runs for relevant pull-request changes and main-branch pushes, with manual dispatch available once the workflow is on the default branch. Python 3.12 and 3.14 each run the backend suite, evidence-module Ruff checks and an empty SQLite migration. Android uses Java 17 and SDK platform 37.0 for debug unit tests, APK assembly and lint. Existing phase0 lint debt is explicitly outside the evidence lint gate.
+
+Third-party actions are pinned to immutable commits. Repository permissions are read-only and checkout does not persist credentials. No signing keys, real API sessions, production databases, deploy commands or Play release uploads are used. Only JUnit/test/lint reports are uploaded, for seven days; debug signing files and APKs are not published by this workflow. See the live PR checks for actual hosted outcomes rather than treating local results as CI approval.

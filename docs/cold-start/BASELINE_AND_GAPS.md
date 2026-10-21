@@ -19,7 +19,7 @@ Current circles.max_members=15 includes the owner: at most 14 other testers per 
 - Authentication uses existing sessions. Dedicated machine credentials are not introduced.
 - Manual form metadata is reported by the client; it is not hardware attestation.
 - Legacy completion records do not establish a successful core workflow.
-- GitHub currently reports no hosted checks: verification is local, and CI has not been configured.
+- GitHub CI now checks backend Python 3.12/3.14 and Android debug tests/build/lint. Review the latest PR checks; CI does not deploy or verify Google enrollment.
 - Large campaigns need pagination and production performance review; the current report loads campaign history.
 - No 14-day real-customer campaign, Google sign-in end-to-end test, or production rollout was performed.
 
