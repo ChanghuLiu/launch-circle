@@ -72,3 +72,6 @@ backups/
 acceptance-artifacts/
 captures/
 **/captures/
+
+# Kotlin compiler local session state
+**/.kotlin/

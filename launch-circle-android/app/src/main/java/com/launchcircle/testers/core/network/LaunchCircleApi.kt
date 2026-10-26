@@ -41,6 +41,19 @@ import retrofit2.http.Path
 import retrofit2.http.PUT
 
 interface LaunchCircleApi {
+    @GET("tester-pool/me")
+    suspend fun poolPreference(@Header("Authorization") auth: String): com.launchcircle.testers.core.model.PoolPreference
+    @POST("tester-pool/me")
+    suspend fun setPoolPreference(@Header("Authorization") auth: String, @Body body: com.launchcircle.testers.core.model.PoolOptIn): com.launchcircle.testers.core.model.PoolPreference
+    @GET("tester-pool/opportunities")
+    suspend fun poolOpportunities(@Header("Authorization") auth: String): List<com.launchcircle.testers.core.model.PoolOpportunity>
+    @GET("apps/{appId}/supply")
+    suspend fun poolSupply(@Header("Authorization") auth: String, @Path("appId") appId: String): com.launchcircle.testers.core.model.PoolSupply
+    @POST("apps/{appId}/pool-listing")
+    suspend fun setPoolListing(@Header("Authorization") auth: String, @Path("appId") appId: String, @Body body: com.launchcircle.testers.core.model.PoolOptIn): com.launchcircle.testers.core.model.PoolSupply
+    @POST("apps/{appId}/tester-pool/accept")
+    suspend fun acceptPoolApp(@Header("Authorization") auth: String, @Path("appId") appId: String): Map<String, String>
+
     @GET("missions/{missionId}/runs")
     suspend fun evidenceRuns(@Header("Authorization") authorization: String, @Path("missionId") missionId: String): List<com.launchcircle.testers.core.model.EvidenceRunFull>
 

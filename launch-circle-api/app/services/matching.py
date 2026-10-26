@@ -1,9 +1,10 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.launch import App, CircleMember, TesterAssignment
+from app.models.pool import TesterPoolPreference
 from app.models.user import User
 from app.services.assignments import assignment_day
 from app.services.events import emit_event
@@ -18,7 +19,7 @@ def _timestamp(value: datetime | None) -> float:
     if value is None:
         return 0.0
     if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
+        value = value.replace(tzinfo=UTC)
     return value.timestamp()
 
 
@@ -31,7 +32,8 @@ def match_testers(
     now: datetime | None = None,
 ) -> list[TesterAssignment]:
     current = [
-        a for a in app.assignments
+        a
+        for a in app.assignments
         if a.status != "DROPPED" and a.health_status not in {"INACTIVE", "DROPPED"}
     ]
     needed = max(0, app.tester_target - len(current))
@@ -49,12 +51,13 @@ def match_testers(
             select(User).where(
                 User.id != app.owner_id,
                 User.is_active.is_(True),
+                User.id.not_in(select(TesterPoolPreference.user_id)),
                 User.id.in_(circle_member_ids),
             )
         )
     )
     active_for_app = {a.tester_id for a in app.assignments}
-    current_time = now or datetime.now(timezone.utc)
+    current_time = now or datetime.now(UTC)
     current_day = assignment_day(current_time)
     workloads: dict[str, int] = {}
     for assignment in db.scalars(select(TesterAssignment)):
@@ -164,6 +167,7 @@ def assign_replacements(
                 CircleMember.circle_id == app.circle_id,
                 CircleMember.status == "ACTIVE",
                 User.is_active.is_(True),
+                User.id.not_in(select(TesterPoolPreference.user_id)),
                 User.id != app.owner_id,
             )
         )
@@ -207,10 +211,9 @@ def assign_replacements(
         if row.replacement_for_id is not None and row.status != "DROPPED"
     }
     inactive = [
-        row for row in app.assignments
-        if (
-            row.health_status in {"INACTIVE", "DROPPED"} or row.status == "DROPPED"
-        )
+        row
+        for row in app.assignments
+        if (row.health_status in {"INACTIVE", "DROPPED"} or row.status == "DROPPED")
         and row.id not in assignments_with_replacements
     ]
     inactive.sort(key=lambda row: (_timestamp(row.assigned_at), row.id), reverse=True)

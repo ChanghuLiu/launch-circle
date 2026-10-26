@@ -853,7 +853,7 @@ def create_app(
     canonical_developer_id = settings.google_play_developer_account_id.strip()
     if settings.is_deployment and (
         not canonical_developer_id
-        or body.play_developer_account_id != canonical_developer_id
+        or body.play_developer_account_id.strip() != canonical_developer_id
     ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

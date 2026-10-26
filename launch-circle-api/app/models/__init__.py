@@ -17,6 +17,7 @@ from app.models.launch import (
     TesterAssignment,
     TestMission,
 )
+from app.models.pool import PoolListing, TesterPoolPreference
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 
@@ -41,9 +42,11 @@ __all__ = [
     "MissionRun",
     "MissionRunFix",
     "PilotEvent",
+    "PoolListing",
     "RefreshToken",
     "TestAssignment",
     "TestMission",
     "TesterAssignment",
+    "TesterPoolPreference",
     "User",
 ]
