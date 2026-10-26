@@ -17,7 +17,7 @@ from app.models.launch import (
     TesterAssignment,
     TestMission,
 )
-from app.models.pool import PoolListing, TesterPoolPreference
+from app.models.pool import AppIntake, PoolListing, TesterPoolPreference
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 
@@ -27,6 +27,7 @@ __all__ = [
     "AdditionalAppPurchase",
     "App",
     "AppChange",
+    "AppIntake",
     "BackendEvent",
     "CampaignBuild",
     "Circle",

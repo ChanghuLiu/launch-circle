@@ -18,4 +18,25 @@ Android 1.0.9 (11), minSdk 27, keeps Google Play Billing and existing app identi
 
 ## Verification before publication
 
-107 backend tests passed, including 17 shared-pool cases. The synthetic 1–12-customer matrix, concurrent capacity checks, consent isolation and account-deletion cascades passed. Empty SQLite upgrade and 0016 downgrade/re-upgrade passed. Scoped Ruff and whitespace checks passed. Android 34 unit tests, debug build/lint and signed release bundle passed. Real Google sign-in and a real 14-day external customer campaign are not established by these checks.
+110 backend tests passed, including 17 shared-pool cases. The synthetic 1–12-customer matrix, concurrent capacity checks, consent isolation and account-deletion cascades passed. Empty SQLite upgrade and 0016 downgrade/re-upgrade passed. Scoped Ruff and whitespace checks passed. Android 34 unit tests, debug build/lint and signed release bundle passed. Real Google sign-in and a real 14-day external customer campaign are not established by these checks.
+
+## Assisted onboarding for an external publisher
+
+The production automatic registration route is scoped to the connected Play publisher. The new private assisted intake avoids bypassing that check: a signed-in external publisher can submit app name, package, claimed numeric publisher ID and 1–5 core steps. Submission creates a PENDING request, not an app, a verified identity or an entitlement. Requests are visible only to their submitter; two pending requests per user are allowed.
+
+An authorized server operator must independently review proof that the customer controls the package and is authorized to act for the claimed publisher. Obtain evidence through an agreed secure support channel, not passwords, private keys or a public workflow field. Keep the evidence file private with mode 600. The local review command requires an existing absolute SQLite path, request ID, reviewer, reviewed proof file and redacted conclusion. There is no remotely callable approval endpoint.
+
+Example command shape (all placeholders must be replaced from real reviewed records):
+
+    PYTHONPATH=. python scripts/review_app_intake.py --database-path /absolute/live/database.db --request-id REQUEST_ID --reviewer OPERATOR --proof-file /private/customer-authorization.pdf --note "Reviewed customer authorization and publisher/package association"
+
+Approval records reviewer, timestamp, proof hash and conclusion, then provisions only an unused publisher first-app entitlement. It does not mark the claimed numeric publisher identity Google-verified or grant unlimited registration. Existing Additional App/Billing checks remain in force; a used first-app entitlement is refused. The approved app appears in My Launch with Google Group unconfirmed and recruitment closed. Those access and recruitment decisions still require explicit owner action.
+
+Schema migration 0017 adds private app_intakes with account deletion cascade and app removal SET NULL. Three new tests cover private/idempotent external intake, pending limits and deletion, local reviewed provisioning/replay, unverified identity, refusal to bypass used entitlements, and validation/no public approval endpoint.
+
+
+## Final isolated UI verification
+
+The Android emulator successfully opted a synthetic tester into the pool, accepted a synthetic app and handed it to Today's tests; the database retained ASSIGNED with no Play opt-in/install timestamps. The emulator submitted a private external-publisher intake and it remained PENDING without an app. The local operator CLI, using a clearly synthetic private proof file on an isolated test database, approved that fixture: the app appeared in My Launch, its Google Group remained unconfirmed and the publisher identity remained UNVERIFIED. These are synthetic workflow checks, not a real customer authorization or campaign.
+
+Operator queue inspection: run scripts/review_app_intake.py with --database-path pointing to the existing live SQLite file and --list-pending. Approval requires the additional reviewed evidence arguments documented above. No invitation or external support message is sent by these tools.

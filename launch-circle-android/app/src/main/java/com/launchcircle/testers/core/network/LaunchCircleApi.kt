@@ -41,6 +41,11 @@ import retrofit2.http.Path
 import retrofit2.http.PUT
 
 interface LaunchCircleApi {
+    @GET("app-intakes")
+    suspend fun appIntakes(@Header("Authorization") auth: String): List<com.launchcircle.testers.core.model.AppIntakeStatus>
+    @POST("app-intakes")
+    suspend fun submitAppIntake(@Header("Authorization") auth: String, @Body body: com.launchcircle.testers.core.model.AppIntakeRequest): com.launchcircle.testers.core.model.AppIntakeStatus
+
     @GET("tester-pool/me")
     suspend fun poolPreference(@Header("Authorization") auth: String): com.launchcircle.testers.core.model.PoolPreference
     @POST("tester-pool/me")

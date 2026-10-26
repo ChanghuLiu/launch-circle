@@ -13,8 +13,10 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.launchcircle.testers.core.model.*
@@ -44,10 +46,17 @@ fun SharedPoolScreen(baseUrl: String, tokens: TokenStore, refresh: suspend () ->
     var preference by remember { mutableStateOf<PoolPreference?>(null) }
     var opportunities by remember { mutableStateOf(emptyList<PoolOpportunity>()) }
     var supplies by remember { mutableStateOf(emptyList<PoolSupply>()) }
+    var intakes by remember { mutableStateOf(emptyList<AppIntakeStatus>()) }
+    var intakeOpen by rememberSaveable { mutableStateOf(false) }
+    var appName by rememberSaveable { mutableStateOf("") }
+    var packageName by rememberSaveable { mutableStateOf("") }
+    var publisherId by rememberSaveable { mutableStateOf("") }
+    var steps by rememberSaveable { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
     suspend fun load() {
+        intakes = client.call { api.appIntakes(it) }
         preference = client.call { api.poolPreference(it) }
         opportunities = client.call { api.poolOpportunities(it) }
         val owned = client.call { api.apps(it) }
@@ -65,6 +74,7 @@ fun SharedPoolScreen(baseUrl: String, tokens: TokenStore, refresh: suspend () ->
                     is HttpException -> when (failure.code()) {
                         401 -> "Your session expired. Sign in again."
                         404 -> "This opportunity is no longer available. Refresh to continue."
+                        422 -> "Check the app name, package, numeric publisher account ID and 1–5 workflow steps."
                         409 -> "Not available yet: check group setup, workflow steps, circle capacity and the two-app limit."
                         else -> "Unable to update the pool. Please retry."
                     }
@@ -124,6 +134,39 @@ fun SharedPoolScreen(baseUrl: String, tokens: TokenStore, refresh: suspend () ->
             Text("Recruit for my apps", style = MaterialTheme.typography.titleLarge)
             Text("Opening recruitment shares the app name, package and workflow steps with volunteers. Do not put private credentials in workflow steps. No participants are fabricated or guaranteed.")
             if (supplies.isEmpty()) Text("Add your first app in My Launch to recruit testers.")
+        }
+        item {
+            OutlinedButton(enabled = !busy, onClick = { intakeOpen = !intakeOpen }) {
+                Text(if (intakeOpen) "Close onboarding form" else "Request assisted app onboarding")
+            }
+            if (intakeOpen) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("For publishers who cannot use automatic app verification. Submit your app for private operator review. A request does not verify ownership, start testing or grant a purchase.")
+                    Text("Only the publisher's first app can be provisioned through this pilot. We will ask you to demonstrate control of the package and publisher account through a secure support channel. Never submit passwords or secret keys.")
+                    OutlinedTextField(value = appName, onValueChange = { appName = it }, label = { Text("App name") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = packageName, onValueChange = { packageName = it }, label = { Text("Android package name") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = publisherId, onValueChange = { publisherId = it }, label = { Text("Numeric Play developer account ID") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = steps, onValueChange = { steps = it }, label = { Text("1–5 core workflow steps, one per line") }, minLines = 3, modifier = Modifier.fillMaxWidth())
+                    Button(enabled = !busy && appName.isNotBlank() && packageName.isNotBlank() && publisherId.isNotBlank() && steps.isNotBlank(), onClick = {
+                        action {
+                            client.call { api.submitAppIntake(it, AppIntakeRequest(appName.trim(), packageName.trim(), publisherId.trim(), steps.lines().map(String::trim).filter(String::isNotBlank))) }
+                            notice = "Request submitted for private review. Testing has not started."
+                            intakeOpen = false
+                            appName = ""; packageName = ""; publisherId = ""; steps = ""
+                        }
+                    }) { Text("Submit onboarding request") }
+                }
+            }
+        }
+        items(intakes, key = { "intake-" + it.id }) { intake ->
+            OutlinedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(intake.name, style = MaterialTheme.typography.titleMedium)
+                    Text(intake.package_name)
+                    Text("Onboarding: " + intake.status)
+                    Text(if (intake.status == "APPROVED" && intake.app_id != null) "Your app is available in My Launch. Confirm the Google Group and test access before opening recruitment." else if (intake.status == "APPROVED") "This approved app has been removed." else "Your request is private. Support must review your package authorization before creating a campaign.")
+                }
+            }
         }
         items(supplies, key = { it.app_id }) { supply ->
             OutlinedCard(Modifier.fillMaxWidth()) {
