@@ -48,6 +48,10 @@ jobs:
         run: >-
           python -m ruff check
           app/api/evidence.py app/models/evidence.py app/models/__init__.py
+          app/api/pool.py app/models/pool.py app/services/matching.py tests/test_shared_pool.py
+          app/api/intake.py app/services/intake.py tests/test_app_intake.py scripts/review_app_intake.py
+          alembic/versions/0017_assisted_app_intake.py
+          alembic/versions/0016_shared_tester_pool.py
           app/schemas/evidence.py app/main.py app/core/config.py
           alembic/versions/0015_cold_start_evidence.py
           scripts/seed_evidence_pilot.py scripts/seed_evidence_ui_fixture.py

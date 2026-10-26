@@ -6,7 +6,9 @@ from sqlalchemy.exc import SQLAlchemyError
 import app.models
 from app.api.auth import router as auth_router
 from app.api.evidence import router as evidence_router
+from app.api.intake import router as intake_router
 from app.api.phase0 import router as phase0_router
+from app.api.pool import router as pool_router
 from app.api.users import router as users_router
 from app.core.config import get_settings
 from app.core.database import Base, engine, ensure_sqlite_phase1_schema
@@ -44,3 +46,7 @@ app.include_router(evidence_router)
 app.include_router(auth_router)
 app.include_router(phase0_router)
 app.include_router(users_router)
+
+app.include_router(pool_router)
+
+app.include_router(intake_router)

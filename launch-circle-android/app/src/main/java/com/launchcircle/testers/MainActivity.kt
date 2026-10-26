@@ -7,6 +7,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -96,6 +98,7 @@ class MainActivity : ComponentActivity() {
                     launchViewModel = launchViewModel,
                     tokenStore = tokenStore,
                     apiBaseUrl = BuildConfig.API_BASE_URL,
+                    refreshSession = repository::refreshSession,
                     developmentAuthEnabled = BuildConfig.DEBUG && BuildConfig.ENABLE_DEVELOPMENT_AUTH,
                     onGoogleSignIn = {
                         lifecycleScope.launch {
@@ -132,6 +135,7 @@ private fun AppRoot(
     launchViewModel: LaunchViewModel,
     tokenStore: TokenStore,
     apiBaseUrl: String,
+    refreshSession: suspend () -> Boolean,
     developmentAuthEnabled: Boolean,
     onGoogleSignIn: () -> Unit,
     onSaveProfile: (String?, String, List<String>, String, Boolean) -> Unit,
@@ -169,14 +173,32 @@ private fun AppRoot(
                 onGoogleSignIn = onGoogleSignIn,
             )
             AppDestination.PROFILE -> ProfileScreen(state.profile, onSaveProfile)
-            AppDestination.HOME -> LaunchWorkspace(
-                profile = state.profile,
-                viewModel = launchViewModel,
-                deletionInProgress = accountDeletionState is AccountDeletionUiState.Deleting,
-                deletionError = (accountDeletionState as? AccountDeletionUiState.Error)?.message,
-                onDeleteAccount = onDeleteAccount,
-                onLogout = onLogout,
-            )
+            AppDestination.HOME -> {
+                var poolOpen by rememberSaveable(state.profile.id) { mutableStateOf(false) }
+                fun closePool() {
+                    poolOpen = false
+                    launchViewModel.refresh()
+                }
+                androidx.activity.compose.BackHandler(enabled = poolOpen) { closePool() }
+                if (poolOpen) {
+                    androidx.compose.foundation.layout.Column(
+                        androidx.compose.ui.Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()
+                    ) {
+                        androidx.compose.material3.TextButton(onClick = { closePool() }) {
+                            Text("Back to Launch Circle")
+                        }
+                        com.launchcircle.testers.feature.launch.SharedPoolScreen(apiBaseUrl, tokenStore, refreshSession)
+                    }
+                } else LaunchWorkspace(
+                    profile = state.profile,
+                    viewModel = launchViewModel,
+                    deletionInProgress = accountDeletionState is AccountDeletionUiState.Deleting,
+                    deletionError = (accountDeletionState as? AccountDeletionUiState.Error)?.message,
+                    onDeleteAccount = onDeleteAccount,
+                    onLogout = onLogout,
+                    onSharedPool = { poolOpen = true },
+                )
+            }
         }
     }
 }
