@@ -72,6 +72,7 @@ def ensure_sqlite_phase1_schema() -> None:
             "attribution_captured_at": "DATETIME",
         },
         "apps": {
+            "icon_url": "TEXT",
             "report_generated_at": "DATETIME",
             "testing_completed_at": "DATETIME",
             "production_ready_at": "DATETIME",

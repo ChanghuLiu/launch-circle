@@ -111,3 +111,9 @@ def get_current_user(
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unknown user")
     return user
+
+
+def is_app_admin(user: User) -> bool:
+    """Grant app administration only to authenticated Google identities."""
+    allowed = {email.strip().lower() for email in get_settings().admin_account_emails.split(",") if email.strip()}
+    return bool(user.is_active and user.google_subject and user.email.strip().lower() in allowed)

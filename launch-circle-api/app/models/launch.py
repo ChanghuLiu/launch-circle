@@ -81,6 +81,7 @@ class App(Base):
         ForeignKey("circles.id", ondelete="SET NULL"), index=True, nullable=True
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
+    icon_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     package_name: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     opt_in_url: Mapped[str] = mapped_column(Text, nullable=False)
     core_workflow_steps: Mapped[list[str]] = mapped_column(

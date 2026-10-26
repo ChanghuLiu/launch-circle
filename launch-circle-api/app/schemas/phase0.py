@@ -109,6 +109,7 @@ class AppUpdate(BaseModel):
 
 
 class AppRead(BaseModel):
+    icon_url: str | None = None
     id: str
     owner_id: str
     circle_id: str

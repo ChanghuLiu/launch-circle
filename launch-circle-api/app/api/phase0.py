@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
-from app.core.security import create_access_token, create_refresh_token, get_current_user
+from app.core.security import create_access_token, create_refresh_token, get_current_user, is_app_admin
 from app.models.launch import (
     AdditionalAppPurchase,
     App,
@@ -177,6 +177,7 @@ def circle_read(db: Session, circle: Circle) -> CircleRead:
 def app_read(app: App) -> AppRead:
     return AppRead(
         id=app.id,
+        icon_url=app.icon_url,
         owner_id=app.owner_id,
         circle_id=app.circle_id,
         play_developer_account_id=(
@@ -331,7 +332,7 @@ def owned_app(db: Session, app_id: str, user: User) -> App:
     app = db.get(App, app_id)
     if app is None:
         raise HTTPException(status_code=404, detail="App not found")
-    if app.owner_id != user.id:
+    if app.owner_id != user.id and not is_app_admin(user):
         raise HTTPException(status_code=403, detail="Only the app owner can perform this action")
     return app
 
@@ -850,27 +851,28 @@ def create_app(
     db: Session = Depends(get_db),
     now: datetime = Depends(get_now),
 ) -> AppRead:
-    canonical_developer_id = settings.google_play_developer_account_id.strip()
-    if settings.is_deployment and (
-        not canonical_developer_id
-        or body.play_developer_account_id.strip() != canonical_developer_id
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="The Play developer account is not verified for this service.",
-        )
-    try:
-        verify_app_package_ownership(settings, body.package_name)
-    except GooglePlayPackageNotOwned as exc:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="This app package is not accessible in the connected Google Play developer account.",
-        ) from exc
-    except GooglePlayBillingUnavailable as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Google Play account verification is temporarily unavailable. Try again later.",
-        ) from exc
+    if not is_app_admin(current_user):
+        canonical_developer_id = settings.google_play_developer_account_id.strip()
+        if settings.is_deployment and (
+            not canonical_developer_id
+            or body.play_developer_account_id.strip() != canonical_developer_id
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="The Play developer account is not verified for this service.",
+            )
+        try:
+            verify_app_package_ownership(settings, body.package_name)
+        except GooglePlayPackageNotOwned as exc:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This app package is not accessible in the connected Google Play developer account.",
+            ) from exc
+        except GooglePlayBillingUnavailable as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Google Play account verification is temporarily unavailable. Try again later.",
+            ) from exc
 
     selected_circle = None
     if body.circle_id is not None:
@@ -894,7 +896,7 @@ def create_app(
         developer_account = DeveloperAccount(
             play_developer_account_id=body.play_developer_account_id,
             identity_method="PUBLIC_PUBLISHER",
-            verification_status="VERIFIED",
+            verification_status="UNVERIFIED" if is_app_admin(current_user) else "VERIFIED",
         )
         db.add(developer_account)
         try:
@@ -914,8 +916,9 @@ def create_app(
 
     # A package access check above is the evidence for these fields. Never
     # convert an unverified client claim into a verified publisher identity.
-    developer_account.identity_method = "PUBLIC_PUBLISHER"
-    developer_account.verification_status = "VERIFIED"
+    if not is_app_admin(current_user):
+        developer_account.identity_method = "PUBLIC_PUBLISHER"
+        developer_account.verification_status = "VERIFIED"
 
     legacy_apps = list(
         db.scalars(
@@ -934,8 +937,9 @@ def create_app(
         select(func.count(App.id)).where(App.developer_account_id == developer_account.id)
     ) or 0
     paid_purchase = None
-    developer_account_unlimited = settings.has_unlimited_play_developer_account(
-        developer_account.play_developer_account_id
+    developer_account_unlimited = (
+        is_app_admin(current_user)
+        or settings.has_unlimited_play_developer_account(developer_account.play_developer_account_id)
     )
     if not developer_account_unlimited and (
         linked_app_count > 0 or developer_account.first_free_claimed_at is not None
@@ -1065,9 +1069,10 @@ def list_apps(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[AppRead]:
-    apps = db.scalars(
-        select(App).where(App.owner_id == current_user.id).order_by(App.created_at.desc())
-    )
+    query = select(App).order_by(App.created_at.desc())
+    if not is_app_admin(current_user):
+        query = query.where(App.owner_id == current_user.id)
+    apps = db.scalars(query)
     return [app_read(app) for app in apps]
 
 
@@ -1921,3 +1926,47 @@ def dashboard(
     result = calculate_readiness(db, app, now)
     db.commit()
     return DashboardRead(**result)
+
+
+@router.post("/apps/{app_id}/icon", response_model=AppRead)
+def upload_app_icon(app_id: str, body: dict, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> AppRead:
+    import base64
+    import binascii
+    app = owned_app(db, app_id, current_user)
+    value = body.get("data", "")
+    if not isinstance(value, str) or len(value) > 1400000:
+        raise HTTPException(422, "Icon must be a PNG or JPEG under 1 MB")
+    try:
+        raw = base64.b64decode(value, validate=True)
+    except (ValueError, binascii.Error):
+        raise HTTPException(422, "Invalid icon encoding")
+    mime = "image/png" if raw.startswith(b"\x89PNG\r\n\x1a\n") else "image/jpeg" if raw.startswith(b"\xff\xd8\xff") else None
+    if not mime or len(raw) > 1048576:
+        raise HTTPException(422, "Icon must be a PNG or JPEG under 1 MB")
+    app.icon_url = "data:" + mime + ";base64," + base64.b64encode(raw).decode()
+    db.commit()
+    return app_read(app)
+
+
+@router.post("/apps/{app_id}/icon/google-play", response_model=AppRead)
+def import_play_icon(app_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> AppRead:
+    import re
+    import html
+    import requests
+    from urllib.parse import urlparse
+    app = owned_app(db, app_id, current_user)
+    try:
+        response = requests.get("https://play.google.com/store/apps/details", params={"id": app.package_name, "hl": "en"}, timeout=10, allow_redirects=False)
+        response.raise_for_status()
+        match = re.search(r'<meta[^>]+property="og:image"[^>]+content="([^"]+)"', response.text)
+        if not match:
+            raise ValueError("No public icon")
+        url = html.unescape(match.group(1))
+        parsed = urlparse(url)
+        if parsed.scheme != "https" or not (parsed.hostname or "").endswith(".googleusercontent.com"):
+            raise ValueError("Unsupported icon host")
+    except (requests.RequestException, ValueError):
+        raise HTTPException(422, "Google Play icon unavailable. Upload your app icon instead.")
+    app.icon_url = url
+    db.commit()
+    return app_read(app)

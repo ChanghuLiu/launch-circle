@@ -1,5 +1,6 @@
 package com.launchcircle.testers.feature.launch
 
+import androidx.compose.ui.graphics.asImageBitmap
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -207,6 +208,8 @@ fun LaunchWorkspace(
                         )
                         LaunchDestination.ADD_APP -> AddApp(
                             state.pilotConfig, state.availableCircles, viewModel::createApp,
+                            profile.login_email.equals("liuchanghu2018@gmail.com", ignoreCase = true),
+                            viewModel::setDraftIcon,
                         )
                         LaunchDestination.DASHBOARD -> {
                             val selected = state.selectedApp
@@ -221,6 +224,7 @@ fun LaunchWorkspace(
                                     { trigger -> viewModel.recordManagedOfferViewed(selected.id, trigger) },
                                     { viewModel.startManagedCheckout(selected.id) },
                                     if (state.pilotConfig.cold_start_evidence_enabled) viewModel::showEvidence else null,
+                                    viewModel::setAppIcon,
                                 )
                             }
                         }
@@ -325,7 +329,7 @@ private fun Home(
     onJoin: () -> Unit,
     onAccount: () -> Unit,
     onLogout: () -> Unit,
-) {
+ ) {
     val primaryApp = selectedApp ?: apps.firstOrNull()
     val dashboard = primaryApp?.let { dashboards[it.id] }
     LazyColumn(
@@ -336,6 +340,14 @@ private fun Home(
         item {
             Text(stringResource(R.string.home), style = MaterialTheme.typography.headlineLarge)
             Text(stringResource(R.string.welcome_back, profile.display_name ?: stringResource(R.string.developer)), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        item { Button(onClick = onAdd, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.add_app)) } }
+        items(apps, key = { "app-${it.id}" }) { app ->
+            OutlinedButton(onClick = { onOpen(app) }, modifier = Modifier.fillMaxWidth()) {
+                AppIcon(app.name, app.icon_url)
+                Spacer(Modifier.width(12.dp))
+                Text(app.name, modifier = Modifier.weight(1f))
+            }
         }
         if (primaryApp == null || dashboard == null) {
             item {
@@ -352,7 +364,6 @@ private fun Home(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-            item { Button(onClick = onAdd, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.add_app)) } }
         } else {
             item {
                 CountdownHero(primaryApp, dashboard) { onOpen(primaryApp) }
@@ -652,6 +663,8 @@ private fun AddApp(
     config: PilotConfig,
     circles: List<LaunchCircle>,
     onCreate: (String, String, String, String?, String, List<String>, String, String) -> Unit,
+    isAdmin: Boolean,
+    onDraftIcon: (String?) -> Unit,
 ) {
     var name by rememberSaveable { mutableStateOf("") }
     var packageName by rememberSaveable { mutableStateOf("") }
@@ -665,12 +678,20 @@ private fun AddApp(
         if (circles.none { it.id == circleId }) circleId = circles.firstOrNull()?.id.orEmpty()
     }
     val context = LocalContext.current
+    var draftIcon by androidx.compose.runtime.remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) { onDraftIcon(null) }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(stringResource(R.string.add_your_app), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text(stringResource(R.string.guided_closed_test_setup), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Section("App icon")
+        IconUpload(name.ifBlank { "App" }, draftIcon) { data ->
+            draftIcon = "data:image/png;base64,$data"
+            onDraftIcon(data)
+        }
+        Text("Optional. Upload a PNG or JPEG up to 1 MB. You can import the Play icon after creating your app.", style = MaterialTheme.typography.bodySmall)
         Section(stringResource(R.string.app_details_section))
         OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.app_name_label)) }, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(packageName, { packageName = it }, label = { Text(stringResource(R.string.package_name_label)) }, modifier = Modifier.fillMaxWidth())
@@ -680,7 +701,8 @@ private fun AddApp(
             { playDeveloperAccountId = it.filter(Char::isDigit).take(32) },
             label = { Text(stringResource(R.string.google_play_developer_account_id)) },
             supportingText = {
-                Text(stringResource(R.string.first_app_free_additional_apps_paid))
+                if (isAdmin) Text("Administrator: unlimited apps, no additional-app charge.")
+                else Text(stringResource(R.string.first_app_free_additional_apps_paid))
             },
             modifier = Modifier.fillMaxWidth(),
         )
@@ -748,7 +770,7 @@ private fun AddApp(
                 )
             },
             enabled = name.isNotBlank() && packageName.contains(".") && optIn.startsWith("http") &&
-                validWorkflow && playDeveloperAccountId.isNotBlank() && circleId.isNotBlank() &&
+                validWorkflow && (isAdmin || playDeveloperAccountId.isNotBlank()) && circleId.isNotBlank() &&
                 (mode != "OWN_GROUP" || ownUrl.startsWith("http")),
             modifier = Modifier.fillMaxWidth(),
         ) { Text(stringResource(R.string.create_launch)) }
@@ -812,6 +834,7 @@ private fun Dashboard(
     onManagedOfferViewed: (String) -> Unit,
     onManagedCheckout: () -> Unit,
     onEvidence: (() -> Unit)?,
+    onIcon: (String, String?) -> Unit,
 ) {
     var coordinationMinutesText by rememberSaveable(app.id) { mutableStateOf("") }
     var showPriorityOffer by rememberSaveable(app.id) { mutableStateOf(false) }
@@ -832,6 +855,10 @@ private fun Dashboard(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+        item {
+            Section("App icon")
+            AppIconEditor(app, onIcon)
         }
         if (onEvidence != null) item {
             OutlinedButton(onClick = onEvidence, enabled = !loading, modifier = Modifier.fillMaxWidth()) {
@@ -1138,10 +1165,6 @@ private fun Today(
             Text(stringResource(R.string.tests), style = MaterialTheme.typography.headlineLarge)
             Text(stringResource(R.string.todays_tests), style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 4.dp))
             Text(stringResource(R.string.short_checks_today), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            OutlinedButton(
-                onClick = { uri.openUri(config.google_group_join_url) },
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-            ) { Text(stringResource(R.string.open_launch_circle_group)) }
         }
         if (assignments.isEmpty()) item { EmptyCard(stringResource(R.string.you_are_caught_up), stringResource(R.string.no_tests_today)) }
         if (toDo.isNotEmpty()) item { SectionHeader(stringResource(R.string.to_do)) }
@@ -1779,4 +1802,66 @@ private fun share(context: Context, value: String) {
         putExtra(Intent.EXTRA_TEXT, "Join my Android testing circle\n\n" + value)
     }
     context.startActivity(Intent.createChooser(intent, "Share invite"))
+}
+
+
+@Composable
+private fun AppIconEditor(app: LaunchApp, onIcon: (String, String?) -> Unit) {
+    IconUpload(app.name, app.icon_url) { onIcon(app.id, it) }
+    TextButton(onClick = { onIcon(app.id, null) }) { Text("Get Play icon") }
+}
+
+@Composable
+private fun IconUpload(name: String, url: String?, onUpload: (String) -> Unit) {
+    val context = LocalContext.current
+    var error by androidx.compose.runtime.remember { mutableStateOf<String?>(null) }
+    val picker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readIconBytes() }
+                    ?: error("Cannot read this image")
+                require(bytes.size <= 1048576) { "Choose an image smaller than 1 MB" }
+                require(android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size) != null) { "Choose a PNG or JPEG image" }
+                onUpload(android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP))
+            }.onSuccess { error = null }.onFailure { error = it.message ?: "Cannot read this image" }
+        }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        AppIcon(name, url)
+        TextButton(onClick = { picker.launch("image/*") }) { Text("Upload icon") }
+    }
+    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+}
+
+@Composable
+private fun AppIcon(name: String, url: String?) {
+    var bitmap by androidx.compose.runtime.remember(url) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    LaunchedEffect(url) {
+        bitmap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                val value = url ?: return@runCatching null
+                val bytes = if (value.startsWith("data:image/")) android.util.Base64.decode(value.substringAfter(","), android.util.Base64.DEFAULT) else {
+                    val connection = java.net.URL(value).openConnection().apply { connectTimeout = 5000; readTimeout = 5000 }
+                    connection.getInputStream().use { it.readIconBytes() }
+                }
+                if (bytes.size > 1048576) null else android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            }.getOrNull()
+        }
+    }
+    val loaded = bitmap
+    if (loaded != null) androidx.compose.foundation.Image(loaded.asImageBitmap(), contentDescription = name, modifier = Modifier.size(48.dp))
+    else Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) { Text(name.take(1).uppercase()) }
+}
+
+private fun java.io.InputStream.readIconBytes(): ByteArray {
+    val output = java.io.ByteArrayOutputStream()
+    val buffer = ByteArray(8192)
+    while (output.size() <= 1048576) {
+        val count = read(buffer, 0, minOf(buffer.size, 1048577 - output.size()))
+        if (count < 0) break
+        output.write(buffer, 0, count)
+    }
+    return output.toByteArray()
 }

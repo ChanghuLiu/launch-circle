@@ -21,8 +21,8 @@ android {
         applicationId = "com.launchcircle.testers"
         minSdk = 27
         targetSdk = 36
-        versionCode = 12
-        versionName = "1.0.10"
+        versionCode = 14
+        versionName = "1.0.12"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

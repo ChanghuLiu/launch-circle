@@ -88,6 +88,16 @@ class LaunchViewModel(
         loadWorkspace()
     }
 
+    private var draftIcon: String? = null
+
+    fun setDraftIcon(data: String?) { draftIcon = data }
+
+    fun setAppIcon(appId: String, data: String?) = runTask {
+        val updated = repository.setAppIcon(appId, data)
+        _state.value.copy(launches = _state.value.launches.map { if (it.id == appId) updated else it },
+            selectedApp = if (_state.value.selectedApp?.id == appId) updated else _state.value.selectedApp)
+    }
+
     fun refresh() {
         if (loadedUserId != null) loadWorkspace()
     }
@@ -208,6 +218,8 @@ class LaunchViewModel(
             )
         }
         pendingAppRequest = null
+        draftIcon?.let { repository.setAppIcon(app.id, it) }
+        draftIcon = null
         val apps = repository.launches()
         val dashboards = apps.associate { it.id to repository.dashboard(it.id) }
         _state.value.copy(
@@ -285,6 +297,8 @@ class LaunchViewModel(
         val request = pendingAppRequest.takeIf { oldPayment?.id == purchaseId }
         if (refreshed.status in setOf("PAID", "CONSUMED") && request != null) {
             val app = repository.createApp(request)
+            draftIcon?.let { repository.setAppIcon(app.id, it) }
+            draftIcon = null
             pendingAppRequest = null
             val apps = repository.launches()
             val dashboards = apps.associate { it.id to repository.dashboard(it.id) }

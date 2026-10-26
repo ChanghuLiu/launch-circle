@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     # publisher without the per-additional-app purchase. Keep this allowlist
     # server-side; package ownership is still checked against the Publisher API.
     google_play_unlimited_developer_account_ids: str = ""
+    admin_account_emails: str = "liuchanghu2018@gmail.com"
     google_play_additional_app_product_id: str = "additional_app_1"
     google_play_managed_product_id: str = "managed_launch_15"
     google_play_managed_credit_product_id: str = "managed_launch_14"

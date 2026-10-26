@@ -41,6 +41,11 @@ import retrofit2.http.Path
 import retrofit2.http.PUT
 
 interface LaunchCircleApi {
+    @retrofit2.http.POST("apps/{appId}/icon")
+    suspend fun uploadIcon(@retrofit2.http.Header("Authorization") auth: String, @retrofit2.http.Path("appId") appId: String, @retrofit2.http.Body body: Map<String, String>): com.launchcircle.testers.core.model.LaunchApp
+    @retrofit2.http.POST("apps/{appId}/icon/google-play")
+    suspend fun importIcon(@retrofit2.http.Header("Authorization") auth: String, @retrofit2.http.Path("appId") appId: String): com.launchcircle.testers.core.model.LaunchApp
+
     @GET("app-intakes")
     suspend fun appIntakes(@Header("Authorization") auth: String): List<com.launchcircle.testers.core.model.AppIntakeStatus>
     @POST("app-intakes")

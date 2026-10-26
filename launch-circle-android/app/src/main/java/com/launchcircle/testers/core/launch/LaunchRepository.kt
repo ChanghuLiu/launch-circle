@@ -25,6 +25,8 @@ import com.launchcircle.testers.core.storage.TokenStore
 import retrofit2.HttpException
 
 interface LaunchRepository {
+    suspend fun setAppIcon(appId: String, data: String?): LaunchApp = error("Icon upload requires an online account")
+
     suspend fun evidenceRuns(missionId: String): List<com.launchcircle.testers.core.model.EvidenceRunFull> = error("Evidence pilot is not supported")
 
     suspend fun evidenceRunDetail(runId: String): com.launchcircle.testers.core.model.EvidenceRunDetail = error("Evidence pilot is not supported")
@@ -76,6 +78,9 @@ class RealLaunchRepository(
     private val tokenStore: TokenStore,
     private val refreshSession: suspend () -> Boolean,
 ) : LaunchRepository {
+    override suspend fun setAppIcon(appId: String, data: String?) = authenticated {
+        if (data == null) api.importIcon(it, appId) else api.uploadIcon(it, appId, mapOf("data" to data))
+    }
     private fun bearer(): String =
         "Bearer " + checkNotNull(tokenStore.accessToken) { "No access token" }
 
