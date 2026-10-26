@@ -1057,7 +1057,7 @@ def get_app_circle(
     app = db.get(App, app_id)
     if app is None:
         raise HTTPException(status_code=404, detail="App not found")
-    if active_member(db, app.circle_id, current_user.id) is None:
+    if not is_app_admin(current_user) and active_member(db, app.circle_id, current_user.id) is None:
         raise HTTPException(status_code=403, detail="You are not an active member of this circle")
     evaluate_circle_recovery(db, app.circle_id, now)
     db.commit()

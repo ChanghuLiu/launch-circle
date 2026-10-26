@@ -186,3 +186,20 @@ def test_matching_only_uses_active_members_of_the_app_circle(client):
     assert matched.json()["assigned_now"] == 1
     rows = client.get(f"/apps/{app_id}/testers", headers=owner["headers"]).json()
     assert [row["tester_id"] for row in rows] == [member["id"]]
+
+
+def test_admin_can_read_other_app_circle_without_joining(client, monkeypatch):
+    owner = register(client, "owner-circle-access@example.com", "Owner")
+    admin = register(client, "admin-circle-access@example.com", "Admin")
+    outsider = register(client, "outsider-circle-access@example.com", "Outsider")
+    response = client.post("/apps", headers=owner["headers"], json={
+        "name": "Circle Access", "package_name": "com.example.circleaccess",
+        "opt_in_url": "https://play.google.com/apps/testing/com.example.circleaccess",
+        "play_developer_account_id": "1000000000000000099",
+    })
+    assert response.status_code == 201, response.text
+    aid = response.json()["id"]
+    monkeypatch.setattr("app.api.phase0.is_app_admin", lambda user: user.id == admin["id"])
+    assert client.get(f"/apps/{aid}/circle", headers=admin["headers"]).status_code == 200
+    assert client.get(f"/apps/{aid}/circle", headers=owner["headers"]).status_code == 200
+    assert client.get(f"/apps/{aid}/circle", headers=outsider["headers"]).status_code == 403
