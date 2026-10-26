@@ -114,7 +114,7 @@ fun LaunchWorkspace(
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
             Row(Modifier.fillMaxWidth().statusBarsPadding()) {
-                TextButton(onClick = onSharedPool) { Text("Shared tester pool") }
+                TextButton(onClick = onSharedPool) { Text("Find testers / Test apps") }
             }
         },
         bottomBar = {

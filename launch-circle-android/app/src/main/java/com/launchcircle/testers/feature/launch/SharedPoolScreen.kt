@@ -59,7 +59,8 @@ fun SharedPoolScreen(baseUrl: String, tokens: TokenStore, refresh: suspend () ->
         intakes = client.call { api.appIntakes(it) }
         preference = client.call { api.poolPreference(it) }
         opportunities = client.call { api.poolOpportunities(it) }
-        val owned = client.call { api.apps(it) }
+        val profile = client.call { api.me(it) }
+        val owned = client.call { api.apps(it) }.filter { it.owner_id == profile.id }
         supplies = owned.map { app -> client.call { api.poolSupply(it, app.id) } }
     }
     fun action(block: suspend () -> Unit) {
@@ -87,8 +88,9 @@ fun SharedPoolScreen(baseUrl: String, tokens: TokenStore, refresh: suspend () ->
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
-            Text("Shared tester pool", style = MaterialTheme.typography.headlineMedium)
-            Text("Start with one customer. Recruit real volunteers across Launch Circles.")
+            Text("Find testers & test apps", style = MaterialTheme.typography.headlineMedium)
+            Text("Meet other developers here. No invitation code or personal contact is needed.")
+            Text("1. Add your app and open recruitment below.\n2. Join the tester pool and choose an app to help.\n3. Open Tests to join its Play test, install, test and send feedback.")
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             notice?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
@@ -97,13 +99,13 @@ fun SharedPoolScreen(baseUrl: String, tokens: TokenStore, refresh: suspend () ->
         item {
             OutlinedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Volunteer as a tester", style = MaterialTheme.typography.titleLarge)
+                    Text("Test other developers’ apps", style = MaterialTheme.typography.titleLarge)
                     Text("Choose each app separately. Your password is never requested. No public ratings or reviews. Accepting a task does not join Google Play automatically.")
                     preference?.let { pref ->
                         Text("Active apps: " + pref.active_apps + " / " + pref.max_concurrent_apps)
                         Button(enabled = !busy, onClick = {
                             action { client.call { api.setPoolPreference(it, PoolOptIn(!pref.enabled)) } }
-                        }) { Text(if (pref.enabled) "Pause new opportunities" else "Join voluntary tester pool") }
+                        }) { Text(if (pref.enabled) "Pause new opportunities" else "Join the public tester pool") }
                         if (pref.enabled) Text("You are available. Pausing stops new acceptances; existing tasks and Google Play opt-ins are unchanged.")
                     }
                 }
@@ -125,13 +127,13 @@ fun SharedPoolScreen(baseUrl: String, tokens: TokenStore, refresh: suspend () ->
                                 client.call { api.acceptPoolApp(it, opportunity.app_id) }
                                 notice = "Task accepted. Return to Today's tests to opt in through Google Play and confirm installation separately."
                             }
-                        }) { Text("Accept this app's tasks") }
+                        }) { Text("Test this app") }
                     }
                 }
             }
         }
         item {
-            Text("Recruit for my apps", style = MaterialTheme.typography.titleLarge)
+            Text("Get testers for my apps", style = MaterialTheme.typography.titleLarge)
             Text("Opening recruitment shares the app name, package and workflow steps with volunteers. Do not put private credentials in workflow steps. No participants are fabricated or guaranteed.")
             if (supplies.isEmpty()) Text("Add your first app in My Launch to recruit testers.")
         }
@@ -176,10 +178,10 @@ fun SharedPoolScreen(baseUrl: String, tokens: TokenStore, refresh: suspend () ->
                     Text("Reported Play opt-in + installation: " + supply.reported_joined_and_installed)
                     Text("Missing to 12: " + supply.missing_to_minimum + ". Buffer target: 14.")
                     Text("Check continuity and eligibility in your own Play Console.")
-                    if (!supply.ready_to_list) Text("Before recruiting: confirm Google Group setup and add core workflow steps with a valid Play test link.")
+                    if (!supply.ready_to_list) Text("Setup needed: open My Launch, confirm your Google Group is added in Play Console, and add test steps and a valid test link. Then return here to publish.")
                     Button(enabled = !busy && (supply.listed || supply.ready_to_list), onClick = {
                         action { client.call { api.setPoolListing(it, supply.app_id, PoolOptIn(!supply.listed)) } }
-                    }) { Text(if (supply.listed) "Close recruitment" else "Open recruitment") }
+                    }) { Text(if (supply.listed) "Close recruitment" else "Publish to the tester pool") }
                 }
             }
         }
