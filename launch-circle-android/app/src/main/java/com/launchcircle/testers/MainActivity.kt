@@ -175,12 +175,16 @@ private fun AppRoot(
             AppDestination.PROFILE -> ProfileScreen(state.profile, onSaveProfile)
             AppDestination.HOME -> {
                 var poolOpen by rememberSaveable(state.profile.id) { mutableStateOf(false) }
-                androidx.activity.compose.BackHandler(enabled = poolOpen) { poolOpen = false }
+                fun closePool() {
+                    poolOpen = false
+                    launchViewModel.refresh()
+                }
+                androidx.activity.compose.BackHandler(enabled = poolOpen) { closePool() }
                 if (poolOpen) {
                     androidx.compose.foundation.layout.Column(
                         androidx.compose.ui.Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()
                     ) {
-                        androidx.compose.material3.TextButton(onClick = { poolOpen = false }) {
+                        androidx.compose.material3.TextButton(onClick = { closePool() }) {
                             Text("Back to Launch Circle")
                         }
                         com.launchcircle.testers.feature.launch.SharedPoolScreen(apiBaseUrl, tokenStore, refreshSession)

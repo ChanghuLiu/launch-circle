@@ -14,7 +14,7 @@ No users, invitations, customer apps or opt-ins are seeded into production. Pool
 
 Additive schema: tester_pool_preferences and pool_listings, with user/app deletion cascades; migration 0016 follows the existing additive evidence migration. SQLite accepts are serialized before quota reads. Tests cover concurrent app/circle limits, idempotency, consent revocation, scope checks and deletion.
 
-Android 1.0.9 (11), minSdk 27, keeps Google Play Billing and existing app identity. The evidence pilot remains disabled unless separately configured.
+Android 1.0.10 (12), minSdk 27, keeps Google Play Billing and existing app identity. The evidence pilot remains disabled unless separately configured.
 
 ## Verification before publication
 
@@ -40,3 +40,10 @@ Schema migration 0017 adds private app_intakes with account deletion cascade and
 The Android emulator successfully opted a synthetic tester into the pool, accepted a synthetic app and handed it to Today's tests; the database retained ASSIGNED with no Play opt-in/install timestamps. The emulator submitted a private external-publisher intake and it remained PENDING without an app. The local operator CLI, using a clearly synthetic private proof file on an isolated test database, approved that fixture: the app appeared in My Launch, its Google Group remained unconfirmed and the publisher identity remained UNVERIFIED. These are synthetic workflow checks, not a real customer authorization or campaign.
 
 Operator queue inspection: run scripts/review_app_intake.py with --database-path pointing to the existing live SQLite file and --list-pending. Approval requires the additional reviewed evidence arguments documented above. No invitation or external support message is sent by these tools.
+
+
+## Workspace refresh regression
+
+Returning from the shared pool now refreshes the main workspace, for both the on-screen Back button and system Back. The isolated emulator started with zero owned apps, stayed on the pool screen while a synthetic request was approved, then returned without signing out: the newly approved app immediately appeared with zero reported testers and the true missing-to-12 count. This fixes the stale workspace found during publication verification.
+
+Version 1.0.10 (12) supersedes the initially submitted 1.0.9 (11). The backend source remains 387f252 because this follow-up changes only Android navigation/refresh and version metadata.
