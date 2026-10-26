@@ -53,6 +53,7 @@ class Settings(BaseSettings):
         default="https://groups.google.com/g/launch-circle-12-testers",
         validation_alias=AliasChoices("GOOGLE_GROUP_URL", "LAUNCH_CIRCLE_GOOGLE_GROUP_JOIN_URL"),
     )
+    admin_password_hash: str = ""
     cold_start_evidence_enabled: bool = False
     development_auth_enabled: bool = True
 

@@ -1,3 +1,4 @@
+from app.models.admin import AdminAppControl, AdminAudit, AdminRecommendation, AdminSession
 from app.models.device import Device
 from app.models.evidence import CampaignBuild, EnrollmentEvidence, MissionRun, MissionRunFix
 from app.models.launch import (
@@ -25,6 +26,10 @@ TestAssignment = TesterAssignment
 
 __all__ = [
     "AdditionalAppPurchase",
+    "AdminAppControl",
+    "AdminAudit",
+    "AdminRecommendation",
+    "AdminSession",
     "App",
     "AppChange",
     "AppIntake",

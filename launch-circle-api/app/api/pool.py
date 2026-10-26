@@ -6,11 +6,12 @@ from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import func, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.models.admin import AdminAppControl, AdminRecommendation
 from app.models.launch import App, Circle, CircleMember, TesterAssignment
 from app.models.pool import PoolListing, TesterPoolPreference
 from app.models.user import User
@@ -140,13 +141,24 @@ def opportunities(actor: Actor, db: Database):
         select(App)
         .join(PoolListing)
         .join(User, User.id == App.owner_id)
+        .outerjoin(AdminAppControl, AdminAppControl.app_id == App.id)
+        .outerjoin(AdminRecommendation, and_(
+            AdminRecommendation.app_id == App.id, AdminRecommendation.tester_id == actor.id
+        ))
         .where(
+            or_(AdminAppControl.app_id.is_(None), and_(
+                AdminAppControl.paused.is_(False), AdminAppControl.kind != "SYNTHETIC"
+            )),
             PoolListing.enabled.is_(True),
             App.owner_id != actor.id,
             User.is_active.is_(True),
             App.status.in_(OPEN_STATES),
         )
-        .order_by(PoolListing.updated_at, App.id)
+        .order_by(
+            AdminRecommendation.tester_id.is_(None),
+            func.coalesce(AdminAppControl.priority, 50).desc(),
+            PoolListing.updated_at, App.id,
+        )
         .limit(100)
     ).all()
     result = []
@@ -203,8 +215,10 @@ def accept_opportunity(app_id: str, actor: Actor, db: Database, now: Clock):
     lock_writes(db, actor)
     item = db.get(App, app_id)
     listing = db.get(PoolListing, app_id)
+    control = db.get(AdminAppControl, app_id)
     if (
-        item is None
+        (control and (control.paused or control.kind == "SYNTHETIC"))
+        or item is None
         or not listing
         or not listing.enabled
         or not ready(item)
