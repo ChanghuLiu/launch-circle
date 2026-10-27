@@ -521,9 +521,10 @@ class LaunchViewModel(
             assignmentMissions = emptyList(),
             error = null,
         )
-        if (_state.value.pilotConfig.cold_start_evidence_enabled) runTask {
+        runTask {
             _state.value.copy(
-                selectedAssignment = assignment.copy(status = repository.evidenceAssignmentStatus(assignment.id)),
+                selectedAssignment = if (_state.value.pilotConfig.cold_start_evidence_enabled)
+                    assignment.copy(status = repository.evidenceAssignmentStatus(assignment.id)) else assignment,
                 assignmentMissions = repository.missions(assignment.id),
             )
         }
@@ -532,7 +533,7 @@ class LaunchViewModel(
     fun confirmAssignmentOptIn() = runTask {
         val assignment = checkNotNull(_state.value.selectedAssignment)
         val updated = repository.optIn(assignment.id)
-        repository.recordEnrollmentEvidence(assignment.id)
+        if (_state.value.pilotConfig.cold_start_evidence_enabled) repository.recordEnrollmentEvidence(assignment.id)
         _state.value.copy(selectedAssignment = assignment.copy(status = updated.status))
     }
 

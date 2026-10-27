@@ -177,7 +177,7 @@
     <string name="start_test">परीक्षण शुरू करें</string>
     <string name="mission_type_test_title">%1$s परीक्षण</string>
     <string name="about_minutes">लगभग %1$d मिनट</string>
-    <string name="assigned_for_day">दिन %1$d के लिए निर्धारित</string>
+    <string name="assigned_for_day">दिन %1$s के लिए निर्धारित</string>
     <string name="completion_saved">आपकी प्रगति सहेज ली गई है।</string>
     <string name="mark_test_complete">परीक्षण पूरा चिह्नित करें</string>
     <string name="open_play_testing_link">Play परीक्षण लिंक खोलें</string>

@@ -177,7 +177,7 @@
     <string name="start_test">Mulai pengujian</string>
     <string name="mission_type_test_title">Pengujian %1$s</string>
     <string name="about_minutes">Sekitar %1$d menit</string>
-    <string name="assigned_for_day">Ditugaskan untuk hari ke-%1$d</string>
+    <string name="assigned_for_day">Ditugaskan untuk hari ke-%1$s</string>
     <string name="completion_saved">Penyelesaian Anda telah disimpan.</string>
     <string name="mark_test_complete">Tandai pengujian selesai</string>
     <string name="open_play_testing_link">Buka Tautan Pengujian Play</string>

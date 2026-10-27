@@ -177,7 +177,7 @@
     <string name="start_test">بدء الاختبار</string>
     <string name="mission_type_test_title">اختبار %1$s</string>
     <string name="about_minutes">حوالي %1$d دقيقة</string>
-    <string name="assigned_for_day">مُعيّن لليوم %1$d</string>
+    <string name="assigned_for_day">مُعيّن لليوم %1$s</string>
     <string name="completion_saved">تم حفظ إنجازك.</string>
     <string name="mark_test_complete">وضع علامة اكتمال على الاختبار</string>
     <string name="open_play_testing_link">فتح رابط اختبار Play</string>

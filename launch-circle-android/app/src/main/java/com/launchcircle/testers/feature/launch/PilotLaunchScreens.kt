@@ -232,11 +232,9 @@ fun LaunchWorkspace(
                             state.todayAssignments, state.pilotConfig, viewModel::showAssignment,
                         )
                         LaunchDestination.ASSIGNMENT -> state.selectedAssignment?.let {
-                            if (state.pilotConfig.cold_start_evidence_enabled) {
-                                EvidenceAssignmentScreen(it, state.assignmentMissions, state.loading,
-                                    viewModel::confirmAssignmentOptIn, viewModel::confirmAssignmentInstalled,
-                                    viewModel::showMission)
-                            } else AssignmentScreen(it, viewModel::completeAssignment)
+                            EvidenceAssignmentScreen(it, state.assignmentMissions, state.loading,
+                                viewModel::confirmAssignmentOptIn, viewModel::confirmAssignmentInstalled,
+                                viewModel::showMission)
                         }
                         LaunchDestination.MISSION -> state.selectedMission?.let {
                             if (state.pilotConfig.cold_start_evidence_enabled) {

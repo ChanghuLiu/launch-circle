@@ -177,7 +177,7 @@
     <string name="start_test">Empezar prueba</string>
     <string name="mission_type_test_title">Prueba de %1$s</string>
     <string name="about_minutes">Unos %1$d minutos</string>
-    <string name="assigned_for_day">Asignado para el día %1$d</string>
+    <string name="assigned_for_day">Asignado para el día %1$s</string>
     <string name="completion_saved">Se ha guardado tu progreso.</string>
     <string name="mark_test_complete">Marcar prueba como completada</string>
     <string name="open_play_testing_link">Abrir enlace de prueba de Play</string>

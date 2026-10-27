@@ -177,7 +177,7 @@
     <string name="start_test">Начать тест</string>
     <string name="mission_type_test_title">Тест: %1$s</string>
     <string name="about_minutes">Около %1$d минут</string>
-    <string name="assigned_for_day">Назначено на день %1$d</string>
+    <string name="assigned_for_day">Назначено на день %1$s</string>
     <string name="completion_saved">Результат сохранён.</string>
     <string name="mark_test_complete">Отметить тест как выполненный</string>
     <string name="open_play_testing_link">Открыть ссылку тестирования Play</string>

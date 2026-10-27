@@ -177,7 +177,7 @@
     <string name="start_test">テストを開始</string>
     <string name="mission_type_test_title">%1$s テスト</string>
     <string name="about_minutes">約 %1$d 分</string>
-    <string name="assigned_for_day">%1$d 日目に割り当て</string>
+    <string name="assigned_for_day">%1$s 日目に割り当て</string>
     <string name="completion_saved">完了状況を保存しました。</string>
     <string name="mark_test_complete">テストを完了にする</string>
     <string name="open_play_testing_link">Play テストリンクを開く</string>

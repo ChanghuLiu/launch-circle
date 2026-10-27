@@ -177,7 +177,7 @@
     <string name="start_test">Testi başlat</string>
     <string name="mission_type_test_title">%1$s testi</string>
     <string name="about_minutes">Yaklaşık %1$d dakika</string>
-    <string name="assigned_for_day">%1$d. gün için atandı</string>
+    <string name="assigned_for_day">%1$s. gün için atandı</string>
     <string name="completion_saved">Tamamlama durumunuz kaydedildi.</string>
     <string name="mark_test_complete">Testi tamamlandı olarak işaretle</string>
     <string name="open_play_testing_link">Play test bağlantısını aç</string>

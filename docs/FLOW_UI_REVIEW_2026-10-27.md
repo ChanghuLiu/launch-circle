@@ -46,3 +46,10 @@ Notes Escape 在 ID10 确认测试组并公开招募；Kevin 账号通过公共�
 - ID10 首页通过 UI 树检查，公共入口、单一 App 列表、项目详情状态纵向布局通过截图检查。
 - Kevin Tests 页面任务仍在，Notes Escape 的 Start test 可见。
 - 尚未在本轮提交真实转换执行结果，因此不能标记完整 E2E 通过。
+
+## 后续实机发现与修复
+- Kevin Android 8.1 点击 Start test 触发 IllegalFormatConversionException（日期 String 使用 %d）。所有翻译统一修正 %s。
+- 非 evidence 简化 AssignmentScreen 不再用于任务入口；统一引导加入、安装确认、选择任务，保留原配置控制反馈形式。
+- 实机重新进入任务页成功；确认 Kevin Google 账号与 You are a tester 页面，Play 安装 Notes Escape 1.2.7，加入/安装确认成功。
+- 使用项目自带 Mako-minimal.sdocx 样本导入成功，免费试用导出 ZIP 成功（1 completed, 0 partial, 0 failed）；ZIP testzip 无损坏。
+- ZIP 中 notes/*.md 使用 assets/... 链接，而资源位于根 assets/，存在相对链接解析问题；需要在 Notes Escape 独立项目修复并发布。不能把导出包可移植性标为完全通过。
