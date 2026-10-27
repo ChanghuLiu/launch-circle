@@ -113,11 +113,6 @@ fun LaunchWorkspace(
         modifier = Modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing,
-        topBar = {
-            Row(Modifier.fillMaxWidth().statusBarsPadding()) {
-                TextButton(onClick = viewModel::showMyLaunch) { Text("Community apps") }
-            }
-        },
         bottomBar = {
             if (primaryDestination) {
                 LaunchNavigation(

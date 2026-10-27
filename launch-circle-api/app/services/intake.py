@@ -10,6 +10,7 @@ from app.models.launch import App, DeveloperAccount
 from app.models.pool import AppIntake
 from app.models.user import User
 from app.services.circles import ensure_owner_circle
+from app.core.security import is_app_admin
 
 
 def approve_intake(
@@ -31,6 +32,8 @@ def approve_intake(
     owner = db.get(User, row.owner_id)
     if owner is None or not owner.is_active:
         raise ValueError("Owner is unavailable")
+    if not is_app_admin(owner) and db.scalar(select(App.id).where(App.owner_id == owner.id).limit(1)):
+        raise ValueError("Each person can add one app")
     if db.scalar(select(App.id).where(App.package_name == row.package_name)):
         raise ValueError("Package is already registered")
     account = db.scalar(
@@ -38,11 +41,6 @@ def approve_intake(
             DeveloperAccount.play_developer_account_id == row.developer_account_id
         )
     )
-    if account is not None and (
-        account.first_free_claimed_at is not None
-        or db.scalar(select(App.id).where(App.developer_account_id == account.id).limit(1))
-    ):
-        raise ValueError("Publisher first-app entitlement is already used; do not bypass Billing")
     if account is None:
         account = DeveloperAccount(
             play_developer_account_id=row.developer_account_id,
@@ -58,7 +56,7 @@ def approve_intake(
         owner_id=owner.id,
         developer_account_id=account.id,
         circle_id=circle.id,
-        entitlement_status="FIRST_APP_FREE",
+        entitlement_status="PUBLISHER_UNLIMITED" if is_app_admin(owner) else "FIRST_APP_FREE",
         name=row.name,
         package_name=row.package_name,
         opt_in_url="https://play.google.com/apps/testing/" + row.package_name,

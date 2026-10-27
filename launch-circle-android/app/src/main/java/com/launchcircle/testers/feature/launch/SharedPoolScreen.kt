@@ -87,13 +87,12 @@ fun SharedPoolScreen(
         item {
             Text(if (home) "Community apps" else "My launch", style = MaterialTheme.typography.headlineLarge)
             Text(if (home) "Choose an app to test. Developers join each other through this community." else "Confirm test access in My Launch. Your app is listed automatically when setup is complete.")
-            if (home) Text("Join testing → Google Group and Play opt-in → Install → Test and send feedback. You choose each app; joining a platform task does not automatically enroll you in Google Play.")
+            if (home) Text("Join → Complete Google Play opt-in → Install → Test → Send feedback.")
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             notice?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
             OutlinedButton(onClick = { action {} }, enabled = !busy) { Text("Refresh") }
             if (home && loaded && (admin || ownedCount == 0)) Button(onClick = onAdd) { Text("Add my app") }
-            if (home && loaded && ownedCount > 0) OutlinedButton(onClick = onLaunch) { Text("Manage my launch") }
             if (home && loaded && !admin) Text("One app per person. Test other apps from this list.")
         }
         if (home) {

@@ -83,7 +83,7 @@ def test_operator_review_creates_first_app_without_faking_verified_publisher(cli
     assert client.get("/apps", headers=owner[1]).json()[0]["id"] == app_id
     second = client.post("/app-intakes", headers=owner[1], json=body("com.external.second")).json()
     with SessionLocal() as db:
-        with pytest.raises(ValueError, match="entitlement"):
+        with pytest.raises(ValueError, match="one app"):
             approve_intake(
                 db,
                 second["id"],
