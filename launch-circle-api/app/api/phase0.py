@@ -184,14 +184,7 @@ def app_read(app: App) -> AppRead:
             app.developer_account.play_developer_account_id if app.developer_account else None
         ),
         entitlement_status=app.entitlement_status,
-        developer_account_unlimited=(
-            app.developer_account.verification_status == "VERIFIED"
-            and settings.has_unlimited_play_developer_account(
-                app.developer_account.play_developer_account_id
-            )
-            if app.developer_account
-            else False
-        ),
+        developer_account_unlimited=(app.entitlement_status == "PUBLISHER_UNLIMITED"),
         name=app.name,
         package_name=app.package_name,
         opt_in_url=app.opt_in_url,
@@ -852,6 +845,11 @@ def create_app(
     now: datetime = Depends(get_now),
 ) -> AppRead:
     if not is_app_admin(current_user):
+        # Serialize creation before checking the per-person quota.
+        from sqlalchemy import update
+        db.execute(update(User).where(User.id == current_user.id).values(is_active=User.is_active))
+        if db.scalar(select(App.id).where(App.owner_id == current_user.id).limit(1)):
+            raise HTTPException(409, "Each person can add one app. Manage your existing app instead.")
         canonical_developer_id = settings.google_play_developer_account_id.strip()
         if settings.is_deployment and (
             not canonical_developer_id
@@ -937,53 +935,7 @@ def create_app(
         select(func.count(App.id)).where(App.developer_account_id == developer_account.id)
     ) or 0
     paid_purchase = None
-    developer_account_unlimited = (
-        is_app_admin(current_user)
-        or settings.has_unlimited_play_developer_account(developer_account.play_developer_account_id)
-    )
-    if not developer_account_unlimited and (
-        linked_app_count > 0 or developer_account.first_free_claimed_at is not None
-    ):
-        paid_purchase = db.scalar(
-            select(AdditionalAppPurchase)
-            .where(
-                AdditionalAppPurchase.owner_id == current_user.id,
-                AdditionalAppPurchase.developer_account_id == developer_account.id,
-                AdditionalAppPurchase.status == "PAID",
-                AdditionalAppPurchase.app_id.is_(None),
-                AdditionalAppPurchase.google_play_purchase_token.is_not(None),
-            )
-            .order_by(AdditionalAppPurchase.created_at, AdditionalAppPurchase.id)
-            .with_for_update()
-        )
-        if paid_purchase is None:
-            first_app = db.scalar(
-                select(App)
-                .where(App.developer_account_id == developer_account.id)
-                .order_by(App.created_at, App.id)
-                .limit(1)
-            )
-            emit_pilot_event(
-                db,
-                current_user.id,
-                "additional_app_paywall_viewed",
-                f"additional-app-paywall:{developer_account.id}:{linked_app_count + 1}",
-                app_id=first_app.id if first_app else None,
-                payload={
-                    "app_index": linked_app_count + 1,
-                    "source": current_user.acquisition_source or "UNKNOWN",
-                    "developer_identity_method": developer_account.identity_method,
-                },
-            )
-            db.commit()
-            raise HTTPException(
-                status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                detail=(
-                    "This Developer Account has already used its first free app. "
-                    "An additional app requires the $1 Google Play entitlement."
-                ),
-            )
-
+    developer_account_unlimited = is_app_admin(current_user)
     app = App(
         owner_id=current_user.id,
         developer_account=developer_account,
@@ -1122,6 +1074,20 @@ def confirm_google_group(
             db, current_user.id, "google_group_confirmed",
             f"google-group-confirmed:{app.id}", app_id=app.id,
         )
+    if body.configured:
+        from app.api.pool import ready
+        from app.models.pool import PoolListing
+        if ready(app):
+            listing = db.get(PoolListing, app.id)
+            if listing is None:
+                db.add(PoolListing(app_id=app.id, enabled=True, updated_at=now))
+            else:
+                listing.enabled, listing.updated_at = True, now
+    else:
+        from app.models.pool import PoolListing
+        listing = db.get(PoolListing, app.id)
+        if listing:
+            listing.enabled, listing.updated_at = False, now
     db.commit()
     db.refresh(app)
     return app_read(app)

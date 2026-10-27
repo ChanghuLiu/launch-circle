@@ -90,8 +90,9 @@ def test_consent_ownership_revocation_and_no_implicit_assignment(client):
     aids = [campaign(owner) for _ in range(3)]
     for aid in aids:
         open_app(client, aid, owner)
-    assert client.get("/tester-pool/opportunities", headers=tester[1]).json() == []
-    assert post(client, "/apps/" + aids[0] + "/tester-pool/accept", tester).status_code == 409
+    assert len(client.get("/tester-pool/opportunities", headers=tester[1]).json()) == 3
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count(TesterAssignment.id))) == 0
     assert (
         post(client, "/apps/" + aids[0] + "/pool-listing", stranger, {"enabled": False}).status_code
         == 404
@@ -125,7 +126,7 @@ def test_consent_ownership_revocation_and_no_implicit_assignment(client):
             )
             == 2
         )
-    assert post(client, "/apps/" + aids[0] + "/tester-pool/accept", tester).status_code == 409
+    assert post(client, "/apps/" + aids[0] + "/tester-pool/accept", tester).status_code == 200
     # Deletion cascades preferences and owned listings.
     assert client.delete("/v1/me", headers=tester[1]).status_code == 200
     with SessionLocal() as db:
@@ -228,3 +229,27 @@ def test_inactive_accounts_cannot_participate(client):
         db.commit()
     assert client.get("/tester-pool/me", headers=user[1]).status_code == 403
     assert post(client, "/tester-pool/me", user, {"enabled": True}).status_code == 403
+
+
+def test_community_directory_browsing_and_acceptance_are_separate(client):
+    owner, tester = actor(), actor()
+    aid = campaign(owner)
+    open_app(client, aid, owner)
+    directory = client.get("/tester-pool/apps", headers=tester[1]).json()
+    assert directory[0]["app_id"] == aid and directory[0]["available"]
+    assert "email" not in str(directory) and "accepted_participants" not in str(directory)
+    assert post(client, "/apps/" + aid + "/tester-pool/accept", tester).status_code == 200
+    pref = client.get("/tester-pool/me", headers=tester[1]).json()
+    assert pref["enabled"] and pref["active_apps"] == 1
+    directory = client.get("/tester-pool/apps", headers=tester[1]).json()
+    assert directory[0]["joined"] and not directory[0]["available"]
+
+
+def test_group_confirmation_automatically_lists_ready_app(client):
+    owner = actor()
+    aid = campaign(owner)
+    response = post(client, "/apps/" + aid + "/google-group/confirm", owner, {"configured": True})
+    assert response.status_code == 200, response.text
+    assert client.get("/apps/" + aid + "/supply", headers=owner[1]).json()["listed"]
+    post(client, "/apps/" + aid + "/google-group/confirm", owner, {"configured": False})
+    assert not client.get("/apps/" + aid + "/supply", headers=owner[1]).json()["listed"]

@@ -197,6 +197,14 @@ private fun AppRoot(
                     onDeleteAccount = onDeleteAccount,
                     onLogout = onLogout,
                     onSharedPool = { poolOpen = true },
+                    communityHome = {
+                        com.launchcircle.testers.feature.launch.SharedPoolScreen(
+                            apiBaseUrl, tokenStore, refreshSession, home = true,
+                            onAdd = launchViewModel::showAddApp,
+                            onTests = launchViewModel::showToday,
+                            onLaunch = launchViewModel::showHome,
+                        )
+                    },
                 )
             }
         }

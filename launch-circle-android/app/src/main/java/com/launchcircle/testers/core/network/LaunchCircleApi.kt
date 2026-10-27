@@ -55,7 +55,7 @@ interface LaunchCircleApi {
     suspend fun poolPreference(@Header("Authorization") auth: String): com.launchcircle.testers.core.model.PoolPreference
     @POST("tester-pool/me")
     suspend fun setPoolPreference(@Header("Authorization") auth: String, @Body body: com.launchcircle.testers.core.model.PoolOptIn): com.launchcircle.testers.core.model.PoolPreference
-    @GET("tester-pool/opportunities")
+    @GET("tester-pool/apps")
     suspend fun poolOpportunities(@Header("Authorization") auth: String): List<com.launchcircle.testers.core.model.PoolOpportunity>
     @GET("apps/{appId}/supply")
     suspend fun poolSupply(@Header("Authorization") auth: String, @Path("appId") appId: String): com.launchcircle.testers.core.model.PoolSupply

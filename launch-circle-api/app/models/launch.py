@@ -136,8 +136,8 @@ class App(Base):
             name="ck_apps_entitlement_status",
         ),
         Index(
-            "uq_apps_first_app_free_per_developer_account",
-            "developer_account_id",
+            "uq_apps_first_app_free_per_person",
+            "owner_id",
             unique=True,
             sqlite_where=text("entitlement_status = 'FIRST_APP_FREE'"),
             postgresql_where=text("entitlement_status = 'FIRST_APP_FREE'"),

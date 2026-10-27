@@ -40,115 +40,32 @@ def create_app(client, owner: dict, package_name: str, developer_account_id: str
         json=app_payload(package_name, developer_account_id),
     )
 
-def test_first_app_free_is_anchored_to_developer_account_not_login_email(client):
-    owner = register(client, "first@example.com", "First")
-    created = create_app(
-        client, owner, "com.example.firstfree", "1234567890123456789"
-    )
-    assert created.status_code == 201, created.text
-    assert created.json()["entitlement_status"] == "FIRST_APP_FREE"
-    assert created.json()["play_developer_account_id"] == "1234567890123456789"
-
-    second_login = register(client, "second@example.com", "Second")
-    denied = create_app(
-        client, second_login, "com.example.secondfree", "1234567890123456789"
-    )
-    assert denied.status_code == 402
-    assert "$1" in denied.json()["detail"]
-    assert client.get("/apps", headers=second_login["headers"]).json() == []
+def test_one_app_per_person_even_with_allowlisted_publisher(client, monkeypatch):
+    monkeypatch.setattr(phase0_settings, "google_play_unlimited_developer_account_ids", "1234567890123456789")
+    first = register(client, "first@example.com", "First")
+    second = register(client, "second@example.com", "Second")
+    assert create_app(client, first, "com.example.first", "1234567890123456789").status_code == 201
+    denied = create_app(client, first, "com.example.second", "1234567890123456789")
+    assert denied.status_code == 409 and "one app" in denied.json()["detail"]
+    assert create_app(client, second, "com.example.otherperson", "1234567890123456789").status_code == 201
 
 
-def test_allowlisted_play_publisher_can_add_multiple_apps_without_additional_app_purchase(
-    client, monkeypatch
-):
-    owner = register(client, "unlimited@example.com", "Unlimited Publisher")
-    publisher_id = "8195223677488114201"
-    monkeypatch.setattr(
-        phase0_settings,
-        "google_play_unlimited_developer_account_ids",
-        publisher_id,
-    )
-    assert phase0_settings.has_unlimited_play_developer_account(publisher_id)
-
-    first = create_app(client, owner, "com.example.publisherone", publisher_id)
-    second = create_app(client, owner, "com.example.publishertwo", publisher_id)
-
-    assert first.status_code == 201, first.text
-    assert second.status_code == 201, second.text
-    assert first.json()["entitlement_status"] == "PUBLISHER_UNLIMITED"
-    assert second.json()["entitlement_status"] == "PUBLISHER_UNLIMITED"
-    assert first.json()["developer_account_unlimited"] is True
-    assert second.json()["developer_account_unlimited"] is True
-    assert len(client.get("/apps", headers=owner["headers"]).json()) == 2
-
-    checkout = client.post(
-        "/payments/additional-app-checkout",
-        headers=owner["headers"],
-        json={"play_developer_account_id": publisher_id},
-    )
-    assert checkout.status_code == 409
-    assert "unlimited" in checkout.json()["detail"].lower()
+def test_manager_can_add_multiple_apps(client, monkeypatch):
+    owner = register(client, "manager@example.com", "Manager")
+    monkeypatch.setattr("app.api.phase0.is_app_admin", lambda user: user.id == owner["id"])
+    for i in range(3):
+        response = create_app(client, owner, f"com.example.manager{i}", "1234567890123456789")
+        assert response.status_code == 201, response.text
 
 
-def test_unlisted_play_publisher_still_has_additional_app_limit(client, monkeypatch):
-    owner = register(client, "limited@example.com", "Limited Publisher")
-    monkeypatch.setattr(
-        phase0_settings,
-        "google_play_unlimited_developer_account_ids",
-        "8195223677488114201",
-    )
-    publisher_id = "9988776655443322110"
-    first = create_app(client, owner, "com.example.firstlimited", publisher_id)
-    second = create_app(client, owner, "com.example.secondlimited", publisher_id)
-
-    assert first.status_code == 201, first.text
-    assert first.json()["developer_account_unlimited"] is False
-    assert second.status_code == 402, second.text
-
-
-def test_first_free_claim_survives_app_removal(client):
-    owner = register(client, "claim@example.com", "Claim")
-    created = create_app(
-        client, owner, "com.example.claimfree", "9876543210123456789"
-    )
-    assert created.status_code == 201, created.text
-    app_id = created.json()["id"]
-
-    with SessionLocal() as db:
-        db.delete(db.get(App, app_id))
-        db.commit()
-
-    replacement_login = register(client, "replacement@example.com", "Replacement")
-    denied = create_app(
-        client, replacement_login, "com.example.afterdelete", "9876543210123456789"
-    )
-    assert denied.status_code == 402
-
-def test_legacy_apps_are_linked_before_granting_a_new_free_app(client):
+def test_legacy_app_also_uses_person_quota(client):
     owner = register(client, "legacy@example.com", "Legacy")
     with SessionLocal() as db:
         user = db.get(User, owner["id"])
         circle = ensure_owner_circle(db, user)
-        db.add(
-            App(
-                owner_id=owner["id"],
-                circle_id=circle.id,
-                name="Existing App",
-                package_name="com.example.legacy",
-                opt_in_url="https://play.google.com/apps/testing/com.example.legacy",
-            )
-        )
+        db.add(App(owner_id=user.id, circle_id=circle.id, name="Legacy", package_name="com.example.legacy", opt_in_url="https://play.google.com/apps/testing/com.example.legacy"))
         db.commit()
-
-    denied = create_app(
-        client, owner, "com.example.legacysecond", "1122334455667788990"
-    )
-    assert denied.status_code == 402
-
-    apps = client.get("/apps", headers=owner["headers"]).json()
-    legacy = next(item for item in apps if item["package_name"] == "com.example.legacy")
-    assert legacy["play_developer_account_id"] == "1122334455667788990"
-    assert legacy["entitlement_status"] == "LEGACY"
+    assert create_app(client, owner, "com.example.new", "1234567890123456789").status_code == 409
 
 
 def test_production_first_app_requires_canonical_account_and_verified_package(

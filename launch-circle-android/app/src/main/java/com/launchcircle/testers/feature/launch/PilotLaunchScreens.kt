@@ -98,6 +98,7 @@ fun LaunchWorkspace(
     onDeleteAccount: () -> Unit,
     onLogout: () -> Unit,
     onSharedPool: () -> Unit = {},
+    communityHome: @Composable () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
     val activity = LocalActivity.current
@@ -114,7 +115,7 @@ fun LaunchWorkspace(
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
             Row(Modifier.fillMaxWidth().statusBarsPadding()) {
-                TextButton(onClick = onSharedPool) { Text("Find testers / Test apps") }
+                TextButton(onClick = viewModel::showMyLaunch) { Text("Community apps") }
             }
         },
         bottomBar = {
@@ -124,7 +125,7 @@ fun LaunchWorkspace(
                     onHome = viewModel::showMyLaunch,
                     onTests = viewModel::showToday,
                     onMyLaunch = viewModel::showHome,
-                    onCircle = viewModel::showCircle,
+                    onCircle = viewModel::showAccount,
                 )
             }
         },
@@ -200,12 +201,7 @@ fun LaunchWorkspace(
                         )
                     }
                     PilotSurface.NONE -> when (state.destination) {
-                        LaunchDestination.MY_LAUNCHES -> Home(
-                            profile, state.launches, state.dashboards, state.selectedApp, state.todayAssignments,
-                            viewModel::showAddApp, viewModel::showDashboard,
-                            viewModel::showToday, viewModel::showAssignment, viewModel::showInvite,
-                            viewModel::showJoin, viewModel::showAccount, onLogout, onSharedPool,
-                        )
+                        LaunchDestination.MY_LAUNCHES -> communityHome()
                         LaunchDestination.ADD_APP -> AddApp(
                             state.pilotConfig, state.availableCircles, viewModel::createApp,
                             profile.login_email.equals("liuchanghu2018@gmail.com", ignoreCase = true),
@@ -224,7 +220,7 @@ fun LaunchWorkspace(
                                     { trigger -> viewModel.recordManagedOfferViewed(selected.id, trigger) },
                                     { viewModel.startManagedCheckout(selected.id) },
                                     if (state.pilotConfig.cold_start_evidence_enabled) viewModel::showEvidence else null,
-                                    viewModel::setAppIcon, onSharedPool,
+                                    viewModel::setAppIcon, viewModel::showMyLaunch,
                                 )
                             }
                         }
@@ -298,7 +294,7 @@ private fun LaunchNavigation(
         Item("Home", Icons.Rounded.Home, destination == LaunchDestination.MY_LAUNCHES, onHome),
         Item("Tests", Icons.Rounded.Science, destination == LaunchDestination.TODAY_TESTS, onTests),
         Item("My Launch", Icons.Rounded.RocketLaunch, destination == LaunchDestination.DASHBOARD, onMyLaunch),
-        Item("Circle", Icons.Rounded.Groups, destination == LaunchDestination.TESTERS, onCircle),
+        Item("Account", Icons.Rounded.Groups, destination == LaunchDestination.TESTERS, onCircle),
     )
     NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
         items.forEach { item ->
@@ -406,9 +402,6 @@ private fun Home(
         }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(stringResource(R.string.private_circle_optional), style = MaterialTheme.typography.labelLarge)
-                SecondaryLaunchButton(stringResource(R.string.invite_developers), onInvite)
-                SecondaryLaunchButton(stringResource(R.string.join_with_invite_code), onJoin)
                 TextButton(onClick = onAccount, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.account_settings)) }
                 TextButton(onClick = onLogout, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.sign_out)) }
             }
@@ -660,7 +653,7 @@ private fun ManagedLaunchPayment(
 private fun AddApp(
     config: PilotConfig,
     circles: List<LaunchCircle>,
-    onCreate: (String, String, String, String?, String, List<String>, String, String) -> Unit,
+    onCreate: (String, String, String, String?, String, List<String>, String, String?) -> Unit,
     isAdmin: Boolean,
     onDraftIcon: (String?) -> Unit,
 ) {
@@ -671,10 +664,6 @@ private fun AddApp(
     var workflowText by rememberSaveable { mutableStateOf("") }
     var mode by rememberSaveable { mutableStateOf("LAUNCH_CIRCLE") }
     var ownUrl by rememberSaveable { mutableStateOf("") }
-    var circleId by rememberSaveable { mutableStateOf(circles.firstOrNull()?.id.orEmpty()) }
-    LaunchedEffect(circles) {
-        if (circles.none { it.id == circleId }) circleId = circles.firstOrNull()?.id.orEmpty()
-    }
     val context = LocalContext.current
     var draftIcon by androidx.compose.runtime.remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) { onDraftIcon(null) }
@@ -700,7 +689,7 @@ private fun AddApp(
             label = { Text(stringResource(R.string.google_play_developer_account_id)) },
             supportingText = {
                 if (isAdmin) Text("Administrator: unlimited apps, no additional-app charge.")
-                else Text(stringResource(R.string.first_app_free_additional_apps_paid))
+                else Text("One app per person. Your first app is free.")
             },
             modifier = Modifier.fillMaxWidth(),
         )
@@ -719,21 +708,7 @@ private fun AddApp(
         )
         val workflowSteps = parseCoreWorkflowSteps(workflowText)
         val validWorkflow = workflowSteps.size in 2..4 && workflowSteps.all { it.length <= 200 }
-        Section(stringResource(R.string.tester_circle_section))
-        Text(
-            stringResource(R.string.tester_circle_explanation),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        circles.forEach { circle ->
-            Option(
-                circleId == circle.id,
-                circle.name,
-                stringResource(R.string.circle_member_availability, circle.active_member_count, circle.max_members, maxOf(circle.active_member_count - 1, 0)),
-            ) { circleId = circle.id }
-        }
-        if (circles.isEmpty()) {
-            Text(stringResource(R.string.join_or_create_circle_first))
-        }
+        Text("Testers join from the community app list. No invitation or private circle is needed.")
         Section(stringResource(R.string.tester_access_section))
         Option(mode == "LAUNCH_CIRCLE", stringResource(R.string.launch_circle_group_recommended), stringResource(R.string.shared_pilot_tester_access)) {
             mode = "LAUNCH_CIRCLE"
@@ -764,11 +739,11 @@ private fun AddApp(
             onClick = {
                 onCreate(
                     name.trim(), packageName.trim(), optIn.trim(), ownUrl.ifBlank { null },
-                    mode, workflowSteps, playDeveloperAccountId.trim(), circleId,
+                    mode, workflowSteps, playDeveloperAccountId.trim(), null,
                 )
             },
             enabled = name.isNotBlank() && packageName.contains(".") && optIn.startsWith("http") &&
-                validWorkflow && (isAdmin || playDeveloperAccountId.isNotBlank()) && circleId.isNotBlank() &&
+                validWorkflow && (isAdmin || playDeveloperAccountId.isNotBlank()) &&
                 (mode != "OWN_GROUP" || ownUrl.startsWith("http")),
             modifier = Modifier.fillMaxWidth(),
         ) { Text(stringResource(R.string.create_launch)) }
@@ -936,8 +911,6 @@ private fun Dashboard(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = onPool, enabled = !loading, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.public_pool_action)) }
                 Text(stringResource(R.string.public_pool_help))
-                TextButton(onClick = onInvite, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.private_invite_action)) }
-                OutlinedButton(onClick = onTesters, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.view_circle)) }
             }
         }
         item {
@@ -1836,7 +1809,7 @@ private fun IconUpload(name: String, url: String?, onUpload: (String) -> Unit) {
 }
 
 @Composable
-private fun AppIcon(name: String, url: String?) {
+internal fun AppIcon(name: String, url: String?) {
     var bitmap by androidx.compose.runtime.remember(url) { mutableStateOf<android.graphics.Bitmap?>(null) }
     LaunchedEffect(url) {
         bitmap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {

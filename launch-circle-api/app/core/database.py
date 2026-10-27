@@ -117,9 +117,10 @@ def ensure_sqlite_phase1_schema() -> None:
             'CREATE INDEX IF NOT EXISTS ix_apps_developer_account_id '
             'ON "apps" (developer_account_id)'
         )
+        connection.exec_driver_sql('DROP INDEX IF EXISTS uq_apps_first_app_free_per_developer_account')
         connection.exec_driver_sql(
-            'CREATE UNIQUE INDEX IF NOT EXISTS uq_apps_first_app_free_per_developer_account '
-            'ON "apps" (developer_account_id) '
+            'CREATE UNIQUE INDEX IF NOT EXISTS uq_apps_first_app_free_per_person '
+            'ON "apps" (owner_id) '
             "WHERE entitlement_status = 'FIRST_APP_FREE'"
         )
         # Backfill one durable owner circle and owner membership for existing

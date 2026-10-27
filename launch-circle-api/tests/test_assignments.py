@@ -114,10 +114,11 @@ def test_left_member_and_owner_never_receive_new_assignment(client):
     assert today(client, owner) == []
 
 
-def test_daily_limit_and_refresh_are_idempotent(client):
+def test_daily_limit_and_refresh_are_idempotent(client, monkeypatch):
     owner = register(client, "assignment-limit-owner@example.com", "Owner")
     member = register(client, "assignment-limit-member@example.com", "Member")
     join_circle(client, owner, member)
+    monkeypatch.setattr("app.api.phase0.is_app_admin", lambda user: user.id == owner["id"])
     apps = [create_app(client, owner, str(index)) for index in range(3)]
 
     first = today(client, member)

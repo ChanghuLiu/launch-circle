@@ -133,8 +133,11 @@ def set_pool(body: OptIn, actor: Actor, db: Database, now: Clock):
 
 @router.get("/tester-pool/opportunities")
 def opportunities(actor: Actor, db: Database):
-    pref = db.get(TesterPoolPreference, actor.id)
-    if pref is None or not pref.enabled or active_work(db, actor.id) >= MAX_CONCURRENT_APPS:
+    return opportunities_for_browse(actor, db)
+
+
+def opportunities_for_browse(actor: User, db: Session):
+    if active_work(db, actor.id) >= MAX_CONCURRENT_APPS:
         return []
     # Bounded discovery, no emails, participant IDs or private access credentials.
     rows = db.scalars(
@@ -190,6 +193,21 @@ def opportunities(actor: Actor, db: Database):
     return result
 
 
+@router.get("/tester-pool/apps")
+def community_apps(actor: Actor, db: Database):
+    eligible = {row["app_id"] for row in opportunities_for_browse(actor, db)}
+    rows = db.scalars(select(App).join(PoolListing).join(User, User.id == App.owner_id)
+        .outerjoin(AdminAppControl, AdminAppControl.app_id == App.id)
+        .where(PoolListing.enabled.is_(True), User.is_active.is_(True), App.status.in_(OPEN_STATES),
+            or_(AdminAppControl.app_id.is_(None), and_(AdminAppControl.paused.is_(False), AdminAppControl.kind != "SYNTHETIC")))
+        .order_by(PoolListing.updated_at.desc(), App.id).limit(100)).all()
+    return [{"app_id": item.id, "name": item.name, "package_name": item.package_name,
+             "workflow_steps": item.core_workflow_steps, "icon_url": item.icon_url,
+             "owned": item.owner_id == actor.id,
+             "joined": any(a.tester_id == actor.id for a in item.assignments),
+             "available": item.id in eligible} for item in rows if ready(item)]
+
+
 @router.get("/apps/{app_id}/supply")
 def get_supply(app_id: str, actor: Actor, db: Database):
     return supply(db, owned(db, app_id, actor))
@@ -228,8 +246,12 @@ def accept_opportunity(app_id: str, actor: Actor, db: Database, now: Clock):
     if item.owner_id == actor.id:
         raise HTTPException(422, "You cannot accept your own app")
     pref = db.get(TesterPoolPreference, actor.id)
-    if not pref or not pref.enabled:
-        raise HTTPException(409, "Join the voluntary tester pool first")
+    # Clicking Join testing is explicit consent; no separate pool-enrollment step.
+    if pref is None:
+        pref = TesterPoolPreference(user_id=actor.id, enabled=True, consent_at=now, updated_at=now)
+        db.add(pref)
+    elif not pref.enabled:
+        pref.enabled, pref.consent_at, pref.updated_at = True, now, now
     existing = db.scalar(
         select(TesterAssignment).where(
             TesterAssignment.app_id == app_id, TesterAssignment.tester_id == actor.id
