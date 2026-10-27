@@ -612,6 +612,7 @@ class LaunchViewModel(
             destination = LaunchDestination.TODAY_TESTS,
             selectedMission = null,
             today = repository.todaysMissions(),
+            todayAssignments = repository.todaysAssignments(),
         )
     }
 
@@ -643,6 +644,7 @@ class LaunchViewModel(
             destination = LaunchDestination.TODAY_TESTS,
             selectedMission = null,
             today = repository.todaysMissions(),
+            todayAssignments = repository.todaysAssignments(),
         )
     }
 
@@ -704,6 +706,7 @@ class LaunchViewModel(
         _state.value.copy(
             destination = LaunchDestination.FEEDBACK,
             feedback = repository.feedback(app.id),
+            dashboards = _state.value.dashboards + (app.id to repository.dashboard(app.id)),
         )
     }
 
