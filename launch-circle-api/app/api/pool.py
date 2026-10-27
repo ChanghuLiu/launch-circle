@@ -6,13 +6,13 @@ from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy import and_, func, or_, select, update, delete
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.admin import AdminAppControl, AdminRecommendation
-from app.models.launch import App, Circle, CircleMember, TesterAssignment
+from app.models.launch import App, Circle, CircleMember, TesterAssignment, BackendEvent
 from app.models.pool import PoolListing, TesterPoolPreference, AppGroup, AppGroupApp, AppGroupMember
 from app.models.user import User
 from app.services.assignments import assignment_day
@@ -322,7 +322,7 @@ def accept_app(app_id: str, actor: User, db: Session, now: datetime, *, max_apps
     return {"assignment_id": assignment.id, "status": assignment.status}
 
 
-GROUP_CAPACITY = 13
+GROUP_CAPACITY = 15
 
 
 def group_apps(db: Session, group_id: str):
@@ -362,7 +362,7 @@ def visible_group_apps(db: Session, group_id: str):
 
 
 def sync_group(db: Session, group_id: str, now: datetime):
-    # Joining explicitly covers this group's present and future apps, up to 12 other owners.
+    # Joining explicitly covers this group's present and future apps, up to 14 other owners.
     items = visible_group_apps(db, group_id)
     for member in db.scalars(select(AppGroupMember).where(AppGroupMember.group_id == group_id)):
         actor = db.get(User, member.user_id)
@@ -372,8 +372,30 @@ def sync_group(db: Session, group_id: str, now: datetime):
             if item.owner_id == actor.id:
                 continue
             with db.begin_nested():
+                previous = db.scalar(select(TesterAssignment).where(TesterAssignment.app_id == item.id, TesterAssignment.tester_id == actor.id).order_by(TesterAssignment.assigned_at.desc()))
+                if previous and previous.status == "DROPPED":
+                    import json
+                    event = db.scalar(select(BackendEvent).where(BackendEvent.assignment_id == previous.id).order_by(BackendEvent.created_at.desc()).limit(1))
+                    if event and event.event_type == "APP_GROUP_LEFT":
+                        saved = json.loads(event.payload_json)
+                        if saved.get("group_id") == group_id:
+                            if active_work(db, actor.id) >= 14:
+                                continue
+                            circle = db.get(Circle, previous.circle_id)
+                            membership = db.scalar(select(CircleMember).where(CircleMember.circle_id == previous.circle_id, CircleMember.user_id == actor.id))
+                            if membership is None or membership.status != "ACTIVE":
+                                if circle is None or active_member_count(db, circle.id) >= min(circle.max_members, 15):
+                                    continue
+                                if membership:
+                                    membership.status, membership.joined_at, membership.left_at = "ACTIVE", now, None
+                                else:
+                                    db.add(CircleMember(circle_id=circle.id, user_id=actor.id, role="MEMBER", status="ACTIVE", joined_at=now))
+                            previous.status = saved.get("previous_status", "ASSIGNED")
+                            previous.health_status = saved.get("previous_health", "NEW")
+                            previous.dropped_at = None
+                            db.flush()
                 try:
-                    accept_app(item.id, actor, db, now, max_apps=12, commit=False)
+                    accept_app(item.id, actor, db, now, max_apps=14, commit=False)
                 except HTTPException as error:
                     if error.status_code not in {404, 409}:
                         raise
@@ -385,13 +407,15 @@ def sync_group(db: Session, group_id: str, now: datetime):
 def list_app_groups(actor: Actor, db: Database):
     result = []
     for group in db.scalars(select(AppGroup).order_by(AppGroup.created_at, AppGroup.id)):
+        slots = group_apps(db, group.id)
         apps = visible_group_apps(db, group.id)
-        if not apps:
-            continue
-        own = any(app.owner_id == actor.id for app in apps)
+        own = any(app.owner_id == actor.id for app in slots)
         joined = db.get(AppGroupMember, (group.id, actor.id)) is not None
+        if not apps and not own and not joined:
+            continue
         result.append({"id": group.id, "name": group.name, "capacity": GROUP_CAPACITY,
-            "status": "FORMING" if len(apps) < GROUP_CAPACITY else "FULL",
+            "status": "FORMING" if len(slots) < GROUP_CAPACITY else "FULL",
+            "occupied_slots": len(slots), "ready_to_join": any(app.owner_id == actor.id for app in apps),
             "my_group": own, "joined": joined,
             "apps": [{"app_id": app.id, "name": app.name, "package_name": app.package_name,
                 "icon_url": app.icon_url, "owned": app.owner_id == actor.id,
@@ -414,3 +438,48 @@ def join_app_group(group_id: str, actor: Actor, db: Database, now: Clock):
     sync_group(db, group_id, now)
     db.commit()
     return {"ok": True, "group_id": group_id}
+
+
+@router.post("/app-groups/{group_id}/leave")
+def leave_app_group(group_id: str, actor: Actor, db: Database, now: Clock):
+    lock_writes(db, actor)
+    member = db.get(AppGroupMember, (group_id, actor.id))
+    owned_apps = [app for app in group_apps(db, group_id) if app.owner_id == actor.id]
+    if member is None and not owned_apps:
+        return {"ok": True, "already_left": True}
+    app_ids = [app.id for app in group_apps(db, group_id)]
+    owned_ids = [app.id for app in owned_apps]
+    rows = db.scalars(select(TesterAssignment).where(
+        TesterAssignment.app_id.in_(app_ids),
+        or_(TesterAssignment.tester_id == actor.id, TesterAssignment.app_id.in_(owned_ids)),
+        TesterAssignment.status.notin_(["DROPPED", "COMPLETED"]))).all()
+    for row in rows:
+        emit_event(db, row.app_id, "APP_GROUP_LEFT", f"group-left:{group_id}:{row.id}:{now.isoformat()}", row.id,
+            {"group_id": group_id, "previous_status": row.status, "previous_health": row.health_status})
+        row.status, row.health_status, row.dropped_at = "DROPPED", "DROPPED", now
+    db.flush()
+    for circle_id, tester_id in {(row.circle_id, row.tester_id) for row in rows}:
+        circle = db.get(Circle, circle_id)
+        if circle is None or circle.owner_id == tester_id:
+            continue
+        remaining = db.scalar(select(TesterAssignment.id).where(TesterAssignment.circle_id == circle_id,
+            TesterAssignment.tester_id == tester_id, TesterAssignment.status.notin_(["DROPPED", "COMPLETED"])).limit(1))
+        if remaining is None:
+            membership = db.scalar(select(CircleMember).where(CircleMember.circle_id == circle_id, CircleMember.user_id == tester_id))
+            if membership:
+                membership.status, membership.left_at = "LEFT", now
+    if member:
+        db.delete(member)
+    for item in owned_apps:
+        listing = db.get(PoolListing, item.id)
+        if listing:
+            listing.enabled, listing.updated_at = False, now
+        mapping = db.get(AppGroupApp, item.id)
+        if mapping:
+            db.delete(mapping)
+    db.flush()
+    from app.services.recovery import evaluate_app_recovery
+    for item in db.scalars(select(App).where(App.id.in_(app_ids))):
+        evaluate_app_recovery(db, item, now)
+    db.commit()
+    return {"ok": True, "already_left": False}

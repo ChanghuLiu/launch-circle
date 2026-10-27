@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -53,6 +55,8 @@ fun SharedPoolScreen(
     var ownedCount by remember { mutableStateOf(0) }
     var admin by remember { mutableStateOf(false) }
     var loaded by remember { mutableStateOf(false) }
+    var leaveTarget by remember { mutableStateOf<String?>(null) }
+    var rulesExpanded by rememberSaveable { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
@@ -61,7 +65,7 @@ fun SharedPoolScreen(
         admin = profile.login_email.equals("liuchanghu2018@gmail.com", ignoreCase = true)
         val owned = client.call { api.apps(it) }.filter { it.owner_id == profile.id }
         ownedCount = owned.size
-        groups = client.call { api.appGroups(it) }
+        groups = client.call { api.appGroups(it) }.sortedByDescending { it.my_group }
         if (!home) supplies = owned.map { app -> client.call { api.poolSupply(it, app.id) } }
         loaded = true
     }
@@ -85,17 +89,33 @@ fun SharedPoolScreen(
         }
     }
     LaunchedEffect(Unit) { action {} }
+    leaveTarget?.let { groupId ->
+        AlertDialog(onDismissRequest = { if (!busy) leaveTarget = null },
+            title = { Text("Leave App Group?") },
+            text = { Text("Your app's recruitment will pause and reciprocal tasks in this group will stop. Feedback and history are kept. The group reopens the slot for another developer. Google Play opt-in is managed separately.") },
+            confirmButton = { TextButton(enabled = !busy, onClick = {
+                leaveTarget = null
+                action { client.call { api.leaveAppGroup(it, groupId) }; selectedGroupId = null; notice = "You left the group. Resume recruitment in My Launch when ready." }
+            }) { Text("Leave group") } },
+            dismissButton = { TextButton(enabled = !busy, onClick = { leaveTarget = null }) { Text("Stay in group") } })
+    }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             Text(if (home) "App Groups" else "My launch", style = MaterialTheme.typography.headlineLarge)
-            Text(if (home) "Add your app, get matched to an App Group, then test the other members’ apps." else "Confirm test access in My Launch. Your app is listed automatically when setup is complete.")
-            if (home) Text("Each group holds up to 13 different developers’ apps. You test up to 12 other apps. Google Group is the separate Play access step.")
+            Text(if (home) "Add your app, get matched to an App Group, then test the other members’ apps." else "Pause or resume recruitment here. Pausing keeps your group slot and existing tasks; use Leave group to stop mutual testing and release the slot.")
+            if (home) {
+                TextButton(onClick = { rulesExpanded = !rulesExpanded }) { Text(if (rulesExpanded) "Hide group rules" else "How groups work") }
+                if (rulesExpanded) Text("15 developers maximum · 1 app per developer · test up to 14 other apps. Full groups stop receiving new apps. Leaving releases your slot and pauses your app; history stays. Pausing recruitment keeps your slot; leaving releases it. New developers are matched into open slots. App Groups organize mutual testing; Google Groups provide Play test access. App slots do not prove active testers or Google eligibility.")
+            }
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             notice?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
             OutlinedButton(onClick = { action {} }, enabled = !busy) { Text("Refresh") }
-            if (home && loaded && (admin || ownedCount == 0)) Button(onClick = onAdd) { Text("Add my app") }
-            if (home && loaded && !admin) Text("One app per person. Join your matched group to start mutual testing.")
+            if (home && selectedGroupId == null && loaded && (admin || ownedCount == 0)) Button(onClick = onAdd, enabled = !busy) { Text("Add my app") }
+            if (home && loaded && ownedCount > 0 && groups.none { it.my_group }) {
+                Text("Your app is not recruiting in a group. Finish setup or resume recruitment in My Launch.")
+                OutlinedButton(onClick = onLaunch, enabled = !busy) { Text("Open My Launch") }
+            }
         }
         if (home) {
             val selected = groups.firstOrNull { it.id == selectedGroupId }
@@ -106,14 +126,15 @@ fun SharedPoolScreen(
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(group.name, style = MaterialTheme.typography.titleLarge)
                             Text(if (group.my_group) "Your app is matched to this group" else "Community testing group")
-                            Text("${group.apps.size} / ${group.capacity} apps · " + if (group.status == "FORMING") "Forming" else "Full")
-                            group.apps.forEach { app ->
+                            Text("${group.occupied_slots} / ${group.capacity} app slots · " + if (group.status == "FORMING") "Open for matching" else "Full · new apps closed")
+                            Button(enabled = !busy, onClick = { selectedGroupId = group.id }) { Text(if (group.joined) "Open my group" else "View group") }
+                            group.apps.take(4).forEach { app ->
                                 androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                     AppIcon(app.name, app.icon_url)
                                     Text(app.name, modifier = Modifier.weight(1f))
                                 }
                             }
-                            Button(onClick = { selectedGroupId = group.id }) { Text(if (group.joined) "Open my group" else "View group") }
+                            if (group.apps.size > 4) Text("+ ${group.apps.size - 4} more apps")
                         }
                     }
                 }
@@ -121,9 +142,13 @@ fun SharedPoolScreen(
                 item {
                     OutlinedButton(onClick = { selectedGroupId = null }) { Text("Back to groups") }
                     Text(selected.name, style = MaterialTheme.typography.headlineMedium)
-                    Text("Joining agrees to test this group’s current and future apps, up to 12 other developers, and send real feedback. Play enrollment and installation are separate actions. A forming group does not yet provide 12 testers.")
+                    Text("Joining agrees to test this group’s current and future apps, up to 14 other developers, and send real feedback. Play enrollment and installation are separate actions. A forming group does not yet provide 12 testers.")
                     when {
-                        selected.joined -> Button(onClick = onTests) { Text("Open my group tests") }
+                        selected.joined -> {
+                            Button(onClick = {}, enabled = false) { Text("Group joined") }
+                            OutlinedButton(enabled = !busy, onClick = onTests) { Text("Open my group tests") }
+                        }
+                        selected.my_group && !selected.ready_to_join -> OutlinedButton(onClick = onLaunch, enabled = !busy) { Text("Resume recruitment in My Launch") }
                         selected.my_group -> Button(enabled = !busy, onClick = {
                             action {
                                 client.call { api.joinAppGroup(it, selected.id) }
@@ -134,6 +159,9 @@ fun SharedPoolScreen(
                         ownedCount == 0 -> Button(enabled = !busy && loaded, onClick = onAdd) { Text("Add my app to get matched") }
                         else -> Text("Your app belongs to its automatically matched group. Open that group to join.")
                     }
+                }
+                item {
+                    if (selected.my_group || selected.joined) OutlinedButton(enabled = !busy, onClick = { leaveTarget = selected.id }) { Text("Leave this group") }
                 }
                 items(selected.apps, key = { it.app_id }) { app ->
                     OutlinedCard(Modifier.fillMaxWidth()) {

@@ -20,7 +20,8 @@ def evaluate_app_recovery(
     """Refresh health, preserve history, and idempotently fill active-cycle shortage."""
     refresh_app_health(db, app, now)
     evaluate_lifecycle(db, app, now)
-    replacements = assign_replacements(db, app, now)
+    from app.models.pool import PoolListing
+    replacements = [] if db.get(PoolListing, app.id) else assign_replacements(db, app, now)
     if include_readiness:
         calculate_readiness(db, app, now)
     return replacements

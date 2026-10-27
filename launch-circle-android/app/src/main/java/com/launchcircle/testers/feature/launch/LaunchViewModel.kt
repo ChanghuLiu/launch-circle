@@ -45,6 +45,7 @@ data class LaunchUiState(
     val circle: LaunchCircle? = null,
     val availableCircles: List<LaunchCircle> = emptyList(),
     val selectedMission: TestMission? = null,
+    val missionStarted: Boolean = false,
     val selectedAssignment: TestAssignment? = null,
     val assignmentMissions: List<TestMission> = emptyList(),
     val evidenceContext: com.launchcircle.testers.core.model.MissionEvidenceContext? = null,
@@ -571,6 +572,7 @@ class LaunchViewModel(
         _state.value = _state.value.copy(
             destination = LaunchDestination.MISSION,
             selectedMission = mission,
+            missionStarted = mission.status == "COMPLETED" && !mission.feedback_submitted,
             evidenceContext = null,
             evidenceSavedId = null,
             error = null,
@@ -582,7 +584,7 @@ class LaunchViewModel(
 
     fun startMission() = withMission { mission ->
         repository.startMission(mission.id)
-        _state.value
+        _state.value.copy(missionStarted = true)
     }
 
     fun confirmOptIn() = withMission { mission ->

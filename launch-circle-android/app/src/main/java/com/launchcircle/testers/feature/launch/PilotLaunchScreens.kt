@@ -201,6 +201,7 @@ fun LaunchWorkspace(
                             state.pilotConfig, state.availableCircles, viewModel::createApp,
                             profile.login_email.equals("liuchanghu2018@gmail.com", ignoreCase = true),
                             viewModel::setDraftIcon,
+                            loading = state.loading,
                         )
                         LaunchDestination.DASHBOARD -> {
                             val selected = state.selectedApp
@@ -215,7 +216,7 @@ fun LaunchWorkspace(
                                     { trigger -> viewModel.recordManagedOfferViewed(selected.id, trigger) },
                                     { viewModel.startManagedCheckout(selected.id) },
                                     if (state.pilotConfig.cold_start_evidence_enabled) viewModel::showEvidence else null,
-                                    viewModel::setAppIcon, viewModel::showMyLaunch,
+                                    viewModel::setAppIcon, viewModel::showMyLaunch, onSharedPool,
                                 )
                             }
                         }
@@ -235,6 +236,7 @@ fun LaunchWorkspace(
                             } else Mission(
                                 it, viewModel::startMission, viewModel::confirmOptIn,
                                 viewModel::confirmInstalled, viewModel::submitFeedback,
+                                loading = state.loading, started = state.missionStarted,
                             )
                         }
                         LaunchDestination.TESTERS -> Testers(
@@ -651,6 +653,7 @@ private fun AddApp(
     onCreate: (String, String, String, String?, String, List<String>, String, String?) -> Unit,
     isAdmin: Boolean,
     onDraftIcon: (String?) -> Unit,
+    loading: Boolean = false,
 ) {
     var name by rememberSaveable { mutableStateOf("") }
     var packageName by rememberSaveable { mutableStateOf("") }
@@ -675,9 +678,9 @@ private fun AddApp(
         }
         Text("Optional. Upload a PNG or JPEG up to 1 MB. You can import the Play icon after creating your app.", style = MaterialTheme.typography.bodySmall)
         Section(stringResource(R.string.app_details_section))
-        OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.app_name_label)) }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(packageName, { packageName = it }, label = { Text(stringResource(R.string.package_name_label)) }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(optIn, { optIn = it }, label = { Text(stringResource(R.string.closed_testing_opt_in_url)) }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.app_name_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(packageName, { packageName = it }, label = { Text(stringResource(R.string.package_name_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(optIn, { optIn = it }, label = { Text(stringResource(R.string.closed_testing_opt_in_url)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(
             playDeveloperAccountId,
             { playDeveloperAccountId = it.filter(Char::isDigit).take(32) },
@@ -737,7 +740,7 @@ private fun AddApp(
                     mode, workflowSteps, playDeveloperAccountId.trim(), null,
                 )
             },
-            enabled = name.isNotBlank() && packageName.contains(".") && optIn.startsWith("http") &&
+            enabled = !loading && name.isNotBlank() && packageName.contains(".") && optIn.startsWith("http") &&
                 validWorkflow && (isAdmin || playDeveloperAccountId.isNotBlank()) &&
                 (mode != "OWN_GROUP" || ownUrl.startsWith("http")),
             modifier = Modifier.fillMaxWidth(),
@@ -781,8 +784,8 @@ private fun GroupSetup(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Button(onClick = onConfirm, enabled = !loading, modifier = Modifier.fillMaxWidth()) {
-            Text(stringResource(R.string.i_added_the_google_group))
+        Button(onClick = onConfirm, enabled = !loading && !app.google_group_configured, modifier = Modifier.fillMaxWidth()) {
+            Text(if (app.google_group_configured) "Test access configured" else stringResource(R.string.i_added_the_google_group))
         }
         OutlinedButton(onClick = onLater, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.do_this_later)) }
     }
@@ -804,6 +807,7 @@ private fun Dashboard(
     onEvidence: (() -> Unit)?,
     onIcon: (String, String?) -> Unit,
     onPool: () -> Unit,
+    onManageRecruitment: () -> Unit,
 ) {
     var coordinationMinutesText by rememberSaveable(app.id) { mutableStateOf("") }
     var showPriorityOffer by rememberSaveable(app.id) { mutableStateOf(false) }
@@ -826,8 +830,15 @@ private fun Dashboard(
             )
         }
         item {
-            Section("App icon")
-            AppIconEditor(app, onIcon)
+            OutlinedButton(onClick = onGroupSetup, enabled = !loading && !app.google_group_configured, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(if (app.google_group_configured) R.string.tester_access_confirmed else R.string.tester_access_setup_needed))
+            }
+        }
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onPool, enabled = !loading, modifier = Modifier.fillMaxWidth()) { Text("Open App Groups") }
+                OutlinedButton(onClick = onManageRecruitment, enabled = !loading, modifier = Modifier.fillMaxWidth()) { Text("Manage recruitment / Resume matching") }
+            }
         }
         if (onEvidence != null) item {
             OutlinedButton(onClick = onEvidence, enabled = !loading, modifier = Modifier.fillMaxWidth()) {
@@ -842,11 +853,12 @@ private fun Dashboard(
                 Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
-                            if (data.testing_started_at == null) stringResource(R.string.waiting_for_testers)
+                            if (!app.google_group_configured) "Test access setup needed"
+                            else if (data.testing_started_at == null) "Recruiting testers"
                             else stringResource(R.string.day_progress, data.day, data.total_days),
                             style = MaterialTheme.typography.headlineMedium,
                         )
-                        StatusBadge(localizedLabel(data.status))
+                        if (data.testing_started_at != null) StatusBadge(localizedLabel(data.status))
                     }
                     LinearProgressIndicator(
                         progress = { data.production_readiness.coerceIn(0, 100) / 100f },
@@ -883,30 +895,21 @@ private fun Dashboard(
             }
         }
         item {
-            SectionHeader(stringResource(R.string.tester_coverage))
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                MetricCard(stringResource(R.string.active_testers), data.qualifying_tester_count.toString(), stringResource(R.string.currently_qualifying), data.qualifying_tester_count >= data.required_tester_count, Modifier.fillMaxWidth())
-                MetricCard(stringResource(R.string.required_testers), data.required_tester_count.toString(), stringResource(R.string.launch_circle_requirement), modifier = Modifier.fillMaxWidth())
-            }
+            SectionHeader("Tester coverage")
+            Text("${data.qualifying_tester_count} / ${data.required_tester_count} currently qualifying", style = MaterialTheme.typography.titleLarge)
+            Text("These are platform reports. Confirm Google Play eligibility in Play Console.", style = MaterialTheme.typography.bodySmall)
         }
         item {
             SectionHeader(stringResource(R.string.milestones))
             MilestoneTimeline(data)
         }
         item {
-            SectionHeader(stringResource(R.string.circle_health))
-            HealthCard(data)
-        }
-        item {
-            OutlinedButton(onClick = onGroupSetup, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(if (app.google_group_configured) R.string.tester_access_confirmed else R.string.tester_access_setup_needed))
-            }
-        }
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onPool, enabled = !loading, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.public_pool_action)) }
-                Text(stringResource(R.string.public_pool_help))
-            }
+            SectionHeader("Participation status")
+            Text(when {
+                data.qualifying_tester_count == 0 -> "Waiting for testers to join and install."
+                data.qualifying_tester_count < data.required_tester_count -> "More testers are needed. Keep testing with your group."
+                else -> "Platform coverage reached. Verify continuity in Play Console."
+            })
         }
         item {
             OutlinedCard(Modifier.fillMaxWidth()) {
@@ -914,7 +917,7 @@ private fun Dashboard(
                     Text(stringResource(R.string.activity), style = MaterialTheme.typography.titleMedium)
                     Text(stringResource(R.string.missions_progress, data.missions_completed, data.missions_total_available))
                     Text(stringResource(R.string.feedback_response_count, data.feedback_count))
-                    TextButton(onClick = onFeedback) { Text(stringResource(R.string.view_feedback)) }
+                    TextButton(onClick = onFeedback, enabled = !loading && data.feedback_count > 0) { Text(stringResource(R.string.view_feedback)) }
                 }
             }
         }
@@ -955,40 +958,11 @@ private fun Dashboard(
                     }
                 }
             }
-        } else if (!data.managed_offer_triggers.isNullOrEmpty() || showPriorityOffer) {
-            item {
-                OutlinedCard(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(stringResource(R.string.managed_launch), style = MaterialTheme.typography.titleMedium)
-                        val offerLabels = mutableListOf<String>()
-                        for (trigger in (data.managed_offer_triggers.orEmpty() + if (showPriorityOffer) listOf("PRIORITY") else emptyList()).distinct()) {
-                            offerLabels.add(localizedLabel(trigger))
-                        }
-                        val labels = offerLabels.joinToString()
-                        Text(stringResource(R.string.available_for, labels))
-                        Text(stringResource(R.string.one_time_google_play_purchase))
-                        Text(
-                            stringResource(R.string.google_play_shows_local_price),
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        Button(
-                            onClick = onManagedCheckout,
-                            enabled = !loading,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text(stringResource(R.string.see_google_play_price)) }
-                    }
-                }
-            }
-        } else {
-            item {
-                OutlinedButton(
-                    onClick = {
-                        showPriorityOffer = true
-                        onManagedOfferViewed("PRIORITY")
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text(stringResource(R.string.need_priority_help)) }
-            }
+        }
+        item {
+            var editIcon by rememberSaveable(app.id) { mutableStateOf(false) }
+            OutlinedButton(onClick = { editIcon = !editIcon }, enabled = !loading) { Text(if (editIcon) "Close app settings" else "App settings") }
+            if (editIcon) AppIconEditor(app, onIcon)
         }
         item {
             Text(data.approval_disclaimer, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1293,13 +1267,16 @@ private fun Mission(
     onOptIn: () -> Unit,
     onInstalled: () -> Unit,
     onSubmit: (String, String?, String?, Int?) -> Unit,
+    loading: Boolean = false,
+    started: Boolean = false,
 ) {
     val initial = when (mission.assignment_status) {
         "ACTIVE", "COMPLETED", "INSTALLED" -> 3
         "OPTED_IN" -> 2
         else -> 0
     }
-    var step by rememberSaveable(mission.id) { mutableIntStateOf(initial) }
+    var playOpened by rememberSaveable(mission.id) { mutableStateOf(false) }
+    val step = if (started) 4 else if (initial == 0 && playOpened) 1 else initial
     var completionResult by rememberSaveable(mission.id) { mutableStateOf<String?>(null) }
     var timeSpentText by rememberSaveable(mission.id) { mutableStateOf("") }
     var issue by rememberSaveable(mission.id) { mutableStateOf("") }
@@ -1314,9 +1291,9 @@ private fun Mission(
         Text(mission.app_name, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text(stringResource(R.string.mission_type_test_title, localizedLabel(mission.mission_type)), style = MaterialTheme.typography.titleLarge)
         Text(stringResource(R.string.about_minutes, mission.estimated_minutes))
-        if (step == 0) Button(onClick = { uri.openUri(mission.opt_in_url); step = 1 }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.open_play_testing_link)) }
-        if (step == 1) Button(onClick = { onOptIn(); step = 2 }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.confirm_opt_in)) }
-        if (step == 2) Button(onClick = { onInstalled(); step = 3 }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.confirm_installed)) }
+        if (step == 0) Button(onClick = { uri.openUri(mission.opt_in_url); playOpened = true }, enabled = !loading && !mission.feedback_submitted, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.open_play_testing_link)) }
+        if (step == 1) Button(onClick = { onOptIn() }, enabled = !loading && !mission.feedback_submitted, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.confirm_opt_in)) }
+        if (step == 2) Button(onClick = { onInstalled() }, enabled = !loading && !mission.feedback_submitted, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.confirm_installed)) }
         if (step == 3) {
             Highlight {
                 Text(stringResource(R.string.your_mission), fontWeight = FontWeight.SemiBold)
@@ -1325,7 +1302,7 @@ private fun Mission(
                     Text("${index + 1}. $instruction")
                 }
             }
-            Button(onClick = { onStart(); step = 4 }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.start_mission)) }
+            Button(onClick = { onStart() }, enabled = !loading && !mission.feedback_submitted, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.start_mission)) }
         }
         if (step >= 4) {
             Text(stringResource(R.string.mission_result_question), fontWeight = FontWeight.SemiBold)
@@ -1355,7 +1332,7 @@ private fun Mission(
             val timeSpentMinutes = timeSpentText.toIntOrNull()
             Button(
                 onClick = { onSubmit(checkNotNull(completionResult), issue, suggestion, checkNotNull(timeSpentMinutes)) },
-                enabled = completionResult != null && timeSpentMinutes != null && timeSpentMinutes in 1..240,
+                enabled = !loading && !mission.feedback_submitted && completionResult != null && timeSpentMinutes != null && timeSpentMinutes in 1..240,
                 modifier = Modifier.fillMaxWidth(),
             ) { Text(stringResource(R.string.submit_feedback)) }
         }

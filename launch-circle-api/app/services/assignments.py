@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.models.launch import App, CircleMember, TesterAssignment
 from app.services.lifecycle import evaluate_lifecycle
 from app.models.user import User
-from app.models.pool import AppGroupApp
+from app.models.pool import AppGroupApp, PoolListing
 
 DAILY_ASSIGNMENT_LIMIT = 2
 DEFAULT_TEST_TYPE = "APP_CHECK"
@@ -101,7 +101,7 @@ def generate_daily_assignments(
     for app_id, tester_id, count in historical:
         app_history[(app_id, tester_id)] = int(count)
 
-    grouped_apps = set(db.scalars(select(AppGroupApp.app_id)))
+    grouped_apps = set(db.scalars(select(AppGroupApp.app_id))) | set(db.scalars(select(PoolListing.app_id)))
     created: list[TesterAssignment] = []
     for app in apps:
         # App Groups use durable, explicitly accepted tasks, not daily implicit copies.

@@ -53,6 +53,8 @@ interface LaunchCircleApi {
 
     @GET("app-groups")
     suspend fun appGroups(@Header("Authorization") auth: String): List<com.launchcircle.testers.core.model.AppTestGroup>
+    @POST("app-groups/{groupId}/leave")
+    suspend fun leaveAppGroup(@Header("Authorization") auth: String, @Path("groupId") groupId: String): Map<String, Any>
     @POST("app-groups/{groupId}/join")
     suspend fun joinAppGroup(@Header("Authorization") auth: String, @Path("groupId") groupId: String): Map<String, Any>
     @GET("tester-pool/me")
