@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import com.launchcircle.testers.BuildConfig
 
 // versionCode, never the display name, determines whether an update is required.
+@androidx.annotation.Keep
 data class AndroidVersionPolicy(
     val latest_version_code: Int,
     val latest_version_name: String,
