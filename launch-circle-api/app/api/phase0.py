@@ -1,3 +1,5 @@
+from typing import Literal
+from fastapi import Response
 import hashlib
 import hmac
 import secrets
@@ -341,6 +343,27 @@ def assigned_to(db: Session, assignment_id: str, user: User) -> TesterAssignment
     if assignment.tester_id != user.id:
         raise HTTPException(status_code=403, detail="Assignment belongs to another tester")
     return assignment
+
+
+@router.get("/android-version")
+def android_version(response: Response, channel: Literal["play", "direct"] = "play"):
+    response.headers["Cache-Control"] = "no-store"
+    return {
+        "latest_version_code": settings.android_direct_latest_version_code if channel == "direct" else settings.android_latest_version_code,
+        "latest_version_name": settings.android_direct_latest_version_name if channel == "direct" else settings.android_latest_version_name,
+        "play_url": "https://play.google.com/store/apps/details?id=com.launchcircle.testers",
+        "apk_url": "/android-update.apk" if settings.android_apk_path else None,
+    }
+
+
+@router.get("/android-update.apk", include_in_schema=False)
+def android_update_apk():
+    from pathlib import Path
+    from fastapi.responses import FileResponse
+    path = Path(settings.android_apk_path) if settings.android_apk_path else None
+    if path is None or not path.is_file():
+        raise HTTPException(status_code=404, detail="Android test build is not available")
+    return FileResponse(path, media_type="application/vnd.android.package-archive", filename="launch-circle.apk", headers={"Cache-Control": "no-store"})
 
 
 @router.get("/pilot-config", response_model=PilotConfigRead)

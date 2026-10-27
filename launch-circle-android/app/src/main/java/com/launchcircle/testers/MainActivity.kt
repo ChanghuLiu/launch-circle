@@ -42,6 +42,44 @@ import com.launchcircle.testers.ui.theme.LaunchCircleTheme
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    private val versionApi by lazy { ApiFactory.create(BuildConfig.API_BASE_URL) }
+    private var versionPolicy by mutableStateOf<com.launchcircle.testers.feature.launch.AndroidVersionPolicy?>(null)
+    private var versionChecking by mutableStateOf(true)
+    private var versionFailed by mutableStateOf(false)
+    private var versionJob: kotlinx.coroutines.Job? = null
+
+    private fun checkAppVersion() {
+        versionJob?.cancel()
+        versionChecking = true
+        versionJob = lifecycleScope.launch {
+            do {
+                try {
+                    val policy = kotlinx.coroutines.withTimeout(12_000) { versionApi.androidVersion(if (BuildConfig.DEBUG) "direct" else "play") }
+                    require(policy.latest_version_code > 0 && policy.latest_version_name.isNotBlank())
+                    versionPolicy = policy
+                    versionFailed = false
+                } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
+                    versionFailed = true
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    versionFailed = true
+                } finally { versionChecking = false }
+                kotlinx.coroutines.delay(300_000)
+            } while (true)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        checkAppVersion()
+    }
+
+    override fun onPause() {
+        versionJob?.cancel()
+        super.onPause()
+    }
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -74,6 +112,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             LaunchCircleTheme {
+                com.launchcircle.testers.feature.launch.RequireCurrentVersion(versionPolicy, versionChecking, versionFailed, ::checkAppVersion) {
                 val pilotPreferences = getSharedPreferences("launch_circle_pilot", MODE_PRIVATE)
                 var onboardingComplete by rememberSaveable {
                     mutableStateOf(pilotPreferences.getBoolean("onboarding_complete", false))
@@ -83,7 +122,7 @@ class MainActivity : ComponentActivity() {
                         pilotPreferences.edit().putBoolean("onboarding_complete", true).apply()
                         onboardingComplete = true
                     }
-                    return@LaunchCircleTheme
+                    return@RequireCurrentVersion
                 }
                 val viewModel: AuthViewModel = viewModel(factory = SimpleAuthViewModelFactory(repository))
                 val state by viewModel.state.collectAsState()
@@ -118,6 +157,7 @@ class MainActivity : ComponentActivity() {
                         lifecycleScope.launch { googleSignIn.clearCredentialState() }
                     },
                 )
+                }
             }
         }
     }
