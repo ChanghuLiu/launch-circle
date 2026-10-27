@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -671,7 +670,7 @@ private fun AddApp(
     val steps = parseCoreWorkflowSteps(workflowText)
     val valid = packageName != null && name.isNotBlank() && steps.size in 2..4 && steps.all { it.length <= 200 } && (!customGroup || ownUrl.startsWith("https://groups.google.com/"))
     val example = lcText("Open the app and try its main feature using sample data.\nCheck the result and report anything confusing.", "打开应用，用示例数据尝试主要功能。\n检查结果，反馈遇到的问题或不清楚的地方。")
-    Column(Modifier.fillMaxSize().imePadding()) {
+    Column(Modifier.fillMaxSize()) {
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text(lcText("Add your app", "添加自己的 App"), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Text(lcText("Three details to get started. Play access is set up after saving.", "填写三项即可保存，之后再配置测试访问。"), color = MaterialTheme.colorScheme.onSurfaceVariant)
