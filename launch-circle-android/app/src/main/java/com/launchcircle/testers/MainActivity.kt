@@ -225,7 +225,7 @@ private fun AppRoot(
                     androidx.compose.foundation.layout.Column(
                         androidx.compose.ui.Modifier.fillMaxSize().navigationBarsPadding()
                     ) {
-                        com.launchcircle.testers.feature.launch.LaunchAppHeader(onBack = { closePool() })
+                        com.launchcircle.testers.feature.launch.LaunchAppHeader(onBack = { closePool() }, onGuideAction = { closePool(); launchViewModel.openGuideDestination(it, state.profile.login_email.equals("liuchanghu2018@gmail.com", ignoreCase = true)) })
                         com.launchcircle.testers.feature.launch.SharedPoolScreen(apiBaseUrl, tokenStore, refreshSession)
                     }
                 } else LaunchWorkspace(

@@ -1949,23 +1949,14 @@ def upload_app_icon(app_id: str, body: dict, current_user: User = Depends(get_cu
 
 @router.post("/apps/{app_id}/icon/google-play", response_model=AppRead)
 def import_play_icon(app_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> AppRead:
-    import re
-    import html
     import requests
-    from urllib.parse import urlparse
+    from app.services.play_icons import resolve_play_icon
+    from app.services.google_play_billing import GooglePlayBillingUnavailable
     app = owned_app(db, app_id, current_user)
     try:
-        response = requests.get("https://play.google.com/store/apps/details", params={"id": app.package_name, "hl": "en"}, timeout=10, allow_redirects=False)
-        response.raise_for_status()
-        match = re.search(r'<meta[^>]+property="og:image"[^>]+content="([^"]+)"', response.text)
-        if not match:
-            raise ValueError("No public icon")
-        url = html.unescape(match.group(1))
-        parsed = urlparse(url)
-        if parsed.scheme != "https" or not (parsed.hostname or "").endswith(".googleusercontent.com"):
-            raise ValueError("Unsupported icon host")
-    except (requests.RequestException, ValueError):
-        raise HTTPException(422, "Google Play icon unavailable. Upload your app icon instead.")
+        url = resolve_play_icon(app.package_name, settings)
+    except (requests.RequestException, ValueError, KeyError, GooglePlayBillingUnavailable):
+        raise HTTPException(422, "This app's Play icon is not accessible yet. For closed tests, the connected publisher must have listing access. You can upload a PNG or JPEG instead; your current icon is unchanged.")
     app.icon_url = url
     db.commit()
     return app_read(app)

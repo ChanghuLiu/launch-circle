@@ -1,6 +1,7 @@
 package com.launchcircle.testers.feature.launch
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -22,12 +23,14 @@ import com.launchcircle.testers.R
 internal fun lcText(en: String, zh: String): String = if (LocalConfiguration.current.locales[0].language == "zh") zh else en
 
 @Composable
-fun LaunchAppHeader(onBack: (() -> Unit)? = null, guideAccountId: String? = null) {
+fun LaunchAppHeader(onBack: (() -> Unit)? = null, guideAccountId: String? = null, onGuideAction: ((Int) -> Unit)? = null) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val prefs = remember(context) { context.getSharedPreferences("launch_circle_guide", android.content.Context.MODE_PRIVATE) }
     val key = "guide_v2_" + (guideAccountId ?: "guest")
     var guide by rememberSaveable(key) { mutableStateOf(guideAccountId != null && !prefs.getBoolean(key + "_introduced", false)) }
     var step by rememberSaveable(key) { mutableIntStateOf(prefs.getInt(key + "_step", 0).coerceIn(0, 5)) }
+    var preview by remember { mutableStateOf<Int?>(null) }
+    var linkFailed by remember { mutableStateOf(false) }
     fun closeGuide(completed: Boolean) {
         prefs.edit().putBoolean(key + "_introduced", true).putInt(key + "_step", if (completed) 0 else step).apply()
         guide = false
@@ -69,6 +72,18 @@ fun LaunchAppHeader(onBack: (() -> Unit)? = null, guideAccountId: String? = null
                         Text(lcText("STEP ", "第 ") + (step + 1) + lcText(" OF 6", " / 6 步"), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                         Text(titles[step], style = MaterialTheme.typography.headlineMedium)
                         Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(16.dp)) { Text(destinations[step], Modifier.fillMaxWidth().padding(16.dp), style = MaterialTheme.typography.titleMedium) }
+                        val exampleImage = when (step) { 0, 3 -> R.drawable.guide_home; 1 -> R.drawable.guide_add_app; else -> null }
+                        if (exampleImage != null) {
+                            Image(painterResource(exampleImage), contentDescription = lcText("Example screen. Tap to enlarge.", "操作页面示例，点击放大。"), contentScale = androidx.compose.ui.layout.ContentScale.Fit, modifier = Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(16.dp)).clickable { preview = exampleImage })
+                            Text(lcText("Example screen · tap to enlarge. Your apps and language may differ.", "界面示例，点击可放大。实际 App 与界面语言可能不同。"), style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (onGuideAction != null) Button(onClick = { closeGuide(false); onGuideAction(step) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                            Text(lcText(when(step) { 1 -> "Open my app setup"; 2 -> "Open test access setup"; 4 -> "Open my test tasks"; 5 -> "Open My Launch"; else -> "Open App Groups" }, when(step) { 1 -> "前往添加／管理我的 App"; 2 -> "前往配置测试访问"; 4 -> "前往我的测试"; 5 -> "前往我的发布"; else -> "前往互测小组" }))
+                        }
+                        if (step == 1 || step == 2) OutlinedButton(onClick = {
+                            linkFailed = runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://play.google.com/console")).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }.isFailure
+                        }, modifier = Modifier.fillMaxWidth()) { Text(lcText("Open Google Play Console ↗", "打开 Google Play Console ↗")) }
+                        if (linkFailed) Text(lcText("No browser available. Open play.google.com/console in your browser.", "无法打开浏览器，请访问 play.google.com/console。"), color = MaterialTheme.colorScheme.error)
                         instructions[step].forEachIndexed { index, instruction ->
                             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Text((index + 1).toString(), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleMedium)
@@ -87,4 +102,15 @@ fun LaunchAppHeader(onBack: (() -> Unit)? = null, guideAccountId: String? = null
             }
         }
     }
+    preview?.let { resource ->
+        androidx.compose.ui.window.Dialog(onDismissRequest = { preview = null }, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+                    Image(painterResource(resource), contentDescription = lcText("Enlarged example screen", "放大的操作页面示例"), contentScale = androidx.compose.ui.layout.ContentScale.Fit, modifier = Modifier.weight(1f).fillMaxWidth())
+                    Button(onClick = { preview = null }, modifier = Modifier.fillMaxWidth().padding(16.dp)) { Text(lcText("Back to guide", "返回引导")) }
+                }
+            }
+        }
+    }
+
 }

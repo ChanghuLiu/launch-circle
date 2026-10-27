@@ -117,7 +117,7 @@ fun LaunchWorkspace(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
-            LaunchAppHeader(guideAccountId = profile.id.toString(), onBack = if (state.destination == LaunchDestination.MY_LAUNCHES && state.pilotSurface == PilotSurface.NONE) homeBack else if (primaryDestination) null else ({
+            LaunchAppHeader(onGuideAction = { viewModel.openGuideDestination(it, profile.login_email.equals("liuchanghu2018@gmail.com", ignoreCase = true)) }, guideAccountId = profile.id.toString(), onBack = if (state.destination == LaunchDestination.MY_LAUNCHES && state.pilotSurface == PilotSurface.NONE) homeBack else if (primaryDestination) null else ({
                 if (state.pilotSurface == PilotSurface.GROUP_SETUP) viewModel.skipGroupSetup()
                 else viewModel.back()
             }))
@@ -1711,7 +1711,7 @@ private fun share(context: Context, value: String) {
 @Composable
 private fun AppIconEditor(app: LaunchApp, onIcon: (String, String?) -> Unit) {
     IconUpload(app.name, app.icon_url) { onIcon(app.id, it) }
-    TextButton(onClick = { onIcon(app.id, null) }) { Text("Get Play icon") }
+    TextButton(onClick = { onIcon(app.id, null) }) { Text(lcText("Get icon from Google Play", "从 Google Play 获取图标")) }
 }
 
 @Composable

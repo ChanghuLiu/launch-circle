@@ -157,6 +157,20 @@ class LaunchViewModel(
         )
     }
 
+    fun openGuideDestination(step: Int, isAdmin: Boolean = false) {
+        val own = _state.value.selectedApp?.takeIf { it.owner_id == loadedUserId }
+            ?: _state.value.launches.firstOrNull { it.owner_id == loadedUserId }
+        when (step) {
+            1 -> if (own == null || isAdmin) showAddApp() else showHome()
+            2 -> if (own == null) showAddApp() else {
+                _state.value = _state.value.copy(selectedApp = own, destination = LaunchDestination.DASHBOARD, pilotSurface = PilotSurface.GROUP_SETUP, error = null)
+            }
+            4 -> showToday()
+            5 -> showHome()
+            else -> showMyLaunch()
+        }
+    }
+
     fun showAddApp() {
         _state.value = _state.value.copy(
             destination = LaunchDestination.ADD_APP,
