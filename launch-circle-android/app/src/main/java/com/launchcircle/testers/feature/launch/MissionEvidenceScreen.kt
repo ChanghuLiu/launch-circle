@@ -46,6 +46,7 @@ fun EvidenceAssignmentScreen(
     ) {
         Text(assignment.app_name, style = MaterialTheme.typography.headlineMedium)
         Text(stringResource(R.string.evidence_guided_test))
+        Text(stringResource(R.string.test_enrollment_steps))
         OutlinedButton(
             onClick = { uri.openUri(assignment.opt_in_url) },
             enabled = !loading, modifier = Modifier.fillMaxWidth(),
@@ -62,7 +63,7 @@ fun EvidenceAssignmentScreen(
         missions.forEach { mission ->
             OutlinedButton(
                 onClick = { onMission(mission) },
-                enabled = !loading && mission.status in setOf("AVAILABLE", "COMPLETED"),
+                enabled = !loading && assignment.status in setOf("INSTALLED", "ACTIVE", "COMPLETED") && mission.status in setOf("AVAILABLE", "COMPLETED"),
                 modifier = Modifier.fillMaxWidth(),
             ) { Text(stringResource(R.string.evidence_mission_day, mission.scheduled_day)) }
         }

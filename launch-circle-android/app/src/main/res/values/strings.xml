@@ -45,7 +45,7 @@
     <string name="welcome_back">Welcome back, %1$s</string>
     <string name="developer">developer</string>
     <string name="first_launch_title">Your first launch starts here</string>
-    <string name="first_launch_body">Add an app, connect tester access, then invite developers or match available testers.</string>
+    <string name="first_launch_body">Add your app, confirm Play test access, then publish it to the public tester pool. You can also test other apps without adding your own.</string>
     <string name="todays_work">Today’s Work</string>
     <string name="test_count_singular">%1$d test</string>
     <string name="test_count_plural">%1$d tests</string>
@@ -122,9 +122,9 @@
     <string name="waiting_for_testers">Waiting for testers</string>
     <string name="day_progress">Day %1$d / %2$d</string>
     <string name="testers_ready_count">%1$d / %2$d ready</string>
-    <string name="fourteen_day_test_complete">14-day internal test complete</string>
+    <string name="fourteen_day_test_complete">Launch Circle 14-day tracking complete</string>
     <string name="days_remaining">%1$d days remaining</string>
-    <string name="estimated_production_date">Estimated production date · %1$s</string>
+    <string name="estimated_production_date">Estimated tracking completion · %1$s</string>
     <string name="coverage_restored">Coverage restored</string>
     <string name="replacement_assigned">Replacement assigned</string>
     <string name="coverage_at_risk">Coverage at risk</string>
@@ -334,4 +334,11 @@
     <string name="evidence_report_failed" translatable="false">Report could not be saved or shared. Please try again.</string>
     <string name="evidence_history" translatable="false">Recorded runs and retests</string>
     <string name="evidence_history_empty" translatable="false">No test observations recorded yet.</string>
+    <string name="public_pool_action">Find testers / Test other apps</string>
+    <string name="public_pool_help">Publish your app for volunteers or choose an app to test. No invitation code is needed. Google Play eligibility must be checked in Play Console.</string>
+    <string name="private_circle_optional">Optional: invite people you know</string>
+    <string name="private_invite_action">Invite friends or teammates (optional)</string>
+    <string name="test_enrollment_steps">1. Open the Play test link and join using this phone’s Google Play account.
+2. Install from Google Play, then return and confirm.
+3. Run the test below and submit what actually happened. These confirmations are your reports, not Google Play verification.</string>
 </resources>

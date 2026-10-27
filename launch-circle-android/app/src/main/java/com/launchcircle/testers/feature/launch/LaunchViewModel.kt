@@ -787,7 +787,10 @@ class LaunchViewModel(
             runCatching { block() }
                 .onSuccess { _state.value = it.copy(loading = false) }
                 .onFailure {
+                    if (it is kotlinx.coroutines.CancellationException) throw it
                     val message = when {
+                        it is HttpException && it.code() == 401 ->
+                            "Your session expired. Sign out and sign in again. Your saved apps and test records will remain."
                         it is HttpException && it.code() == 402 ->
                             "This Developer Account already used its free app. Additional apps cost \$1."
                         it is HttpException && it.code() == 503 ->

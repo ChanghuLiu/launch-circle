@@ -204,7 +204,7 @@ fun LaunchWorkspace(
                             profile, state.launches, state.dashboards, state.selectedApp, state.todayAssignments,
                             viewModel::showAddApp, viewModel::showDashboard,
                             viewModel::showToday, viewModel::showAssignment, viewModel::showInvite,
-                            viewModel::showJoin, viewModel::showAccount, onLogout,
+                            viewModel::showJoin, viewModel::showAccount, onLogout, onSharedPool,
                         )
                         LaunchDestination.ADD_APP -> AddApp(
                             state.pilotConfig, state.availableCircles, viewModel::createApp,
@@ -224,7 +224,7 @@ fun LaunchWorkspace(
                                     { trigger -> viewModel.recordManagedOfferViewed(selected.id, trigger) },
                                     { viewModel.startManagedCheckout(selected.id) },
                                     if (state.pilotConfig.cold_start_evidence_enabled) viewModel::showEvidence else null,
-                                    viewModel::setAppIcon,
+                                    viewModel::setAppIcon, onSharedPool,
                                 )
                             }
                         }
@@ -329,6 +329,7 @@ private fun Home(
     onJoin: () -> Unit,
     onAccount: () -> Unit,
     onLogout: () -> Unit,
+    onPool: () -> Unit,
  ) {
     val primaryApp = selectedApp ?: apps.firstOrNull()
     val dashboard = primaryApp?.let { dashboards[it.id] }
@@ -342,6 +343,10 @@ private fun Home(
             Text(stringResource(R.string.welcome_back, profile.display_name ?: stringResource(R.string.developer)), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         item { Button(onClick = onAdd, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.add_app)) } }
+        item {
+            OutlinedButton(onClick = onPool, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.public_pool_action)) }
+            Text(stringResource(R.string.public_pool_help), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         items(apps, key = { "app-${it.id}" }) { app ->
             OutlinedButton(onClick = { onOpen(app) }, modifier = Modifier.fillMaxWidth()) {
                 AppIcon(app.name, app.icon_url)
@@ -400,15 +405,10 @@ private fun Home(
                 SectionHeader(stringResource(R.string.circle_health))
                 HealthCard(dashboard)
             }
-            item {
-                SectionHeader(stringResource(R.string.your_launches))
-            }
-            items(apps, key = { it.id }) { app ->
-                LaunchCard(app, dashboards[app.id]) { onOpen(app) }
-            }
         }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(R.string.private_circle_optional), style = MaterialTheme.typography.labelLarge)
                 SecondaryLaunchButton(stringResource(R.string.invite_developers), onInvite)
                 SecondaryLaunchButton(stringResource(R.string.join_with_invite_code), onJoin)
                 TextButton(onClick = onAccount, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.account_settings)) }
@@ -835,6 +835,7 @@ private fun Dashboard(
     onManagedCheckout: () -> Unit,
     onEvidence: (() -> Unit)?,
     onIcon: (String, String?) -> Unit,
+    onPool: () -> Unit,
 ) {
     var coordinationMinutesText by rememberSaveable(app.id) { mutableStateOf("") }
     var showPriorityOffer by rememberSaveable(app.id) { mutableStateOf(false) }
@@ -871,7 +872,7 @@ private fun Dashboard(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
             ) {
                 Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
                             if (data.testing_started_at == null) stringResource(R.string.waiting_for_testers)
                             else stringResource(R.string.day_progress, data.day, data.total_days),
@@ -935,8 +936,9 @@ private fun Dashboard(
         }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onInvite, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.invite_developers)) }
-                OutlinedButton(onClick = onMatch, enabled = !loading, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.match_available_testers)) }
+                Button(onClick = onPool, enabled = !loading, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.public_pool_action)) }
+                Text(stringResource(R.string.public_pool_help))
+                TextButton(onClick = onInvite, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.private_invite_action)) }
                 OutlinedButton(onClick = onTesters, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.view_circle)) }
             }
         }
