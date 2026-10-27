@@ -44,6 +44,8 @@ fun AccountScreen(
     error: String?,
     onBack: () -> Unit,
     onDeleteAccount: () -> Unit,
+    showBack: Boolean = true,
+    onLogout: () -> Unit = {},
 ) {
     var confirmation by rememberSaveable { mutableStateOf(DeleteConfirmationState.CLOSED) }
 
@@ -53,10 +55,11 @@ fun AccountScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item {
-            TextButton(onClick = onBack, enabled = !deleting) { Text(stringResource(R.string.back)) }
+            if (showBack) TextButton(onClick = onBack, enabled = !deleting) { Text(stringResource(R.string.back)) }
             Text(stringResource(R.string.account_settings), style = MaterialTheme.typography.headlineLarge)
         }
         item { SettingsSection(stringResource(R.string.account)) }
+        item { androidx.compose.material3.OutlinedButton(onClick = onLogout, enabled = !deleting, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.sign_out)) } }
         item {
             Card(
                 Modifier.fillMaxWidth(),

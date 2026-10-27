@@ -99,3 +99,17 @@ def test_production_first_app_requires_canonical_account_and_verified_package(
     )
     assert verified.status_code == 201, verified.text
     assert verified.json()["entitlement_status"] == "FIRST_APP_FREE"
+
+
+def test_app_creation_resolves_publisher_without_user_entering_account_id(client, monkeypatch):
+    owner = register(client, "simple@example.com", "Simple")
+    monkeypatch.setattr(phase0_settings, "app_env", "production")
+    monkeypatch.setattr(phase0_settings, "google_play_developer_account_id", "8195223677488114201")
+    verified = []
+    monkeypatch.setattr("app.api.phase0.verify_app_package_ownership", lambda settings, package: verified.append(package))
+    payload = app_payload("com.example.simple", "8195223677488114201")
+    payload.pop("play_developer_account_id")
+    response = client.post("/apps", headers=owner["headers"], json=payload)
+    assert response.status_code == 201, response.text
+    assert response.json()["play_developer_account_id"] == "8195223677488114201"
+    assert verified == ["com.example.simple"]

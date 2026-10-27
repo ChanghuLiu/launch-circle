@@ -33,7 +33,7 @@ class AppCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     package_name: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+$", max_length=255)
     opt_in_url: HttpUrl
-    play_developer_account_id: str = Field(pattern=r"^\d{1,32}$", min_length=1, max_length=32)
+    play_developer_account_id: str = Field(default="", pattern=r"^(\d{1,32})?$", max_length=32)
     core_workflow_steps: list[str] = Field(
         default_factory=lambda: [
             "Open the app and complete its main task.",
@@ -51,8 +51,6 @@ class AppCreate(BaseModel):
     @classmethod
     def normalize_play_developer_account_id(cls, value: str) -> str:
         normalized = str(value).strip() if value is not None else ""
-        if not normalized:
-            raise ValueError("play_developer_account_id is required")
         return normalized
 
     @field_validator("core_workflow_steps")

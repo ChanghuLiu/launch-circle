@@ -848,6 +848,10 @@ def create_app(
     db: Session = Depends(get_db),
     now: datetime = Depends(get_now),
 ) -> AppRead:
+    effective_publisher = body.play_developer_account_id.strip() or settings.google_play_developer_account_id.strip()
+    if not effective_publisher:
+        raise HTTPException(503, "Publisher connection is unavailable. Contact support with your Play app link.")
+    body = body.model_copy(update={"play_developer_account_id": effective_publisher})
     if not is_app_admin(current_user):
         # Serialize creation before checking the per-person quota.
         from sqlalchemy import update

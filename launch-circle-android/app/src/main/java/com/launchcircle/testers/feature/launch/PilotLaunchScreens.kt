@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -99,6 +101,7 @@ fun LaunchWorkspace(
     onLogout: () -> Unit,
     onSharedPool: () -> Unit = {},
     communityHome: @Composable () -> Unit = {},
+    homeBack: (() -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsState()
     val activity = LocalActivity.current
@@ -108,11 +111,18 @@ fun LaunchWorkspace(
         LaunchDestination.DASHBOARD,
         LaunchDestination.TODAY_TESTS,
         LaunchDestination.TESTERS,
+        LaunchDestination.ACCOUNT,
     )
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing,
+        topBar = {
+            LaunchAppHeader(onBack = if (state.destination == LaunchDestination.MY_LAUNCHES && state.pilotSurface == PilotSurface.NONE) homeBack else if (primaryDestination) null else ({
+                if (state.pilotSurface == PilotSurface.GROUP_SETUP) viewModel.skipGroupSetup()
+                else viewModel.back()
+            }))
+        },
         bottomBar = {
             if (primaryDestination) {
                 LaunchNavigation(
@@ -127,14 +137,6 @@ fun LaunchWorkspace(
     ) { contentPadding ->
         Column(Modifier.fillMaxSize().padding(contentPadding)) {
             if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-            if (state.pilotSurface == PilotSurface.NONE && !primaryDestination &&
-                state.destination != LaunchDestination.ACCOUNT
-            ) {
-                TextButton(
-                    onClick = viewModel::back,
-                    modifier = Modifier.defaultMinSize(minHeight = 48.dp).padding(horizontal = 8.dp),
-                ) { Text(stringResource(R.string.back)) }
-            }
             state.error?.let { ErrorBanner(it) }
             Box(Modifier.fillMaxSize()) {
                 when (state.pilotSurface) {
@@ -264,6 +266,8 @@ fun LaunchWorkspace(
                             deleting = deletionInProgress,
                             error = deletionError,
                             onBack = viewModel::back,
+                            showBack = false,
+                            onLogout = onLogout,
                             onDeleteAccount = onDeleteAccount,
                         )
                     }
@@ -288,10 +292,10 @@ private fun LaunchNavigation(
         val onClick: () -> Unit,
     )
     val items = listOf(
-        Item("Home", Icons.Rounded.Home, destination == LaunchDestination.MY_LAUNCHES, onHome),
-        Item("Tests", Icons.Rounded.Science, destination == LaunchDestination.TODAY_TESTS, onTests),
-        Item("My Launch", Icons.Rounded.RocketLaunch, destination == LaunchDestination.DASHBOARD, onMyLaunch),
-        Item("Account", Icons.Rounded.Groups, destination == LaunchDestination.TESTERS, onCircle),
+        Item(lcText("Home", "首页"), Icons.Rounded.Home, destination == LaunchDestination.MY_LAUNCHES, onHome),
+        Item(lcText("Tests", "我的测试"), Icons.Rounded.Science, destination == LaunchDestination.TODAY_TESTS, onTests),
+        Item(lcText("My Launch", "我的发布"), Icons.Rounded.RocketLaunch, destination == LaunchDestination.DASHBOARD, onMyLaunch),
+        Item(lcText("Account", "账号"), Icons.Rounded.Groups, destination == LaunchDestination.ACCOUNT, onCircle),
     )
     NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
         items.forEach { item ->
@@ -655,102 +659,52 @@ private fun AddApp(
     onDraftIcon: (String?) -> Unit,
     loading: Boolean = false,
 ) {
+    var playLink by rememberSaveable { mutableStateOf("") }
     var name by rememberSaveable { mutableStateOf("") }
-    var packageName by rememberSaveable { mutableStateOf("") }
-    var optIn by rememberSaveable { mutableStateOf("") }
-    var playDeveloperAccountId by rememberSaveable { mutableStateOf("") }
     var workflowText by rememberSaveable { mutableStateOf("") }
-    var mode by rememberSaveable { mutableStateOf("LAUNCH_CIRCLE") }
+    var advanced by rememberSaveable { mutableStateOf(false) }
+    var customGroup by rememberSaveable { mutableStateOf(false) }
     var ownUrl by rememberSaveable { mutableStateOf("") }
-    val context = LocalContext.current
     var draftIcon by androidx.compose.runtime.remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) { onDraftIcon(null) }
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text(stringResource(R.string.add_your_app), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text(stringResource(R.string.guided_closed_test_setup), color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Section("App icon")
-        IconUpload(name.ifBlank { "App" }, draftIcon) { data ->
-            draftIcon = "data:image/png;base64,$data"
-            onDraftIcon(data)
+    val packageName = com.launchcircle.testers.core.launch.PlayAppLink.packageName(playLink)
+    val steps = parseCoreWorkflowSteps(workflowText)
+    val valid = packageName != null && name.isNotBlank() && steps.size in 2..4 && steps.all { it.length <= 200 } && (!customGroup || ownUrl.startsWith("https://groups.google.com/"))
+    val example = lcText("Open the app and try its main feature using sample data.\nCheck the result and report anything confusing.", "打开应用，用示例数据尝试主要功能。\n检查结果，反馈遇到的问题或不清楚的地方。")
+    Column(Modifier.fillMaxSize().imePadding()) {
+        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text(lcText("Add your app", "添加自己的 App"), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Text(lcText("Three details to get started. Play access is set up after saving.", "填写三项即可保存，之后再配置测试访问。"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedTextField(playLink, { playLink = it }, label = { Text(lcText("1 · Google Play app link", "1 · Google Play 应用链接")) },
+                supportingText = { Text(lcText("Paste a store link or closed-test link. You can also enter the package name.", "粘贴商店链接或闭测链接，也可以输入包名。")) },
+                isError = playLink.isNotBlank() && packageName == null,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Ascii, autoCorrectEnabled = false),
+                singleLine = true, enabled = !loading, modifier = Modifier.fillMaxWidth())
+            if (packageName != null) Text(lcText("Detected: ", "已识别包名：") + packageName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            else if (playLink.isNotBlank()) Text(lcText("Use a play.google.com store/test link, or a package such as com.example.app.", "请输入 play.google.com 的商店／闭测链接，或类似 com.example.app 的包名。"), color = MaterialTheme.colorScheme.error)
+            OutlinedTextField(name, { name = it }, label = { Text(lcText("2 · App name", "2 · 应用名称")) }, singleLine = true, enabled = !loading, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(workflowText, { workflowText = it }, label = { Text(lcText("3 · What should testers do?", "3 · 希望测试者做什么？")) },
+                supportingText = { Text(lcText("Write 2–4 short steps, one per line, up to 200 characters each.", "填写 2–4 条简短步骤，每行一条，每条不超过 200 字符。")) },
+                minLines = 3, maxLines = 5, enabled = !loading, modifier = Modifier.fillMaxWidth())
+            TextButton(onClick = { workflowText = example }, enabled = !loading && workflowText.isBlank()) { Text(lcText("Use starter steps, then edit", "使用示例步骤后修改")) }
+            Text(lcText("No Developer Account ID to type. Package access is checked through the server's publisher connection; external apps may need ownership review.", "不用填写开发者账号 ID。后台会检查包名访问权限；外部开发者的 App 可能需要所有权审核。"), style = MaterialTheme.typography.bodySmall)
+            TextButton(onClick = { advanced = !advanced }, enabled = !loading) { Text(lcText(if (advanced) "Hide optional settings" else "Icon & optional settings", if (advanced) "收起可选设置" else "图标与可选设置")) }
+            if (advanced) {
+                IconUpload(name.ifBlank { "App" }, draftIcon) { data -> draftIcon = "data:image/png;base64,$data"; onDraftIcon(data) }
+                Text(lcText("Optional PNG/JPEG, up to 1 MB. You can import the Play icon later.", "图标可选，PNG/JPEG 不超过 1 MB，也可稍后导入 Play 图标。"), style = MaterialTheme.typography.bodySmall)
+                OutlinedButton(onClick = { customGroup = !customGroup }, enabled = !loading) { Text(lcText(if (customGroup) "Use Launch Circle Google Group" else "Use my own Google Group", if (customGroup) "改用 Launch Circle Google 群组" else "使用自己的 Google 群组")) }
+                if (customGroup) OutlinedTextField(ownUrl, { ownUrl = it }, label = { Text(lcText("Google Group link", "Google 群组链接")) }, singleLine = true, enabled = !loading, modifier = Modifier.fillMaxWidth())
+            }
+            if (isAdmin) Text(lcText("Administrator: multiple apps allowed.", "管理员账号可添加多个 App。"), style = MaterialTheme.typography.bodySmall)
+            Spacer(Modifier.height(8.dp))
         }
-        Text("Optional. Upload a PNG or JPEG up to 1 MB. You can import the Play icon after creating your app.", style = MaterialTheme.typography.bodySmall)
-        Section(stringResource(R.string.app_details_section))
-        OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.app_name_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(packageName, { value ->
-            val generated = optIn.isBlank() || optIn == "https://play.google.com/apps/testing/$packageName"
-            packageName = value
-            if (generated) optIn = if (value.isBlank()) "" else "https://play.google.com/apps/testing/${value.trim()}"
-        }, label = { Text(stringResource(R.string.package_name_label)) }, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Ascii, autoCorrectEnabled = false), singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(optIn, { optIn = it }, label = { Text(stringResource(R.string.closed_testing_opt_in_url)) }, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Ascii, autoCorrectEnabled = false), singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(
-            playDeveloperAccountId,
-            { playDeveloperAccountId = it.filter(Char::isDigit).take(32) },
-            label = { Text(stringResource(R.string.google_play_developer_account_id)) },
-            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number, autoCorrectEnabled = false),
-            supportingText = {
-                if (isAdmin) Text("Administrator: unlimited apps, no additional-app charge.")
-                else Text("One app per person. Your first app is free.")
-            },
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Section(stringResource(R.string.main_test_workflow))
-        Text(
-            stringResource(R.string.workflow_steps_instruction),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        OutlinedTextField(
-            workflowText,
-            { workflowText = it },
-            label = { Text(stringResource(R.string.what_testers_should_do)) },
-            minLines = 2,
-            maxLines = 4,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        val workflowSteps = parseCoreWorkflowSteps(workflowText)
-        val validWorkflow = workflowSteps.size in 2..4 && workflowSteps.all { it.length <= 200 }
-        Text("Testers join from the community app list. No invitation or private circle is needed.")
-        Section(stringResource(R.string.tester_access_section))
-        Option(mode == "LAUNCH_CIRCLE", stringResource(R.string.launch_circle_group_recommended), stringResource(R.string.shared_pilot_tester_access)) {
-            mode = "LAUNCH_CIRCLE"
-        }
-        if (mode == "LAUNCH_CIRCLE") {
-            Highlight {
-                Text(stringResource(R.string.group_email))
-                Text(config.google_group_email, fontWeight = FontWeight.SemiBold)
-                OutlinedButton(onClick = { copy(context, config.google_group_email) }) {
-                    Text(stringResource(R.string.copy_group_email))
-                }
-                Text(
-                    stringResource(R.string.add_group_to_closed_test_track),
-                    style = MaterialTheme.typography.bodySmall,
-                )
+        Surface(tonalElevation = 3.dp) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (!valid) Text(lcText("Complete the three fields above to continue.", "填写上面的三项后即可继续。"), style = MaterialTheme.typography.bodySmall)
+                Button(onClick = { onCreate(name.trim(), checkNotNull(packageName), com.launchcircle.testers.core.launch.PlayAppLink.testUrl(packageName), ownUrl.takeIf { customGroup }, if (customGroup) "OWN_GROUP" else "LAUNCH_CIRCLE", steps, "", null) },
+                    enabled = valid && !loading, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(lcText(if (loading) "Saving…" else "Save & set up test access", if (loading) "保存中…" else "保存并设置测试访问")) }
             }
         }
-        Option(mode == "OWN_GROUP", stringResource(R.string.use_own_google_group), stringResource(R.string.use_existing_group_url)) {
-            mode = "OWN_GROUP"
-        }
-        if (mode == "OWN_GROUP") {
-            OutlinedTextField(ownUrl, { ownUrl = it }, label = { Text(stringResource(R.string.google_group_url)) }, modifier = Modifier.fillMaxWidth())
-        }
-        Option(mode == "EMAIL_LIST", stringResource(R.string.use_email_tester_list), stringResource(R.string.manage_fallback_list_in_play_console)) {
-            mode = "EMAIL_LIST"
-        }
-        Button(
-            onClick = {
-                onCreate(
-                    name.trim(), packageName.trim(), optIn.trim(), ownUrl.ifBlank { null },
-                    mode, workflowSteps, playDeveloperAccountId.trim(), null,
-                )
-            },
-            enabled = !loading && name.isNotBlank() && packageName.contains(".") && optIn.startsWith("http") &&
-                validWorkflow && (isAdmin || playDeveloperAccountId.isNotBlank()) &&
-                (mode != "OWN_GROUP" || ownUrl.startsWith("http")),
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text(stringResource(R.string.create_launch)) }
-        Spacer(Modifier.height(20.dp))
     }
 }
 
@@ -841,8 +795,8 @@ private fun Dashboard(
         }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onPool, enabled = !loading, modifier = Modifier.fillMaxWidth()) { Text("Open App Groups") }
-                OutlinedButton(onClick = onManageRecruitment, enabled = !loading, modifier = Modifier.fillMaxWidth()) { Text("Manage recruitment / Resume matching") }
+                Button(onClick = onPool, enabled = !loading, modifier = Modifier.fillMaxWidth()) { Text(lcText("Open App Groups", "打开互测小组")) }
+                OutlinedButton(onClick = onManageRecruitment, enabled = !loading, modifier = Modifier.fillMaxWidth()) { Text(lcText("Manage recruitment / Resume matching", "管理招募／恢复匹配")) }
             }
         }
         if (onEvidence != null) item {
@@ -1216,7 +1170,7 @@ private fun TodayAssignmentCard(
                 Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(stringResource(R.string.estimated_minutes_short, assignment.estimated_minutes), style = MaterialTheme.typography.labelLarge)
                     if (completed) {
-                        Text(if (assignment.feedback_submitted) "Feedback submitted" else stringResource(R.string.completed), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
+                        Text(if (assignment.feedback_submitted) lcText("Feedback submitted", "反馈已提交") else stringResource(R.string.completed), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
                     } else {
                         val label = stringResource(if (compact) R.string.start else R.string.start_test)
                         FilledTonalButton(onClick = onClick, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) { Text(label) }

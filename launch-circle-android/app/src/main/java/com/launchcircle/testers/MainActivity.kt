@@ -174,6 +174,7 @@ private fun AppRoot(
             )
             AppDestination.PROFILE -> ProfileScreen(state.profile, onSaveProfile)
             AppDestination.HOME -> {
+                var groupBack by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<(() -> Unit)?>(null) }
                 var poolOpen by rememberSaveable(state.profile.id) { mutableStateOf(false) }
                 fun closePool() {
                     poolOpen = false
@@ -182,11 +183,9 @@ private fun AppRoot(
                 androidx.activity.compose.BackHandler(enabled = poolOpen) { closePool() }
                 if (poolOpen) {
                     androidx.compose.foundation.layout.Column(
-                        androidx.compose.ui.Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()
+                        androidx.compose.ui.Modifier.fillMaxSize().navigationBarsPadding()
                     ) {
-                        androidx.compose.material3.TextButton(onClick = { closePool() }) {
-                            Text("Back to Launch Circle")
-                        }
+                        com.launchcircle.testers.feature.launch.LaunchAppHeader(onBack = { closePool() })
                         com.launchcircle.testers.feature.launch.SharedPoolScreen(apiBaseUrl, tokenStore, refreshSession)
                     }
                 } else LaunchWorkspace(
@@ -197,12 +196,14 @@ private fun AppRoot(
                     onDeleteAccount = onDeleteAccount,
                     onLogout = onLogout,
                     onSharedPool = { poolOpen = true },
+                    homeBack = groupBack,
                     communityHome = {
                         com.launchcircle.testers.feature.launch.SharedPoolScreen(
                             apiBaseUrl, tokenStore, refreshSession, home = true,
                             onAdd = launchViewModel::showAddApp,
                             onTests = launchViewModel::showToday,
                             onLaunch = launchViewModel::showHome,
+                            onBackChange = { groupBack = it },
                         )
                     },
                 )
