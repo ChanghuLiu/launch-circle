@@ -37,3 +37,9 @@ class AdminAudit(Base):
     action: Mapped[str] = mapped_column(String(40), nullable=False)
     target_id: Mapped[str] = mapped_column(String(100), nullable=False)
     detail: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+
+class AdminCredential(Base):
+    __tablename__ = "admin_credentials"
+    id: Mapped[str] = mapped_column(String(20), primary_key=True)
+    password_hash: Mapped[str] = mapped_column(String(200), nullable=False)

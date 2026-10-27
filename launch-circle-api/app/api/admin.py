@@ -17,11 +17,11 @@ from sqlalchemy.orm import Session
 from app.api.pool import active_work, current_assignments, ready, supply
 from app.core.config import get_settings
 from app.core.database import get_db
-from app.models.admin import AdminAppControl, AdminAudit, AdminRecommendation, AdminSession
+from app.models.admin import AdminAppControl, AdminAudit, AdminRecommendation, AdminSession, AdminCredential
 from app.models.launch import App, Circle, CircleMember, Feedback, TesterAssignment
 from app.models.pool import AppIntake, PoolListing, TesterPoolPreference
 from app.models.user import User
-from app.services.admin_auth import password_matches
+from app.services.admin_auth import password_matches, password_hash
 from app.services.circles import active_member_count
 
 router = APIRouter(prefix="/admin", tags=["operator"])
@@ -34,6 +34,11 @@ _attempt_lock = threading.Lock()
 
 def now():
     return datetime.now(UTC)
+
+
+def configured_password(db):
+    credential = db.get(AdminCredential, "operator")
+    return credential.password_hash if credential else get_settings().admin_password_hash
 
 
 def digest(value):
@@ -52,7 +57,7 @@ def operator(request: Request, db: DB):
     raw = request.cookies.get(COOKIE, "")
     row = db.get(AdminSession, digest(raw)) if raw else None
     expiry = row.expires_at.replace(tzinfo=UTC) if row else None
-    if not get_settings().admin_password_hash or not row or expiry <= now():
+    if not configured_password(db) or not row or expiry <= now():
         raise HTTPException(401, "Operator login required")
     if request.method not in {"GET", "HEAD"}:
         guard_write(request)
@@ -65,6 +70,7 @@ def audit(db, action, target, detail):
     db.add(AdminAudit(created_at=now(), action=action, target_id=target, detail=detail))
 
 
+@router.get("/password", include_in_schema=False)
 @router.get("", include_in_schema=False)
 @router.get("/", include_in_schema=False)
 def page():
@@ -83,7 +89,7 @@ class Login(BaseModel):
 @router.post("/api/login")
 def login(body: Login, request: Request, response: Response, db: DB):
     guard_write(request)
-    configured = get_settings().admin_password_hash
+    configured = configured_password(db)
     if not configured:
         raise HTTPException(503, "Operator login is not configured")
     with _attempt_lock:
@@ -102,6 +108,37 @@ def login(body: Login, request: Request, response: Response, db: DB):
     db.commit()
     response.set_cookie(COOKIE, raw, max_age=8 * 3600, httponly=True,
                         secure=get_settings().is_deployment, samesite="strict", path="/admin")
+    return {"ok": True}
+
+
+class ChangePassword(BaseModel):
+    current_password: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(min_length=12, max_length=256)
+
+
+@router.post("/api/password")
+def change_password(body: ChangePassword, request: Request, response: Response, db: DB, admin: Admin):
+    with _attempt_lock:
+        stamp = time.monotonic()
+        while _attempts and stamp - _attempts[0] > 60:
+            _attempts.popleft()
+        if len(_attempts) >= 10:
+            raise HTTPException(429, "请稍等一分钟再试")
+        _attempts.append(stamp)
+    if not password_matches(body.current_password, configured_password(db)):
+        raise HTTPException(400, "当前密码不正确")
+    if body.current_password == body.new_password:
+        raise HTTPException(400, "新密码不能与当前密码相同")
+    credential = db.get(AdminCredential, "operator")
+    encoded = password_hash(body.new_password)
+    if credential:
+        credential.password_hash = encoded
+    else:
+        db.add(AdminCredential(id="operator", password_hash=encoded))
+    db.execute(delete(AdminSession))
+    audit(db, "PASSWORD_CHANGED", "operator", {})
+    db.commit()
+    response.delete_cookie(COOKIE, path="/admin")
     return {"ok": True}
 
 

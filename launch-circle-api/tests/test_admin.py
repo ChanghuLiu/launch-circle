@@ -162,3 +162,21 @@ def test_production_secure_cookie_and_rotation(operator, monkeypatch):
     monkeypatch.setattr(get_settings(), "app_env", "development")
     monkeypatch.setattr(get_settings(), "admin_password_hash", password_hash("ROTATED-synthetic-password"))
     assert operator.get("/admin/api/overview").status_code == 401
+
+
+def test_password_change_revokes_sessions_and_persists(operator):
+    path = "/admin/api/password"
+    new = "SYNTHETIC-new-operator-password"
+    assert operator.post(path, json={"current_password": PASSWORD, "new_password": new}).status_code == 403
+    assert operator.post(path, json={"current_password": "wrong", "new_password": new}, headers=HEADERS).status_code == 400
+    assert operator.post(path, json={"current_password": PASSWORD, "new_password": "short"}, headers=HEADERS).status_code == 422
+    assert operator.post(path, json={"current_password": PASSWORD, "new_password": new}, headers=HEADERS).status_code == 200
+    assert operator.get("/admin/api/overview").status_code == 401
+    assert operator.post("/admin/api/login", json={"password": PASSWORD}, headers=HEADERS).status_code == 401
+    assert operator.post("/admin/api/login", json={"password": new}, headers=HEADERS).status_code == 200
+    assert operator.get("/admin/api/overview").status_code == 200
+    assert operator.get("/admin/password").status_code == 200
+    with SessionLocal() as db:
+        from app.models.admin import AdminCredential
+        saved = db.get(AdminCredential, "operator").password_hash
+        assert new not in saved and password_matches(new, saved)
