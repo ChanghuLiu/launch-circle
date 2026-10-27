@@ -117,7 +117,7 @@ fun LaunchWorkspace(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
-            LaunchAppHeader(onBack = if (state.destination == LaunchDestination.MY_LAUNCHES && state.pilotSurface == PilotSurface.NONE) homeBack else if (primaryDestination) null else ({
+            LaunchAppHeader(guideAccountId = profile.id.toString(), onBack = if (state.destination == LaunchDestination.MY_LAUNCHES && state.pilotSurface == PilotSurface.NONE) homeBack else if (primaryDestination) null else ({
                 if (state.pilotSurface == PilotSurface.GROUP_SETUP) viewModel.skipGroupSetup()
                 else viewModel.back()
             }))
