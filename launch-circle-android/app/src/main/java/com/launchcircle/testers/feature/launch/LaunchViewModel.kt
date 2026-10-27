@@ -110,7 +110,7 @@ class LaunchViewModel(
             val availableCircles = repository.circles()
             val selected = _state.value.selectedApp?.let { current ->
                 apps.firstOrNull { it.id == current.id }
-            } ?: apps.firstOrNull()
+            } ?: apps.firstOrNull { it.owner_id == loadedUserId } ?: apps.firstOrNull()
             val circle = selected?.let { repository.circle(it.id) }
             _state.value.copy(
                 destination = if (selected == null) {
@@ -130,7 +130,9 @@ class LaunchViewModel(
     }
 
     fun showHome() {
-        val app = _state.value.selectedApp ?: _state.value.launches.firstOrNull()
+        val app = _state.value.selectedApp?.takeIf { it.owner_id == loadedUserId }
+            ?: _state.value.launches.firstOrNull { it.owner_id == loadedUserId }
+            ?: _state.value.launches.firstOrNull()
         if (app == null) {
             _state.value = _state.value.copy(destination = LaunchDestination.MY_LAUNCHES)
         } else {
