@@ -157,6 +157,7 @@ data class TestMission(
     val assignment_status: String = "ASSIGNED",
     val goal: String = "",
     val steps: List<String> = emptyList(),
+    val feedback_submitted: Boolean = false,
 )
 
 data class TestAssignment(
@@ -172,7 +173,9 @@ data class TestAssignment(
     val assigned_at: String,
     val completed_at: String?,
     val estimated_minutes: Int = 5,
+    val feedback_submitted: Boolean = false,
     val tester_user_id: String? = null,
+    val google_group_url: String? = null,
 )
 
 data class AssignmentCoverage(

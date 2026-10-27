@@ -255,8 +255,11 @@ def test_assignment_read(
         app_name=item.app.name,
         package_name=item.app.package_name,
         opt_in_url=item.app.opt_in_url,
+        google_group_url=(item.app.google_group_url or settings.launch_circle_google_group_join_url) if item.app.google_group_mode == "LAUNCH_CIRCLE" else item.app.google_group_url,
         test_type=item.test_type,
-        status="COMPLETED" if item.status == "COMPLETED" else "ASSIGNED",
+        status=item.status,
+        feedback_submitted=(any(m.feedback_entry is not None for m in item.missions)
+            and not any(m.status in {"AVAILABLE", "COMPLETED"} and m.feedback_entry is None for m in item.missions)),
         assignment_day=item.assignment_day,
         assigned_at=item.assigned_at,
         completed_at=item.completed_at,
@@ -270,6 +273,7 @@ def mission_read(mission: TestMission) -> MissionRead:
         mission.mission_type, app.name, app.core_workflow_steps
     )
     return MissionRead(
+        feedback_submitted=mission.feedback_entry is not None,
         id=mission.id,
         assignment_id=assignment.id,
         assignment_status=assignment.status,
@@ -1075,7 +1079,7 @@ def confirm_google_group(
             f"google-group-confirmed:{app.id}", app_id=app.id,
         )
     if body.configured:
-        from app.api.pool import ready
+        from app.api.pool import ready, place_in_group
         from app.models.pool import PoolListing
         if ready(app):
             listing = db.get(PoolListing, app.id)
@@ -1083,6 +1087,8 @@ def confirm_google_group(
                 db.add(PoolListing(app_id=app.id, enabled=True, updated_at=now))
             else:
                 listing.enabled, listing.updated_at = True, now
+            db.flush()
+            place_in_group(db, app, now)
     else:
         from app.models.pool import PoolListing
         listing = db.get(PoolListing, app.id)

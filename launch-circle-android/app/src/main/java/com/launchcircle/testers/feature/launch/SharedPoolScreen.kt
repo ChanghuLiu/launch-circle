@@ -46,7 +46,9 @@ fun SharedPoolScreen(
     val api = remember(baseUrl) { ApiFactory.create(baseUrl) }
     val client = remember(tokens) { PoolClient(tokens, refresh) }
     val scope = rememberCoroutineScope()
-    var apps by remember { mutableStateOf(emptyList<PoolOpportunity>()) }
+    var groups by remember { mutableStateOf(emptyList<AppTestGroup>()) }
+    var selectedGroupId by rememberSaveable { mutableStateOf<String?>(null) }
+    androidx.activity.compose.BackHandler(enabled = selectedGroupId != null) { selectedGroupId = null }
     var supplies by remember { mutableStateOf(emptyList<PoolSupply>()) }
     var ownedCount by remember { mutableStateOf(0) }
     var admin by remember { mutableStateOf(false) }
@@ -59,7 +61,7 @@ fun SharedPoolScreen(
         admin = profile.login_email.equals("liuchanghu2018@gmail.com", ignoreCase = true)
         val owned = client.call { api.apps(it) }.filter { it.owner_id == profile.id }
         ownedCount = owned.size
-        apps = client.call { api.poolOpportunities(it) }
+        groups = client.call { api.appGroups(it) }
         if (!home) supplies = owned.map { app -> client.call { api.poolSupply(it, app.id) } }
         loaded = true
     }
@@ -73,7 +75,7 @@ fun SharedPoolScreen(
                 error = when (failure) {
                     is HttpException -> when (failure.code()) {
                         401 -> "Session expired. Sign in again."
-                        409 -> "Unable to join: you may already have two active test apps, or this app is full. Refresh and choose another."
+                        409 -> "Unable to join this group. Check that your app is configured and matched here, or open the group you already joined."
                         404 -> "This app is no longer available. Refresh the list."
                         else -> "Unable to update. Please retry."
                     }
@@ -85,36 +87,61 @@ fun SharedPoolScreen(
     LaunchedEffect(Unit) { action {} }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
-            Text(if (home) "Community apps" else "My launch", style = MaterialTheme.typography.headlineLarge)
-            Text(if (home) "Choose an app to test. Developers join each other through this community." else "Confirm test access in My Launch. Your app is listed automatically when setup is complete.")
-            if (home) Text("Join → Complete Google Play opt-in → Install → Test → Send feedback.")
+            Text(if (home) "App Groups" else "My launch", style = MaterialTheme.typography.headlineLarge)
+            Text(if (home) "Add your app, get matched to an App Group, then test the other members’ apps." else "Confirm test access in My Launch. Your app is listed automatically when setup is complete.")
+            if (home) Text("Each group holds up to 13 different developers’ apps. You test up to 12 other apps. Google Group is the separate Play access step.")
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             notice?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
             OutlinedButton(onClick = { action {} }, enabled = !busy) { Text("Refresh") }
             if (home && loaded && (admin || ownedCount == 0)) Button(onClick = onAdd) { Text("Add my app") }
-            if (home && loaded && !admin) Text("One app per person. Test other apps from this list.")
+            if (home && loaded && !admin) Text("One app per person. Join your matched group to start mutual testing.")
         }
         if (home) {
-            if (loaded && apps.isEmpty()) item { Text("No apps are recruiting yet. Complete your app's test access setup in My Launch to list it here.") }
-            items(apps, key = { it.app_id }) { app ->
-                OutlinedCard(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        AppIcon(app.name, app.icon_url)
-                        Text(app.name, style = MaterialTheme.typography.titleLarge)
-                        Text(app.package_name, style = MaterialTheme.typography.bodySmall)
-                        app.workflow_steps.forEachIndexed { index, step -> Text("${index + 1}. $step") }
-                        when {
-                            app.owned -> OutlinedButton(onClick = onLaunch) { Text("My app · Manage launch") }
-                            app.joined -> OutlinedButton(onClick = onTests) { Text("Joined · Open my tests") }
-                            app.available -> Button(enabled = !busy, onClick = {
-                                action {
-                                    client.call { api.acceptPoolApp(it, app.app_id) }
-                                    notice = "Joined. Open Tests to complete Google Play opt-in and installation."
-                                    onTests()
+            val selected = groups.firstOrNull { it.id == selectedGroupId }
+            if (selected == null) {
+                if (loaded && groups.isEmpty()) item { Text("No groups yet. Add your app and finish test access setup; matching is automatic.") }
+                items(groups, key = { it.id }) { group ->
+                    OutlinedCard(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(group.name, style = MaterialTheme.typography.titleLarge)
+                            Text(if (group.my_group) "Your app is matched to this group" else "Community testing group")
+                            Text("${group.apps.size} / ${group.capacity} apps · " + if (group.status == "FORMING") "Forming" else "Full")
+                            group.apps.forEach { app ->
+                                androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    AppIcon(app.name, app.icon_url)
+                                    Text(app.name, modifier = Modifier.weight(1f))
                                 }
-                            }) { Text("Join testing") }
-                            else -> Text("Not available to join now. You can test up to two apps at once.")
+                            }
+                            Button(onClick = { selectedGroupId = group.id }) { Text(if (group.joined) "Open my group" else "View group") }
+                        }
+                    }
+                }
+            } else {
+                item {
+                    OutlinedButton(onClick = { selectedGroupId = null }) { Text("Back to groups") }
+                    Text(selected.name, style = MaterialTheme.typography.headlineMedium)
+                    Text("Joining agrees to test this group’s current and future apps, up to 12 other developers, and send real feedback. Play enrollment and installation are separate actions. A forming group does not yet provide 12 testers.")
+                    when {
+                        selected.joined -> Button(onClick = onTests) { Text("Open my group tests") }
+                        selected.my_group -> Button(enabled = !busy, onClick = {
+                            action {
+                                client.call { api.joinAppGroup(it, selected.id) }
+                                notice = "Group joined. Open Tests to complete each app's Play opt-in and installation."
+                                onTests()
+                            }
+                        }) { Text("Join group and test its apps") }
+                        ownedCount == 0 -> Button(enabled = !busy && loaded, onClick = onAdd) { Text("Add my app to get matched") }
+                        else -> Text("Your app belongs to its automatically matched group. Open that group to join.")
+                    }
+                }
+                items(selected.apps, key = { it.app_id }) { app ->
+                    OutlinedCard(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            AppIcon(app.name, app.icon_url)
+                            Text(app.name, style = MaterialTheme.typography.titleLarge)
+                            if (app.owned) Text("Your app")
+                            app.workflow_steps.forEachIndexed { index, step -> Text("${index + 1}. $step") }
                         }
                     }
                 }

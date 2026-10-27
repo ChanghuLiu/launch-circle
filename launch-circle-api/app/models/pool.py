@@ -43,3 +43,23 @@ class AppIntake(Base):
     __table_args__ = (
         UniqueConstraint("owner_id", "package_name", name="uq_app_intake_owner_package"),
     )
+
+
+class AppGroup(Base):
+    __tablename__ = "app_groups"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class AppGroupApp(Base):
+    __tablename__ = "app_group_apps"
+    app_id: Mapped[str] = mapped_column(ForeignKey("apps.id", ondelete="CASCADE"), primary_key=True)
+    group_id: Mapped[str] = mapped_column(ForeignKey("app_groups.id", ondelete="CASCADE"), index=True)
+
+
+class AppGroupMember(Base):
+    __tablename__ = "app_group_members"
+    group_id: Mapped[str] = mapped_column(ForeignKey("app_groups.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

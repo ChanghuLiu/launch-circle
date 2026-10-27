@@ -171,6 +171,8 @@ class TestAssignmentRead(BaseModel):
     assigned_at: datetime
     completed_at: datetime | None
     estimated_minutes: int = 5
+    feedback_submitted: bool = False
+    google_group_url: str | None = None
 
 
 class AssignmentCoverageRead(BaseModel):
@@ -181,6 +183,7 @@ class AssignmentCoverageRead(BaseModel):
 
 
 class MissionRead(BaseModel):
+    feedback_submitted: bool = False
     id: str
     assignment_id: str
     assignment_status: str

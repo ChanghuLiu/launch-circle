@@ -13,7 +13,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.admin import AdminAppControl, AdminRecommendation
 from app.models.launch import App, Circle, CircleMember, TesterAssignment
-from app.models.pool import PoolListing, TesterPoolPreference
+from app.models.pool import PoolListing, TesterPoolPreference, AppGroup, AppGroupApp, AppGroupMember
 from app.models.user import User
 from app.services.assignments import assignment_day
 from app.services.circles import active_member_count
@@ -224,12 +224,19 @@ def set_listing(app_id: str, body: OptIn, actor: Actor, db: Database, now: Clock
         listing = PoolListing(app_id=app_id, updated_at=now)
         db.add(listing)
     listing.enabled, listing.updated_at = body.enabled, now
+    db.flush()
+    if body.enabled:
+        place_in_group(db, item, now)
     db.commit()
     return supply(db, item)
 
 
 @router.post("/apps/{app_id}/tester-pool/accept")
 def accept_opportunity(app_id: str, actor: Actor, db: Database, now: Clock):
+    return accept_app(app_id, actor, db, now)
+
+
+def accept_app(app_id: str, actor: User, db: Session, now: datetime, *, max_apps: int = MAX_CONCURRENT_APPS, commit: bool = True):
     lock_writes(db, actor)
     item = db.get(App, app_id)
     listing = db.get(PoolListing, app_id)
@@ -261,8 +268,8 @@ def accept_opportunity(app_id: str, actor: Actor, db: Database, now: Clock):
         if existing.status == "DROPPED":
             raise HTTPException(409, "A previous assignment was dropped; contact the owner")
         return {"assignment_id": existing.id, "status": existing.status}
-    if active_work(db, actor.id) >= MAX_CONCURRENT_APPS:
-        raise HTTPException(409, "Two concurrent app limit reached")
+    if active_work(db, actor.id) >= max_apps:
+        raise HTTPException(409, "Concurrent app limit reached")
     if len(current_assignments(item)) >= min(item.tester_target, 14):
         raise HTTPException(409, "This app has enough accepted participants")
     circle = db.get(Circle, item.circle_id)
@@ -308,7 +315,102 @@ def accept_opportunity(app_id: str, actor: Actor, db: Database, now: Clock):
         assignment.id,
         {"source": "VOLUNTARY_SHARED_POOL"},
     )
-    db.commit()
+    if commit:
+        db.commit()
     # This is task acceptance only. Existing Play opt-in and installation
     # confirmations remain separate, with no fabricated dates or headcount.
     return {"assignment_id": assignment.id, "status": assignment.status}
+
+
+GROUP_CAPACITY = 13
+
+
+def group_apps(db: Session, group_id: str):
+    return db.scalars(select(App).join(AppGroupApp, AppGroupApp.app_id == App.id)
+        .where(AppGroupApp.group_id == group_id).order_by(App.created_at, App.id)).all()
+
+
+def place_in_group(db: Session, item: App, now: datetime):
+    existing = db.get(AppGroupApp, item.id)
+    if existing:
+        return existing.group_id
+    # Caller holds the writer lock. Never put two apps by one owner in a group.
+    for group in db.scalars(select(AppGroup).order_by(AppGroup.created_at, AppGroup.id)):
+        apps = group_apps(db, group.id)
+        if len(apps) < GROUP_CAPACITY and all(app.owner_id != item.owner_id for app in apps):
+            break
+    else:
+        from uuid import uuid4
+        number = (db.scalar(select(func.count(AppGroup.id))) or 0) + 1
+        group = AppGroup(id=str(uuid4()), name=f"App Group {number}", created_at=now)
+        db.add(group)
+        db.flush()
+    db.add(AppGroupApp(app_id=item.id, group_id=group.id))
+    db.flush()
+    sync_group(db, group.id, now)
+    return group.id
+
+
+def visible_group_apps(db: Session, group_id: str):
+    result = []
+    for item in group_apps(db, group_id):
+        listing = db.get(PoolListing, item.id)
+        control = db.get(AdminAppControl, item.id)
+        if listing and listing.enabled and ready(item) and db.get(User, item.owner_id).is_active and not (control and (control.paused or control.kind == "SYNTHETIC")):
+            result.append(item)
+    return result
+
+
+def sync_group(db: Session, group_id: str, now: datetime):
+    # Joining explicitly covers this group's present and future apps, up to 12 other owners.
+    items = visible_group_apps(db, group_id)
+    for member in db.scalars(select(AppGroupMember).where(AppGroupMember.group_id == group_id)):
+        actor = db.get(User, member.user_id)
+        if not actor or not actor.is_active:
+            continue
+        for item in items:
+            if item.owner_id == actor.id:
+                continue
+            with db.begin_nested():
+                try:
+                    accept_app(item.id, actor, db, now, max_apps=12, commit=False)
+                except HTTPException as error:
+                    if error.status_code not in {404, 409}:
+                        raise
+                    # Existing outside work/capacity is never silently dropped.
+                    continue
+
+
+@router.get("/app-groups")
+def list_app_groups(actor: Actor, db: Database):
+    result = []
+    for group in db.scalars(select(AppGroup).order_by(AppGroup.created_at, AppGroup.id)):
+        apps = visible_group_apps(db, group.id)
+        if not apps:
+            continue
+        own = any(app.owner_id == actor.id for app in apps)
+        joined = db.get(AppGroupMember, (group.id, actor.id)) is not None
+        result.append({"id": group.id, "name": group.name, "capacity": GROUP_CAPACITY,
+            "status": "FORMING" if len(apps) < GROUP_CAPACITY else "FULL",
+            "my_group": own, "joined": joined,
+            "apps": [{"app_id": app.id, "name": app.name, "package_name": app.package_name,
+                "icon_url": app.icon_url, "owned": app.owner_id == actor.id,
+                "workflow_steps": app.core_workflow_steps} for app in apps]})
+    return result
+
+
+@router.post("/app-groups/{group_id}/join")
+def join_app_group(group_id: str, actor: Actor, db: Database, now: Clock):
+    lock_writes(db, actor)
+    apps = visible_group_apps(db, group_id)
+    if not any(app.owner_id == actor.id for app in apps):
+        raise HTTPException(409, "Add and configure your app first; it is matched to a group automatically")
+    other = db.scalar(select(AppGroupMember).where(AppGroupMember.user_id == actor.id, AppGroupMember.group_id != group_id))
+    if other:
+        raise HTTPException(409, "You already joined another App Group")
+    if db.get(AppGroupMember, (group_id, actor.id)) is None:
+        db.add(AppGroupMember(group_id=group_id, user_id=actor.id, joined_at=now))
+        db.flush()
+    sync_group(db, group_id, now)
+    db.commit()
+    return {"ok": True, "group_id": group_id}

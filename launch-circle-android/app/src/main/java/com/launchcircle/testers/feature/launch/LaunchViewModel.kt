@@ -517,6 +517,7 @@ class LaunchViewModel(
     }
 
     fun showAssignment(assignment: TestAssignment) {
+        if (assignment.feedback_submitted || assignment.status == "COMPLETED") return
         _state.value = _state.value.copy(
             destination = LaunchDestination.ASSIGNMENT,
             selectedAssignment = assignment,
@@ -566,6 +567,7 @@ class LaunchViewModel(
     }
 
     fun showMission(mission: TestMission) {
+        if (mission.feedback_submitted || mission.status !in setOf("AVAILABLE", "COMPLETED")) return
         _state.value = _state.value.copy(
             destination = LaunchDestination.MISSION,
             selectedMission = mission,

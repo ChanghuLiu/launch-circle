@@ -1122,8 +1122,8 @@ private fun Today(
     onAssignment: (TestAssignment) -> Unit,
 ) {
     val uri = LocalUriHandler.current
-    val completed = assignments.filter { it.status == "COMPLETED" || it.completed_at != null }
-    val toDo = assignments.filterNot { it.status == "COMPLETED" || it.completed_at != null }
+    val completed = assignments.filter { it.status == "COMPLETED" || it.completed_at != null || it.feedback_submitted }
+    val toDo = assignments.filterNot { it.status == "COMPLETED" || it.completed_at != null || it.feedback_submitted }
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp),
@@ -1199,7 +1199,7 @@ private fun TodayMissionCard(
                     }
                 }
             }
-            if (completed) Text(stringResource(R.string.completed), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
+            if (completed) Text(if (mission.feedback_submitted) "Feedback submitted" else stringResource(R.string.completed), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
         }
     }
 }
@@ -1237,7 +1237,7 @@ private fun TodayAssignmentCard(
                 Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(stringResource(R.string.estimated_minutes_short, assignment.estimated_minutes), style = MaterialTheme.typography.labelLarge)
                     if (completed) {
-                        Text(stringResource(R.string.completed), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
+                        Text(if (assignment.feedback_submitted) "Feedback submitted" else stringResource(R.string.completed), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
                     } else {
                         val label = stringResource(if (compact) R.string.start else R.string.start_test)
                         FilledTonalButton(onClick = onClick, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) { Text(label) }

@@ -7,3 +7,5 @@ data class PoolSupply(val app_id: String, val name: String, val listed: Boolean,
 
 data class AppIntakeRequest(val name: String, val package_name: String, val developer_account_id: String, val workflow_steps: List<String>)
 data class AppIntakeStatus(val id: String, val name: String, val package_name: String, val status: String, val app_id: String?)
+
+data class AppTestGroup(val id: String, val name: String, val capacity: Int, val status: String, val my_group: Boolean, val joined: Boolean, val apps: List<PoolOpportunity>)

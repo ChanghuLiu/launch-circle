@@ -47,6 +47,12 @@ fun EvidenceAssignmentScreen(
         Text(assignment.app_name, style = MaterialTheme.typography.headlineMedium)
         Text(stringResource(R.string.evidence_guided_test))
         Text(stringResource(R.string.test_enrollment_steps))
+        if (assignment.status == "ASSIGNED") assignment.google_group_url?.let { groupUrl ->
+            Text("First-time testers: join this app's Google Group with the same Google account used by Play Store. If already a member, continue to the Play test link.")
+            OutlinedButton(onClick = { uri.openUri(groupUrl) }, enabled = !loading, modifier = Modifier.fillMaxWidth()) {
+                Text("Join Google Group for this app")
+            }
+        }
         OutlinedButton(
             onClick = { uri.openUri(assignment.opt_in_url) },
             enabled = !loading, modifier = Modifier.fillMaxWidth(),
@@ -63,9 +69,9 @@ fun EvidenceAssignmentScreen(
         missions.forEach { mission ->
             OutlinedButton(
                 onClick = { onMission(mission) },
-                enabled = !loading && assignment.status in setOf("INSTALLED", "ACTIVE", "COMPLETED") && mission.status in setOf("AVAILABLE", "COMPLETED"),
+                enabled = !loading && assignment.status in setOf("INSTALLED", "ACTIVE", "COMPLETED") && !mission.feedback_submitted && mission.status in setOf("AVAILABLE", "COMPLETED"),
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text(stringResource(R.string.evidence_mission_day, mission.scheduled_day)) }
+            ) { Text(if (mission.feedback_submitted) "Day ${mission.scheduled_day} · Feedback submitted" else stringResource(R.string.evidence_mission_day, mission.scheduled_day)) }
         }
         if (missions.isEmpty() && assignment.status !in setOf("ASSIGNED", "OPTED_IN")) {
             Text(stringResource(R.string.evidence_no_missions))

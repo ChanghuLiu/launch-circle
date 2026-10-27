@@ -1,12 +1,13 @@
 from collections import defaultdict
 from datetime import date, datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, or_
 from sqlalchemy.orm import Session
 
 from app.models.launch import App, CircleMember, TesterAssignment
 from app.services.lifecycle import evaluate_lifecycle
 from app.models.user import User
+from app.models.pool import AppGroupApp
 
 DAILY_ASSIGNMENT_LIMIT = 2
 DEFAULT_TEST_TYPE = "APP_CHECK"
@@ -100,8 +101,12 @@ def generate_daily_assignments(
     for app_id, tester_id, count in historical:
         app_history[(app_id, tester_id)] = int(count)
 
+    grouped_apps = set(db.scalars(select(AppGroupApp.app_id)))
     created: list[TesterAssignment] = []
     for app in apps:
+        # App Groups use durable, explicitly accepted tasks, not daily implicit copies.
+        if app.id in grouped_apps:
+            continue
         if app.circle_id is None:
             continue
         members = members_by_circle.get(app.circle_id, [])
@@ -166,7 +171,8 @@ def todays_assignments(
             .where(
                 TesterAssignment.tester_id == requester_id,
                 TesterAssignment.circle_id.in_(circle_ids),
-                TesterAssignment.assignment_day == day,
+                or_(TesterAssignment.assignment_day == day,
+                    TesterAssignment.app_id.in_(select(AppGroupApp.app_id))),
                 TesterAssignment.status != "DROPPED",
             )
             .order_by(TesterAssignment.status, TesterAssignment.assigned_at, TesterAssignment.id)
