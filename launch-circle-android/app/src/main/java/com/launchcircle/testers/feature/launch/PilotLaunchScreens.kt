@@ -679,12 +679,17 @@ private fun AddApp(
         Text("Optional. Upload a PNG or JPEG up to 1 MB. You can import the Play icon after creating your app.", style = MaterialTheme.typography.bodySmall)
         Section(stringResource(R.string.app_details_section))
         OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.app_name_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(packageName, { packageName = it }, label = { Text(stringResource(R.string.package_name_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(optIn, { optIn = it }, label = { Text(stringResource(R.string.closed_testing_opt_in_url)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(packageName, { value ->
+            val generated = optIn.isBlank() || optIn == "https://play.google.com/apps/testing/$packageName"
+            packageName = value
+            if (generated) optIn = if (value.isBlank()) "" else "https://play.google.com/apps/testing/${value.trim()}"
+        }, label = { Text(stringResource(R.string.package_name_label)) }, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Ascii, autoCorrectEnabled = false), singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(optIn, { optIn = it }, label = { Text(stringResource(R.string.closed_testing_opt_in_url)) }, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Ascii, autoCorrectEnabled = false), singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(
             playDeveloperAccountId,
             { playDeveloperAccountId = it.filter(Char::isDigit).take(32) },
             label = { Text(stringResource(R.string.google_play_developer_account_id)) },
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number, autoCorrectEnabled = false),
             supportingText = {
                 if (isAdmin) Text("Administrator: unlimited apps, no additional-app charge.")
                 else Text("One app per person. Your first app is free.")
