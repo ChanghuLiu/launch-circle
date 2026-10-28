@@ -144,3 +144,19 @@ def test_resume_in_same_group_restores_tasks_without_duplicate_feedback(client):
     with SessionLocal() as db:
         tasks=db.scalars(select(TesterAssignment).where(TesterAssignment.tester_id==owners[0][0])).all()
         assert len(tasks)==1 and tasks[0].id==original and tasks[0].status=='ASSIGNED'
+
+
+def test_group_uses_first_app_name_and_keeps_it_for_later_members(client):
+    from app.models.launch import App
+    first, second = actor(), actor()
+    aid = campaign(first)
+    with SessionLocal() as db:
+        db.get(App, aid).name = 'Notes Escape'
+        db.commit()
+    open_app(client, aid, first)
+    initial = client.get('/app-groups', headers=first[1]).json()[0]
+    assert initial['name'] == 'Notes Escape Group'
+    bid = campaign(second)
+    open_app(client, bid, second)
+    after = client.get('/app-groups', headers=first[1]).json()[0]
+    assert after['id'] == initial['id'] and after['name'] == initial['name']

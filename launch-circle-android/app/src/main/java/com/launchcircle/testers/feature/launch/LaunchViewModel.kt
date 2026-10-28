@@ -114,11 +114,7 @@ class LaunchViewModel(
             } ?: apps.firstOrNull { it.owner_id == loadedUserId } ?: apps.firstOrNull()
             val circle = selected?.let { repository.circle(it.id) }
             _state.value.copy(
-                destination = if (selected == null) {
-                    LaunchDestination.MY_LAUNCHES
-                } else {
-                    _state.value.destination
-                },
+                destination = _state.value.destination,
                 pilotConfig = config,
                 launches = apps,
                 dashboards = dashboards,
@@ -133,9 +129,8 @@ class LaunchViewModel(
     fun showHome() {
         val app = _state.value.selectedApp?.takeIf { it.owner_id == loadedUserId }
             ?: _state.value.launches.firstOrNull { it.owner_id == loadedUserId }
-            ?: _state.value.launches.firstOrNull()
         if (app == null) {
-            _state.value = _state.value.copy(destination = LaunchDestination.MY_LAUNCHES)
+            _state.value = _state.value.copy(destination = LaunchDestination.DASHBOARD, pilotSurface = PilotSurface.NONE, selectedApp = null, error = null)
         } else {
             showDashboard(app)
         }
@@ -162,7 +157,7 @@ class LaunchViewModel(
             ?: _state.value.launches.firstOrNull { it.owner_id == loadedUserId }
         when (step) {
             1 -> if (own == null || isAdmin) showAddApp() else showHome()
-            2 -> if (own == null) showAddApp() else {
+            2 -> if (own == null) showHome() else {
                 _state.value = _state.value.copy(selectedApp = own, destination = LaunchDestination.DASHBOARD, pilotSurface = PilotSurface.GROUP_SETUP, error = null)
             }
             4 -> showToday()
@@ -788,7 +783,7 @@ class LaunchViewModel(
             return
         }
         val target = when (_state.value.destination) {
-            LaunchDestination.ADD_APP,
+            LaunchDestination.ADD_APP -> LaunchDestination.DASHBOARD
             LaunchDestination.DASHBOARD,
             LaunchDestination.TODAY_TESTS,
             LaunchDestination.ACCOUNT -> LaunchDestination.MY_LAUNCHES

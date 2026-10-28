@@ -342,7 +342,7 @@ def place_in_group(db: Session, item: App, now: datetime):
     else:
         from uuid import uuid4
         number = (db.scalar(select(func.count(AppGroup.id))) or 0) + 1
-        group = AppGroup(id=str(uuid4()), name=f"App Group {number}", created_at=now)
+        group = AppGroup(id=str(uuid4()), name=f"{item.name} Group", created_at=now)
         db.add(group)
         db.flush()
     db.add(AppGroupApp(app_id=item.id, group_id=group.id))
@@ -413,7 +413,7 @@ def list_app_groups(actor: Actor, db: Database):
         joined = db.get(AppGroupMember, (group.id, actor.id)) is not None
         if not apps and not own and not joined:
             continue
-        result.append({"id": group.id, "name": group.name, "capacity": GROUP_CAPACITY,
+        result.append({"id": group.id, "name": (f"{slots[0].name} Group" if group.name.startswith("App Group ") and group.name[10:].isdigit() and slots else group.name), "capacity": GROUP_CAPACITY,
             "status": "FORMING" if len(slots) < GROUP_CAPACITY else "FULL",
             "occupied_slots": len(slots), "ready_to_join": any(app.owner_id == actor.id for app in apps),
             "my_group": own, "joined": joined,

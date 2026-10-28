@@ -205,7 +205,8 @@ fun LaunchWorkspace(
                             loading = state.loading,
                         )
                         LaunchDestination.DASHBOARD -> {
-                            val selected = state.selectedApp
+                            val selected = state.selectedApp?.takeIf { it.owner_id == profile.id }
+                                ?: state.launches.firstOrNull { it.owner_id == profile.id }
                             val dashboard = selected?.let { state.dashboards[it.id] }
                             if (selected != null && dashboard != null) {
                                 Dashboard(
@@ -218,7 +219,16 @@ fun LaunchWorkspace(
                                     { viewModel.startManagedCheckout(selected.id) },
                                     if (state.pilotConfig.cold_start_evidence_enabled) viewModel::showEvidence else null,
                                     viewModel::setAppIcon, viewModel::showMyLaunch, onSharedPool,
+                                    onAdd = if (profile.login_email.equals("liuchanghu2018@gmail.com", ignoreCase = true)) viewModel::showAddApp else null,
                                 )
+                            } else if (!state.loading) {
+                                Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                                    Text(lcText("My Launch", "我的发布"), style = MaterialTheme.typography.headlineMedium)
+                                    Text(lcText("Your app starts here", "从你的第一个 App 开始"), style = MaterialTheme.typography.titleLarge)
+                                    Text(lcText("Add your app, set up test access, then join a matching group. You can manage everything here.", "添加 App、设置测试访问，再加入匹配的小组。应用的配置和管理都在这里完成。"))
+                                    Button(onClick = viewModel::showAddApp, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(lcText("Add my app", "添加我的 App")) }
+                                    Text(lcText("Use your app’s Google Play link. No developer account number needed.", "准备好 App 的 Google Play 链接即可，不用输入开发者账号 ID。"), style = MaterialTheme.typography.bodySmall)
+                                }
                             }
                         }
                         LaunchDestination.TODAY_TESTS -> Today(
@@ -766,6 +776,7 @@ private fun Dashboard(
     onIcon: (String, String?) -> Unit,
     onPool: () -> Unit,
     onManageRecruitment: () -> Unit,
+    onAdd: (() -> Unit)? = null,
 ) {
     var coordinationMinutesText by rememberSaveable(app.id) { mutableStateOf("") }
     var showPriorityOffer by rememberSaveable(app.id) { mutableStateOf(false) }
@@ -778,7 +789,10 @@ private fun Dashboard(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
-        Text(stringResource(R.string.my_launch), style = MaterialTheme.typography.headlineLarge)
+            androidx.compose.foundation.layout.Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(lcText("My Launch", "我的发布"), style = MaterialTheme.typography.headlineMedium)
+                if (onAdd != null) TextButton(onClick = onAdd, enabled = !loading) { Text(lcText("Add app", "添加 App")) }
+            }
             Text(
                 app.name,
                 style = MaterialTheme.typography.titleLarge,
