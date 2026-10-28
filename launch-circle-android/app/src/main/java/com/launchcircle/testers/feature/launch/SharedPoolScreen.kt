@@ -131,13 +131,12 @@ fun SharedPoolScreen(
                             Text(lcText(if (group.my_group) "Your app is matched to this group" else "Community testing group", if (group.my_group) "你的 App 已匹配到这个小组" else "社区互测小组"))
                             Text(lcText("${group.occupied_slots} / ${group.capacity} app slots · " + if (group.status == "FORMING") "Open for matching" else "Full · new apps closed", "${group.occupied_slots} / ${group.capacity} 个席位 · " + if (group.status == "FORMING") "开放匹配" else "已满，暂停接收新 App"))
                             Button(enabled = !busy, onClick = { selectedGroupId = group.id }) { Text(lcText(if (group.joined) "Open my group" else "View group", if (group.joined) "打开我的小组" else "查看小组")) }
-                            group.apps.take(4).forEach { app ->
+                            group.apps.forEach { app ->
                                 androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                     AppIcon(app.name, app.icon_url)
                                     Text(app.name, modifier = Modifier.weight(1f))
                                 }
                             }
-                            if (group.apps.size > 4) Text(lcText("+ ${group.apps.size - 4} more apps", "另有 ${group.apps.size - 4} 个 App，进入小组查看"))
                         }
                     }
                 }

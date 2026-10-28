@@ -28,6 +28,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.launchcircle.testers.R
+import com.launchcircle.testers.feature.launch.lcText
 
 data class OnboardingPage(val title: Int, val body: Int)
 
@@ -69,12 +70,12 @@ fun FirstRunOnboarding(onComplete: () -> Unit) {
         )
         Spacer(Modifier.height(20.dp))
         Text(
-            stringResource(content.title),
+            when(page) { 0 -> lcText("Test apps together", "和开发者一起互测"); 1 -> lcText("Start with your app", "从添加自己的 App 开始"); else -> stringResource(content.title) },
             style = MaterialTheme.typography.displaySmall,
             fontWeight = FontWeight.Bold,
         )
         Text(
-            stringResource(content.body),
+            if (page == 1) lcText("Add your app, configure Play test access, then join your matched App Group. Each app still needs its own Play enrollment and installation.", "添加自己的 App、配置 Play 测试访问，再加入匹配的小组。每个 App 仍需分别加入 Play 测试并安装。") else stringResource(content.body),
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.padding(top = 12.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -108,11 +109,12 @@ private fun ProductionJourney() {
             Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            JourneyStep("12", stringResource(R.string.testers))
-            Text("↓", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
-            JourneyStep("14", stringResource(R.string.days))
-            Text("↓", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
-            JourneyStep("✓", stringResource(R.string.production))
+            JourneyStep("1", lcText("Add your app", "添加自己的 App"))
+            Text("↓", style = MaterialTheme.typography.titleLarge)
+            JourneyStep("2", lcText("Join a group and test", "加入小组并实际测试"))
+            Text("↓", style = MaterialTheme.typography.titleLarge)
+            JourneyStep("3", lcText("Share useful feedback", "提交有用的反馈"))
+            Text(lcText("Google Play decides production eligibility. Participation and approval are not guaranteed.", "正式发布资格由 Google Play 判定，不保证测试人数或审核通过。"), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 12.dp))
         }
     }
 }
