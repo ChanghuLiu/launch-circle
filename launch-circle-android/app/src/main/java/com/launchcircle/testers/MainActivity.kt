@@ -54,7 +54,7 @@ class MainActivity : ComponentActivity() {
         versionJob = lifecycleScope.launch {
             do {
                 try {
-                    val policy = kotlinx.coroutines.withTimeout(12_000) { versionApi.androidVersion(if (BuildConfig.DEBUG) "direct" else "play") }
+                    val policy = kotlinx.coroutines.withTimeout(12_000) { versionApi.androidVersion() }
                     require(policy.latest_version_code > 0 && policy.latest_version_name.isNotBlank())
                     versionPolicy = policy
                     versionFailed = false

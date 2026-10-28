@@ -21,8 +21,8 @@ android {
         applicationId = "com.launchcircle.testers"
         minSdk = 27
         targetSdk = 36
-        versionCode = 17
-        versionName = "1.0.15"
+        versionCode = 20
+        versionName = "1.0.18"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -74,6 +74,15 @@ android {
             if (providers.gradleProperty("launchCircleEvidencePilotBuild").orElse("false").get().toBoolean()) {
                 applicationIdSuffix = ".evidencepilot"
                 versionNameSuffix = "-evidencepilot"
+                // Device acceptance builds must exercise real customer authentication and data.
+                buildConfigField("String", "API_BASE_URL", "\"https://launchcircle-api.duckdns.org/\"")
+                buildConfigField("boolean", "USE_DEMO_REPOSITORY", "false")
+                buildConfigField("boolean", "ENABLE_DEVELOPMENT_AUTH", "false")
+                buildConfigField(
+                    "String",
+                    "GOOGLE_SERVER_CLIENT_ID",
+                    "\"519813588502-4jlmnljs86ijr8kijmuesq6i147p5f0c.apps.googleusercontent.com\"",
+                )
             }
         }
         getByName("release") {
@@ -138,6 +147,7 @@ dependencies {
     implementation("com.google.android.libraries.identity.googleid:googleid:1.2.0")
     implementation("com.android.installreferrer:installreferrer:2.2")
     implementation("com.android.billingclient:billing:9.1.0")
+    implementation("com.google.android.play:app-update:2.1.0")
 
     implementation("com.squareup.retrofit2:retrofit:3.0.0")
     implementation("com.squareup.retrofit2:converter-gson:3.0.0")

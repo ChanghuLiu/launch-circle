@@ -5,7 +5,7 @@ import org.junit.Test
 
 class AndroidVersionPolicyTest {
     @Test fun onlyAnOlderVersionIsBlocked() {
-        val policy = AndroidVersionPolicy(15, "1.0.13", "", null)
+        val policy = AndroidVersionPolicy(15, "1.0.13", "")
         assertTrue(policy.requiresUpdate(14))
         assertFalse(policy.requiresUpdate(15))
         assertFalse(policy.requiresUpdate(16))

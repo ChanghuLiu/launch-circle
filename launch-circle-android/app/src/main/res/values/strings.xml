@@ -1,4 +1,5 @@
 <resources>
+    <string name="app_version_label">App version</string>
     <string name="app_name">Launch Circle: 12 Testers</string>
     <string name="launch_circle">Launch Circle</string>
     <string name="launch_circle_logo">Launch Circle logo</string>

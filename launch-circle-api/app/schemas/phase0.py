@@ -161,6 +161,7 @@ class TestAssignmentRead(BaseModel):
     app_id: str
     tester_user_id: str | None = None
     app_name: str
+    icon_url: str | None = None
     package_name: str
     opt_in_url: str
     test_type: str

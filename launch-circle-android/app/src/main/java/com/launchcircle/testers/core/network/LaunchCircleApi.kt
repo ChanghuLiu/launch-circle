@@ -101,7 +101,7 @@ interface LaunchCircleApi {
     suspend fun recordEnrollmentEvidence(@Header("Authorization") authorization: String, @Path("assignmentId") assignmentId: String, @Body body: com.launchcircle.testers.core.model.EnrollmentEvidenceRequest): Map<String, Any>
 
     @GET("android-version")
-    suspend fun androidVersion(@retrofit2.http.Query("channel") channel: String): com.launchcircle.testers.feature.launch.AndroidVersionPolicy
+    suspend fun androidVersion(): com.launchcircle.testers.feature.launch.AndroidVersionPolicy
 
     @GET("pilot-config")
     suspend fun pilotConfig(): PilotConfig

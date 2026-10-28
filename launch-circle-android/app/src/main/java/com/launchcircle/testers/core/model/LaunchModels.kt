@@ -176,6 +176,7 @@ data class TestAssignment(
     val feedback_submitted: Boolean = false,
     val tester_user_id: String? = null,
     val google_group_url: String? = null,
+    val icon_url: String? = null,
 )
 
 data class AssignmentCoverage(

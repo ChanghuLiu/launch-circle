@@ -28,11 +28,8 @@ class Settings(BaseSettings):
         validation_alias="PUBLIC_BASE_URL",
     )
     google_client_id: str = ""
-    android_latest_version_code: int = Field(default=14, ge=1)
-    android_latest_version_name: str = "1.0.12"
-    android_direct_latest_version_code: int = Field(default=14, ge=1)
-    android_direct_latest_version_name: str = "1.0.12"
-    android_apk_path: str = ""
+    android_latest_version_code: int = Field(default=20, ge=1)
+    android_latest_version_name: str = "1.0.18"
     google_play_package_name: str = "com.launchcircle.testers"
     google_play_service_account_json: str = ""
     # The publisher account that owns Launch Circle's customer apps. Keep this

@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.launchcircle.testers.R
+import com.launchcircle.testers.BuildConfig
 import com.launchcircle.testers.core.model.UserProfile
 
 internal enum class DeleteConfirmationState { CLOSED, OPEN }
@@ -85,6 +86,19 @@ fun AccountScreen(
                     if (profile.languages.isNotEmpty()) {
                         SettingsValue(stringResource(R.string.languages), profile.languages.joinToString(", "))
                     }
+                }
+            }
+        }
+        item {
+            Card(
+                Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+            ) {
+                Column(Modifier.padding(18.dp)) {
+                    SettingsValue(
+                        stringResource(R.string.app_version_label),
+                        "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                    )
                 }
             }
         }

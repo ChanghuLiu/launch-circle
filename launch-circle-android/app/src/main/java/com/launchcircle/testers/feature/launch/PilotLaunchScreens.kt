@@ -1169,7 +1169,7 @@ private fun TodayAssignmentCard(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                AppAvatar(assignment.app_name, muted = completed)
+                AppIcon(assignment.app_name, assignment.icon_url)
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
                         assignment.app_name,
@@ -1180,14 +1180,13 @@ private fun TodayAssignmentCard(
                     )
                     Text(stringResource(R.string.mission_type_test, localizedLabel(assignment.test_type)), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(stringResource(R.string.estimated_minutes_short, assignment.estimated_minutes), style = MaterialTheme.typography.labelLarge)
-                    if (completed) {
-                        Text(if (assignment.feedback_submitted) lcText("Feedback submitted", "反馈已提交") else stringResource(R.string.completed), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
-                    } else {
-                        val label = stringResource(if (compact) R.string.start else R.string.start_test)
-                        FilledTonalButton(onClick = onClick, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) { Text(label) }
-                    }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.estimated_minutes_short, assignment.estimated_minutes), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (completed) Text(if (assignment.feedback_submitted) lcText("Feedback submitted", "反馈已提交") else stringResource(R.string.completed), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
+                else {
+                    val label = stringResource(if (compact) R.string.start else R.string.start_test)
+                    FilledTonalButton(onClick = onClick, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) { Text(label) }
                 }
             }
         }
