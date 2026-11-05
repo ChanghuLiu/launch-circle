@@ -6,7 +6,7 @@
 Launch Circle: 12 Testers
 
 **Short description**  
-Find Android testers and manage your 14-day closed testing workflow.
+Plan Android beta tests with missions, private feedback, and retest tracking.
 
 **Full description**
 
@@ -50,7 +50,7 @@ Recapture clean portrait screenshots from the release-configured build with sani
 
 1. First onboarding screen — product promise, no debug controls.
 2. My Launches — one healthy launch and one early/cold-start launch.
-3. Launch Dashboard — readiness, 13/15 testers, Day X/14, and circle health.
+3. Launch Dashboard — test progress, tester status, Day X/14, and circle health. Avoid suggesting that listing 15 seats guarantees 15 active testers.
 4. Invite Developer — use a nonfunctional example invite code/link.
 5. Tester Status — active, new, needs-attention, replacement, and dropped states without emails.
 6. Today Tests — meaningful available missions without acceptance labels.
