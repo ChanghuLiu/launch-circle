@@ -179,7 +179,7 @@ fun LaunchWorkspace(
                             state.todayAssignments, state.pilotConfig, viewModel::showAssignment,
                         )
                         LaunchDestination.ASSIGNMENT -> state.selectedAssignment?.let {
-                            AssignmentScreen(it, viewModel::completeAssignment)
+                            AssignmentScreen(it, state.pilotConfig, viewModel::completeAssignment)
                         }
                         LaunchDestination.MISSION -> state.selectedMission?.let {
                             Mission(
@@ -542,6 +542,7 @@ private fun GroupSetup(
     onLater: () -> Unit,
 ) {
     val context = LocalContext.current
+    val uri = LocalUriHandler.current
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -552,7 +553,18 @@ private fun GroupSetup(
             Text("Launch Circle Google Group", fontWeight = FontWeight.SemiBold)
             Text(config.google_group_email)
             OutlinedButton(onClick = { copy(context, config.google_group_email) }) { Text("Copy Group Email") }
+            Text("Tester join link", fontWeight = FontWeight.SemiBold)
+            Text(config.google_group_join_url, style = MaterialTheme.typography.bodySmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { copy(context, config.google_group_join_url) }) { Text("Copy Join Link") }
+                OutlinedButton(onClick = { uri.openUri(config.google_group_join_url) }) { Text("Open Group") }
+            }
         }
+        Text(
+            "Share the join link with your testers. After joining this group, each tester must still open your app's own Play opt-in link.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Text("Add the group in Play Console", style = MaterialTheme.typography.titleMedium)
         listOf(
             "1. Open Play Console",
@@ -801,9 +813,13 @@ private fun JoinSuccess(
     ) {
         Text("You’re in.", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
         Text("Next steps", style = MaterialTheme.typography.titleLarge)
-        Text("1. Join the Launch Circle Google Group")
-        Text("2. Add your Android app if you have one")
-        Text("3. Start helping test other developers")
+        Text("1. Join the Launch Circle Google Group using the same Google account as Google Play.")
+        Text("2. For every assigned app, open that app's Play closed-test opt-in link separately.")
+        Text("3. Install, test, and send honest feedback.")
+        Text(
+            "Joining the group alone does not enroll you in an individual app test.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Button(onClick = { uri.openUri(config.google_group_join_url) }, modifier = Modifier.fillMaxWidth()) { Text("Join Google Group") }
         OutlinedButton(onClick = onAdd, modifier = Modifier.fillMaxWidth()) { Text("Add My App") }
         OutlinedButton(onClick = onTests, modifier = Modifier.fillMaxWidth()) { Text("View Test Apps") }
@@ -829,10 +845,14 @@ private fun Today(
             Text("Tests", style = MaterialTheme.typography.headlineLarge)
             Text("Today's tests", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 4.dp))
             Text("Short, meaningful checks scheduled for today.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                "Join the shared tester group once, then opt in to each assigned app separately with the same Google account.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             OutlinedButton(
                 onClick = { uri.openUri(config.google_group_join_url) },
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-            ) { Text("Open Launch Circle Google Group") }
+            ) { Text("Join Launch Circle Tester Group") }
         }
         if (assignments.isEmpty()) item { EmptyCard("You're caught up", "No tests are assigned for today.") }
         if (toDo.isNotEmpty()) item { SectionHeader("TO DO") }
@@ -949,7 +969,11 @@ private fun TodayAssignmentCard(
 }
 
 @Composable
-private fun AssignmentScreen(assignment: TestAssignment, onComplete: () -> Unit) {
+private fun AssignmentScreen(
+    assignment: TestAssignment,
+    config: PilotConfig,
+    onComplete: () -> Unit,
+) {
     val uri = LocalUriHandler.current
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
@@ -962,10 +986,43 @@ private fun AssignmentScreen(assignment: TestAssignment, onComplete: () -> Unit)
         if (assignment.status == "COMPLETED" || assignment.completed_at != null) {
             Highlight { Text("Completed", fontWeight = FontWeight.SemiBold); Text("Your completion is saved.") }
         } else {
-            Button(onClick = { uri.openUri(assignment.opt_in_url) }, modifier = Modifier.fillMaxWidth()) {
-                Text("Start test")
+            var groupJoined by rememberSaveable(assignment.id) { mutableStateOf(false) }
+            var openedAppOptIn by rememberSaveable(assignment.id) { mutableStateOf(false) }
+
+            Text("Step 1 · Join the tester group", style = MaterialTheme.typography.titleMedium)
+            Highlight {
+                Text(config.google_group_email, fontWeight = FontWeight.SemiBold)
+                Text("Use the same Google account you use for Google Play.")
+                OutlinedButton(onClick = { uri.openUri(config.google_group_join_url) }) {
+                    Text("Open group join link")
+                }
             }
-            Button(onClick = onComplete, modifier = Modifier.fillMaxWidth()) { Text("Mark test complete") }
+            Text(
+                "Continue after Google Groups shows you as a member. If it asks you to request access, wait for approval first. Launch Circle cannot check group membership.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Button(onClick = { groupJoined = true }, modifier = Modifier.fillMaxWidth()) {
+                Text("I've joined the group")
+            }
+
+            if (groupJoined) {
+                HorizontalDivider()
+                Text("Step 2 · Join this app's closed test", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Group membership does not enroll you in ${assignment.app_name}. Open this app's own Play opt-in link and complete the opt-in there.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Button(
+                    onClick = { uri.openUri(assignment.opt_in_url); openedAppOptIn = true },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Open this app's Play opt-in link") }
+                Text("Step 3 · Install and test the app, then record completion.")
+                Button(
+                    onClick = onComplete,
+                    enabled = openedAppOptIn,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Mark test complete") }
+            }
         }
     }
 }
