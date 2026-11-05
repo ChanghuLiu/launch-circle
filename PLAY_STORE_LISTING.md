@@ -12,7 +12,7 @@ Plan Android beta tests with missions, private feedback, and retest tracking.
 
 Launch Circle helps Android developers organize useful closed-test QA with other developers.
 
-Create a testing circle or browse available tests. Review each app's purpose and requested tasks, then choose whether to participate.
+Add your Android app, invite developers or match available testers, and view your assigned tests. Review the app and task details, then use the official Google Play opt-in flow to participate if you choose.
 
 Use the official Google Play opt-in flow, try the requested app journeys as a real user, and send honest, private feedback. Follow focused missions for first impressions, core features, edge cases, second use, retesting, and final feedback. Developers can track tester status, mission and feedback progress, issues, changes made from feedback, and a testing summary based on recorded evidence.
 
