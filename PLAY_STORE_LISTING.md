@@ -16,7 +16,7 @@ Create a testing circle or browse available tests. Review each app's purpose and
 
 Use the official Google Play opt-in flow, try the requested app journeys as a real user, and send honest, private feedback. Follow focused missions for first impressions, core features, edge cases, second use, retesting, and final feedback. Developers can track tester status, mission and feedback progress, issues, changes made from feedback, and a testing summary based on recorded evidence.
 
-Participation is voluntary. Tester availability and engagement vary. Launch Circle does not guarantee a tester count, 14 continuous days, production access, or Google approval. App installs are not rewarded; ratings and reviews are not part of testing exchanges. Launch Circle is not affiliated with or endorsed by Google.
+Participation is voluntary. When developers agree to a reciprocal test, each contributes real testing and private feedback for the other. No cash or credits are offered for installs, and store ratings or reviews are not requested or exchanged. Tester availability and engagement vary. Launch Circle does not guarantee a tester count, 14 continuous days, production access, or Google approval. Launch Circle is not affiliated with or endorsed by Google.
 
 ## Play Console recommendations
 
