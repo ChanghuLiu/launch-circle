@@ -10,15 +10,13 @@ Plan Android beta tests with missions, private feedback, and retest tracking.
 
 **Full description**
 
-Launch Circle helps Android developers organize the work required for a meaningful Google Play closed test.
+Launch Circle helps Android developers organize useful closed-test QA with other developers.
 
-Find available developers, invite people to your testing circle, and track progress toward the 12-tester minimum. A 15-tester target provides room for inactive or dropped testers while keeping the launch useful even when the community is still growing.
+Create a testing circle or browse available tests. Review each app's purpose and requested tasks, then choose whether to participate.
 
-Follow a coordinated 14-day workflow with focused missions for first impressions, core features, edge cases, second use, retesting, and final feedback. Testers confirm opt-in and installation, complete currently available missions, and submit factual issues and suggestions.
+Use the official Google Play opt-in flow, try the requested app journeys as a real user, and send honest, private feedback. Follow focused missions for first impressions, core features, edge cases, second use, retesting, and final feedback. Developers can track tester status, mission and feedback progress, issues, changes made from feedback, and a testing summary based on recorded evidence.
 
-Developers can monitor active, new, at-risk, inactive, dropped, and replacement testers; review mission and feedback progress; record changes made from feedback; and prepare a production testing summary based on stored evidence.
-
-Launch Circle supports production access preparation. It does not access your Play Console, submit applications for you, guarantee production access, or guarantee Google approval. Launch Circle is not affiliated with or endorsed by Google.
+Participation is voluntary. Tester availability and engagement vary. Launch Circle does not guarantee a tester count, 14 continuous days, production access, or Google approval. App installs are not rewarded; ratings and reviews are not part of testing exchanges. Launch Circle is not affiliated with or endorsed by Google.
 
 ## Play Console recommendations
 
