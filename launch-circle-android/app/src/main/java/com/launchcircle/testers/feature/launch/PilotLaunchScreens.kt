@@ -1016,12 +1016,15 @@ private fun AssignmentScreen(
                     onClick = { uri.openUri(assignment.opt_in_url); openedAppOptIn = true },
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Open this app's Play opt-in link") }
-                Text("Step 3 · Install and test the app, then record completion.")
+                Text(
+                    "Launch Circle cannot verify Play opt-in or installation. Confirm only after you have opted in, installed, and tested the app.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 Button(
                     onClick = onComplete,
                     enabled = openedAppOptIn,
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("Mark test complete") }
+                ) { Text("Confirm opt-in, install, and test") }
             }
         }
     }
