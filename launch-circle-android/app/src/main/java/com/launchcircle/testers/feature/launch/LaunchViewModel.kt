@@ -2,6 +2,9 @@ package com.launchcircle.testers.feature.launch
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import java.io.IOException
+import java.util.UUID
+import retrofit2.HttpException
 import com.launchcircle.testers.core.launch.InviteCodeValidator
 import com.launchcircle.testers.core.launch.LaunchRepository
 import com.launchcircle.testers.core.model.CreateAppRequest
@@ -59,6 +62,45 @@ class LaunchViewModel(private val repository: LaunchRepository) : ViewModel() {
         loadWorkspace()
     }
 
+    fun trackScreen(screenName: String) {
+        trackAnalytics("screen_view", screenName)
+    }
+
+    private fun trackAction(controlId: String) {
+        val screen = _state.value.pilotSurface
+            .takeIf { it != PilotSurface.NONE }
+            ?.name
+            ?.lowercase()
+            ?: _state.value.destination.name.lowercase()
+        trackAnalytics("action_started", screen, controlId)
+    }
+
+    private fun trackAnalytics(
+        eventName: String,
+        screenName: String,
+        controlId: String? = null,
+        reasonCode: String? = null,
+    ) {
+        val event = mutableMapOf(
+            "event_id" to UUID.randomUUID().toString(),
+            "event_name" to eventName,
+            "screen_name" to screenName,
+        )
+        controlId?.let { event["control_id"] = it }
+        reasonCode?.let { event["reason_code"] = it }
+        viewModelScope.launch { runCatching { repository.trackAnalyticsEvent(event) } }
+    }
+
+    private fun failureReason(error: Throwable): String = when (error) {
+        is IOException -> "network_error"
+        is HttpException -> when {
+            error.code() == 401 || error.code() == 403 -> "permission_denied"
+            error.code() == 409 || error.code() == 422 -> "validation_error"
+            else -> "service_error"
+        }
+        else -> "service_error"
+    }
+
     fun refresh() {
         if (loadedUserId != null) loadWorkspace()
     }
@@ -114,6 +156,7 @@ class LaunchViewModel(private val repository: LaunchRepository) : ViewModel() {
     }
 
     fun showAddApp() {
+        trackAction("add_app")
         _state.value = _state.value.copy(
             destination = LaunchDestination.ADD_APP,
             pilotSurface = PilotSurface.NONE,
@@ -130,7 +173,7 @@ class LaunchViewModel(private val repository: LaunchRepository) : ViewModel() {
         optInUrl: String,
         groupUrl: String?,
         groupMode: String,
-    ) = runTask {
+    ) = runTrackedTask("create_app") {
         val app = repository.createApp(
             CreateAppRequest(
                 name,
@@ -154,7 +197,7 @@ class LaunchViewModel(private val repository: LaunchRepository) : ViewModel() {
         _state.value = _state.value.copy(pilotSurface = PilotSurface.GROUP_SETUP, error = null)
     }
 
-    fun confirmGoogleGroup() = runTask {
+    fun confirmGoogleGroup() = runTrackedTask("confirm_google_group") {
         val app = checkNotNull(_state.value.selectedApp)
         val updated = repository.confirmGoogleGroup(app.id)
         _state.value.copy(
@@ -167,6 +210,7 @@ class LaunchViewModel(private val repository: LaunchRepository) : ViewModel() {
     }
 
     fun skipGroupSetup() {
+        trackAction("skip_group_setup")
         _state.value = _state.value.copy(
             pilotSurface = PilotSurface.NONE,
             destination = LaunchDestination.DASHBOARD,
@@ -257,7 +301,7 @@ class LaunchViewModel(private val repository: LaunchRepository) : ViewModel() {
         )
     }
 
-    fun matchTesters() = runTask {
+    fun matchTesters() = runTrackedTask("match_testers") {
         val app = checkNotNull(_state.value.selectedApp)
         val result = repository.matchTesters(app.id)
         _state.value.copy(
@@ -328,10 +372,12 @@ class LaunchViewModel(private val repository: LaunchRepository) : ViewModel() {
     fun createInvite() = showInvite()
 
     fun showJoin() {
+        trackAction("join_circle")
         _state.value = _state.value.copy(pilotSurface = PilotSurface.JOIN, error = null)
     }
 
     fun acceptInvite(code: String) {
+        trackAction("accept_invite")
         if (!InviteCodeValidator.isValid(code)) {
             _state.value = _state.value.copy(error = "Enter a code like LC-8H4K2")
             return
@@ -369,12 +415,23 @@ class LaunchViewModel(private val repository: LaunchRepository) : ViewModel() {
         _state.value = _state.value.copy(destination = target, error = null)
     }
 
+    private fun runTrackedTask(controlId: String, block: suspend () -> LaunchUiState) {
+        trackAction(controlId)
+        runTask(block)
+    }
+
     private fun runTask(block: suspend () -> LaunchUiState) {
         viewModelScope.launch {
             _state.value = _state.value.copy(loading = true, error = null)
             runCatching { block() }
                 .onSuccess { _state.value = it.copy(loading = false) }
                 .onFailure {
+                    val screen = _state.value.pilotSurface
+                        .takeIf { it != PilotSurface.NONE }
+                        ?.name
+                        ?.lowercase()
+                        ?: _state.value.destination.name.lowercase()
+                    trackAnalytics("action_failed", screen, reasonCode = failureReason(it))
                     _state.value = _state.value.copy(
                         loading = false,
                         error = it.message ?: "Something went wrong. Try again.",
