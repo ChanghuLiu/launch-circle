@@ -417,21 +417,31 @@ class LaunchViewModel(private val repository: LaunchRepository) : ViewModel() {
 
     private fun runTrackedTask(controlId: String, block: suspend () -> LaunchUiState) {
         trackAction(controlId)
-        runTask(block)
+        runTask(block, controlId)
     }
 
-    private fun runTask(block: suspend () -> LaunchUiState) {
+    private fun runTask(block: suspend () -> LaunchUiState, controlId: String? = null) {
         viewModelScope.launch {
             _state.value = _state.value.copy(loading = true, error = null)
             runCatching { block() }
-                .onSuccess { _state.value = it.copy(loading = false) }
+                .onSuccess {
+                    if (controlId != null) {
+                        val screen = it.pilotSurface
+                            .takeIf { surface -> surface != PilotSurface.NONE }
+                            ?.name
+                            ?.lowercase()
+                            ?: it.destination.name.lowercase()
+                        trackAnalytics("action_completed", screen, controlId)
+                    }
+                    _state.value = it.copy(loading = false)
+                }
                 .onFailure {
                     val screen = _state.value.pilotSurface
                         .takeIf { it != PilotSurface.NONE }
                         ?.name
                         ?.lowercase()
                         ?: _state.value.destination.name.lowercase()
-                    trackAnalytics("action_failed", screen, reasonCode = failureReason(it))
+                    trackAnalytics("action_failed", screen, controlId, failureReason(it))
                     _state.value = _state.value.copy(
                         loading = false,
                         error = it.message ?: "Something went wrong. Try again.",
