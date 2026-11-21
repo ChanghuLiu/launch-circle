@@ -98,7 +98,7 @@ def collect_analytics_event(
     return {"status": "accepted"}
 
 
-def analytics_summary(db: Session) -> dict[str, dict[str, int]]:
+def analytics_summary(db: Session) -> dict[str, object]:
     cutoff = datetime.now(timezone.utc) - timedelta(days=30)
     rows = db.scalars(
         select(PilotEvent)
@@ -109,11 +109,20 @@ def analytics_summary(db: Session) -> dict[str, dict[str, int]]:
     screens: dict[str, int] = {}
     actions: dict[str, int] = {}
     reasons: dict[str, int] = {}
+    recent_users: dict[str, dict[str, str]] = {}
     for row in rows:
         try:
             payload = json.loads(row.payload_json or "{}")
         except (TypeError, json.JSONDecodeError):
             payload = {}
+        if row.actor_user_id not in recent_users:
+            recent_users[row.actor_user_id] = {
+                "user_ref": row.actor_user_id[-6:],
+                "last_event": row.event_type,
+                "last_seen": row.created_at.isoformat(),
+                "last_screen": str(payload.get("screen_name") or "unknown"),
+                "last_reason": str(payload.get("reason_code") or ""),
+            }
         if row.event_type == "screen_view":
             key = payload.get("screen_name")
             if isinstance(key, str):
@@ -126,7 +135,7 @@ def analytics_summary(db: Session) -> dict[str, dict[str, int]]:
             key = payload.get("reason_code")
             if isinstance(key, str):
                 reasons[key] = reasons.get(key, 0) + 1
-    return {"screens": screens, "actions": actions, "reasons": reasons}
+    return {"screens": screens, "actions": actions, "reasons": reasons, "recent_users": list(recent_users.values())}
 
 
 @router.get("/admin/analytics", response_class=HTMLResponse)
@@ -144,6 +153,14 @@ def analytics_dashboard(
             for name, count in sorted(values.items(), key=lambda pair: (-pair[1], pair[0]))
         )
 
+    users = summary["recent_users"]
+    user_rows = "".join(
+        f"<tr><td>{escape(item['user_ref'])}</td><td>{escape(item['last_screen'])}</td>"
+        f"<td>{escape(item['last_event'])}</td><td>{escape(item['last_reason'])}</td>"
+        f"<td>{escape(item['last_seen'])}</td></tr>"
+        for item in users
+    ) or "<tr><td colspan='5'>No users in the last 30 days.</td></tr>"
+
     html = f"""<!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <title>Launch Circle user flow</title>
@@ -155,6 +172,6 @@ h1{{margin-bottom:4px}}.muted{{color:#566573}}
 <h1>Launch Circle user flow</h1><p class="muted">Aggregated events from the last 30 days. User emails and free-text fields are not shown.</p>
 <h2>Screen views</h2><table><thead><tr><th>Screen</th><th>Events</th></tr></thead><tbody>{rows(summary["screens"])}</tbody></table>
 <h2>Primary actions</h2><table><thead><tr><th>Control</th><th>Events</th></tr></thead><tbody>{rows(summary["actions"])}</tbody></table>
-<h2>Failures and reported blockers</h2><table><thead><tr><th>Reason</th><th>Events</th></tr></thead><tbody>{rows(summary["reasons"])}</tbody></table>
+<h2>Most recent user steps</h2><table><thead><tr><th>User ref</th><th>Last screen</th><th>Last event</th><th>Reason</th><th>Last seen</th></tr></thead><tbody>{user_rows}</tbody></table>\n<h2>Failures and reported blockers</h2><table><thead><tr><th>Reason</th><th>Events</th></tr></thead><tbody>{rows(summary["reasons"])}</tbody></table>
 </html>"""
     return HTMLResponse(html)
