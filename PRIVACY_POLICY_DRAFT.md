@@ -31,7 +31,8 @@ We use recorded data to:
 - create invites and record Google Group setup confirmation;
 - detect inactive or at-risk testing assignments and arrange replacements;
 - generate testing summaries and production-access preparation material based on recorded facts;
-- protect reliability and integrity of the pilot service;\n- understand aggregate screen and action usage and identify reported workflow blockers.
+- protect reliability and integrity of the pilot service;
+- understand aggregate screen and action usage and identify reported workflow blockers.
 
 Launch Circle does not sell personal data, serve advertising, or claim affiliation with Google. Launch Circle does not guarantee Google Play production approval.
 
