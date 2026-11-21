@@ -5,6 +5,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 import app.models
 from app.api.auth import router as auth_router
+from app.api.analytics import router as analytics_router
 from app.api.phase0 import router as phase0_router
 from app.api.users import router as users_router
 from app.core.config import get_settings
@@ -40,5 +41,6 @@ def health() -> dict[str, str]:
 
 
 app.include_router(auth_router)
+app.include_router(analytics_router)
 app.include_router(phase0_router)
 app.include_router(users_router)
