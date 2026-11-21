@@ -17,6 +17,7 @@ import com.launchcircle.testers.core.storage.TokenStore
 import retrofit2.HttpException
 
 interface LaunchRepository {
+    suspend fun trackAnalyticsEvent(event: Map<String, String>) {}
     suspend fun pilotConfig(): PilotConfig
     suspend fun launches(): List<LaunchApp>
     suspend fun createApp(request: CreateAppRequest): LaunchApp
@@ -55,6 +56,9 @@ class RealLaunchRepository(
             request(bearer())
         }
     }
+
+    override suspend fun trackAnalyticsEvent(event: Map<String, String>) =
+        authenticated { api.analyticsEvent(it, event) }
 
     override suspend fun pilotConfig() = api.pilotConfig()
     override suspend fun launches() = authenticated { api.apps(it) }

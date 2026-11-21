@@ -49,6 +49,15 @@ fun LegacyLaunchWorkspace(
     LaunchedEffect(viewModel, profile.id) {
         viewModel.loadLaunches(profile.id)
     }
+
+    LaunchedEffect(viewModel, state.destination, state.pilotSurface, profile.id) {
+        val screen = if (state.pilotSurface == PilotSurface.NONE) {
+            state.destination.name.lowercase()
+        } else {
+            state.pilotSurface.name.lowercase()
+        }
+        viewModel.trackScreen(screen)
+    }
     Column(Modifier.fillMaxSize()) {
         if (state.destination != LaunchDestination.MY_LAUNCHES) {
             OutlinedButton(

@@ -16,7 +16,7 @@ When you use Launch Circle, the service may collect and store:
 - Developer app information: app name, package name, Google Play closed-testing opt-in URL, Google Group choice, setup confirmation, and testing dates.
 - Testing activity: tester assignments, opt-in and installation confirmations, mission availability and completion, tester health state, reliability state, replacement history, and related timestamps.
 - User-generated content: ratings, issue reports, suggestions, final feedback, and developer-recorded changes.
-- Invite and operational activity: invite codes, optional invited email, invite acceptance, and product events such as assignment, mission, feedback, and group-confirmation events.
+- Invite and operational activity: invite codes, optional invited email, invite acceptance, and product events such as assignment, mission, feedback, and group-confirmation events. The app also records screen names, selected control identifiers, and fixed failure or blocker categories to understand where users stop in key workflows. These analytics events are linked to an internal account ID; they do not include screen coordinates, passwords, email addresses, app file contents, or free-text error messages.
 - Authentication/session data: access and refresh tokens. Refresh tokens are stored hashed by the backend; session tokens are stored in private app storage on the device.
 
 The release app does not request precise location, contacts, photos, microphone, camera, advertising ID, financial information, or health information.
@@ -31,7 +31,8 @@ We use recorded data to:
 - create invites and record Google Group setup confirmation;
 - detect inactive or at-risk testing assignments and arrange replacements;
 - generate testing summaries and production-access preparation material based on recorded facts;
-- protect reliability and integrity of the pilot service.
+- protect reliability and integrity of the pilot service;
+- understand aggregate screen and action usage and identify reported workflow blockers.
 
 Launch Circle does not sell personal data, serve advertising, or claim affiliation with Google. Launch Circle does not guarantee Google Play production approval.
 

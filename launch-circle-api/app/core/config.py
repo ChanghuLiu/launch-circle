@@ -42,6 +42,8 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("GOOGLE_GROUP_URL", "LAUNCH_CIRCLE_GOOGLE_GROUP_JOIN_URL"),
     )
     development_auth_enabled: bool = True
+    analytics_admin_username: str = ""
+    analytics_admin_password: str = ""
 
     @property
     def is_deployment(self) -> bool:
