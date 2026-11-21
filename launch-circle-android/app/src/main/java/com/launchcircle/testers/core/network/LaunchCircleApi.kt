@@ -48,6 +48,12 @@ interface LaunchCircleApi {
     @GET("v1/me")
     suspend fun me(@Header("Authorization") authorization: String): UserProfile
 
+    @POST("analytics/events")
+    suspend fun analyticsEvent(
+        @Header("Authorization") authorization: String,
+        @Body body: Map<String, String>,
+    )
+
     @DELETE("v1/me")
     suspend fun deleteMe(@Header("Authorization") authorization: String)
 
