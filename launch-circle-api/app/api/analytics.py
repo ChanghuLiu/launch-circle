@@ -24,7 +24,7 @@ basic_auth = HTTPBasic()
 
 class AnalyticsEventRequest(BaseModel):
     event_id: UUID
-    event_name: Literal["screen_view", "action_started", "action_failed", "blocker_reason"]
+    event_name: Literal["screen_view", "action_started", "action_completed", "action_failed", "blocker_reason"]
     screen_name: str = Field(pattern=r"^[a-z][a-z0-9_]{0,39}$")
     control_id: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]{0,39}$")
     reason_code: Literal[
