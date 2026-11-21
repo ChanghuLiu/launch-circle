@@ -137,7 +137,13 @@ def analytics_summary(db: Session) -> dict[str, object]:
             key = payload.get("reason_code")
             if isinstance(key, str):
                 reasons[key] = reasons.get(key, 0) + 1
-    return {\n        "screens": screens,\n        "actions": actions,\n        "completed_actions": completed_actions,\n        "reasons": reasons,\n        "recent_users": list(recent_users.values()),\n    }
+    return {
+        "screens": screens,
+        "actions": actions,
+        "completed_actions": completed_actions,
+        "reasons": reasons,
+        "recent_users": list(recent_users.values()),
+    }
 
 
 @router.get("/admin/analytics", response_class=HTMLResponse)
