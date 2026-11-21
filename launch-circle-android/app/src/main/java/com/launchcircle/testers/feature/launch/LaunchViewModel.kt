@@ -379,6 +379,12 @@ class LaunchViewModel(private val repository: LaunchRepository) : ViewModel() {
     fun acceptInvite(code: String) {
         trackAction("accept_invite")
         if (!InviteCodeValidator.isValid(code)) {
+            trackAnalytics(
+                eventName = "action_failed",
+                screenName = "join",
+                controlId = "accept_invite",
+                reasonCode = "validation_error",
+            )
             _state.value = _state.value.copy(error = "Enter a code like LC-8H4K2")
             return
         }
