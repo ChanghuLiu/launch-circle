@@ -108,6 +108,7 @@ def analytics_summary(db: Session) -> dict[str, object]:
     )
     screens: dict[str, int] = {}
     actions: dict[str, int] = {}
+    completed_actions: dict[str, int] = {}
     reasons: dict[str, int] = {}
     recent_users: dict[str, dict[str, str]] = {}
     for row in rows:
@@ -127,15 +128,16 @@ def analytics_summary(db: Session) -> dict[str, object]:
             key = payload.get("screen_name")
             if isinstance(key, str):
                 screens[key] = screens.get(key, 0) + 1
-        elif row.event_type == "action_started":
+        elif row.event_type in {"action_started", "action_completed"}:
             key = payload.get("control_id") or payload.get("screen_name")
+            target = completed_actions if row.event_type == "action_completed" else actions
             if isinstance(key, str):
-                actions[key] = actions.get(key, 0) + 1
+                target[key] = target.get(key, 0) + 1
         elif row.event_type in {"action_failed", "blocker_reason"}:
             key = payload.get("reason_code")
             if isinstance(key, str):
                 reasons[key] = reasons.get(key, 0) + 1
-    return {"screens": screens, "actions": actions, "reasons": reasons, "recent_users": list(recent_users.values())}
+    return {\n        "screens": screens,\n        "actions": actions,\n        "completed_actions": completed_actions,\n        "reasons": reasons,\n        "recent_users": list(recent_users.values()),\n    }
 
 
 @router.get("/admin/analytics", response_class=HTMLResponse)
@@ -172,6 +174,6 @@ h1{{margin-bottom:4px}}.muted{{color:#566573}}
 <h1>Launch Circle user flow</h1><p class="muted">Aggregated events from the last 30 days. User emails and free-text fields are not shown.</p>
 <h2>Screen views</h2><table><thead><tr><th>Screen</th><th>Events</th></tr></thead><tbody>{rows(summary["screens"])}</tbody></table>
 <h2>Primary actions</h2><table><thead><tr><th>Control</th><th>Events</th></tr></thead><tbody>{rows(summary["actions"])}</tbody></table>
-<h2>Most recent user steps</h2><table><thead><tr><th>User ref</th><th>Last screen</th><th>Last event</th><th>Reason</th><th>Last seen</th></tr></thead><tbody>{user_rows}</tbody></table>\n<h2>Failures and reported blockers</h2><table><thead><tr><th>Reason</th><th>Events</th></tr></thead><tbody>{rows(summary["reasons"])}</tbody></table>
+<h2>Completed actions</h2><table><thead><tr><th>Control</th><th>Events</th></tr></thead><tbody>{rows(summary["completed_actions"])}</tbody></table>\n<h2>Most recent user steps</h2><table><thead><tr><th>User ref</th><th>Last screen</th><th>Last event</th><th>Reason</th><th>Last seen</th></tr></thead><tbody>{user_rows}</tbody></table>\n<h2>Failures and reported blockers</h2><table><thead><tr><th>Reason</th><th>Events</th></tr></thead><tbody>{rows(summary["reasons"])}</tbody></table>
 </html>"""
     return HTMLResponse(html)
