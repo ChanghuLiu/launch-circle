@@ -19,7 +19,7 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.admin import AdminAppControl, AdminAudit, AdminRecommendation, AdminSession, AdminCredential
 from app.models.launch import App, Circle, CircleMember, Feedback, TesterAssignment
-from app.models.pool import AppIntake, PoolListing, TesterPoolPreference
+from app.models.pool import AppGroup, AppIntake, PoolListing, TesterPoolPreference
 from app.models.user import User
 from app.services.admin_auth import password_matches, password_hash
 from app.services.circles import active_member_count
@@ -214,6 +214,25 @@ def control(app_id: str, body: Control, db: DB, admin: Admin):
     audit(db, "APP_CONTROL", app_id, {"before": before, "after": body.model_dump()})
     db.commit()
     return {"ok": True}
+
+
+class AppGroupStatusUpdate(BaseModel):
+    status: Literal["OPEN", "CLOSED"]
+    reason: str = Field(min_length=8, max_length=500)
+
+
+@router.post("/api/app-groups/{group_id}/status")
+def update_app_group_status(group_id: str, body: AppGroupStatusUpdate, db: DB, admin: Admin):
+    group = db.get(AppGroup, group_id)
+    if group is None:
+        raise HTTPException(404, "App Group not found")
+    before = {"status": group.status}
+    group.status = body.status
+    audit(db, "APP_GROUP_STATUS_CHANGED", group_id, {
+        "before": before, "after": {"status": group.status}, "reason": body.reason,
+    })
+    db.commit()
+    return {"ok": True, "group_id": group.id, "status": group.status}
 
 
 class Recommend(BaseModel):

@@ -99,6 +99,7 @@ fun LaunchWorkspace(
     onDeleteAccount: () -> Unit,
     onLogout: () -> Unit,
     onSharedPool: () -> Unit = {},
+    onViewMyGroup: (String) -> Unit = { onSharedPool() },
     communityHome: @Composable () -> Unit = {},
     homeBack: (() -> Unit)? = null,
 ) {
@@ -218,7 +219,7 @@ fun LaunchWorkspace(
                                     { trigger -> viewModel.recordManagedOfferViewed(selected.id, trigger) },
                                     { viewModel.startManagedCheckout(selected.id) },
                                     if (state.pilotConfig.cold_start_evidence_enabled) viewModel::showEvidence else null,
-                                    viewModel::setAppIcon, viewModel::showMyLaunch, onSharedPool,
+                                    viewModel::setAppIcon, { onViewMyGroup(selected.id) }, onSharedPool,
                                     onAdd = if (profile.login_email.equals("liuchanghu2018@gmail.com", ignoreCase = true)) viewModel::showAddApp else null,
                                 )
                             } else if (!state.loading) {
@@ -808,7 +809,7 @@ private fun Dashboard(
         }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onPool, enabled = !loading, modifier = Modifier.fillMaxWidth()) { Text(lcText("Open App Groups", "打开互测小组")) }
+                Button(onClick = onPool, enabled = !loading, modifier = Modifier.fillMaxWidth()) { Text(lcText("Choose an App Group", "选择互测小组")) }
                 OutlinedButton(onClick = onManageRecruitment, enabled = !loading, modifier = Modifier.fillMaxWidth()) { Text(lcText("Manage recruitment / Resume matching", "管理招募／恢复匹配")) }
             }
         }

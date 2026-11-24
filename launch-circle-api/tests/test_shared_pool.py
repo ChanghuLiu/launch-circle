@@ -30,6 +30,7 @@ def campaign(owner):
             owner_id=owner[0],
             circle_id=circle.id,
             name="Test App",
+            icon_url="https://example.com/icon.png",
             package_name="com.example.a" + uuid4().hex,
             opt_in_url="placeholder",
             google_group_configured=True,
@@ -48,8 +49,9 @@ def post(client, path, who, body=None):
 
 
 def open_app(client, aid, owner):
-    res = post(client, "/apps/" + aid + "/pool-listing", owner, {"enabled": True})
-    assert res.status_code == 200, res.text
+    from app.api.admin import recruitment, RecruitmentUpdate
+    with SessionLocal() as db:
+        assert recruitment(aid, RecruitmentUpdate(enabled=True, reason="Complete app setup for recruitment"), db, True)["ok"]
 
 
 @pytest.mark.parametrize("customers", range(1, 13))
@@ -144,7 +146,7 @@ def test_capacity_closed_listing_and_unready_campaign(client):
         item.google_group_configured = False
         db.commit()
     assert (
-        post(client, "/apps/" + aid + "/pool-listing", owner, {"enabled": True}).status_code == 409
+        post(client, "/apps/" + aid + "/pool-listing", owner, {"enabled": True}).status_code == 403
     )
     with SessionLocal() as db:
         item = db.get(App, aid)
@@ -167,6 +169,9 @@ def test_capacity_closed_listing_and_unready_campaign(client):
     post(client, "/tester-pool/me", tester, {"enabled": True})
     assert post(client, "/apps/" + aid + "/tester-pool/accept", tester).status_code == 409
     post(client, "/apps/" + aid + "/pool-listing", owner, {"enabled": False})
+    with SessionLocal() as db:
+        db.get(PoolListing, aid).enabled = False
+        db.commit()
     assert post(client, "/apps/" + aid + "/tester-pool/accept", tester).status_code == 404
     assert client.get("/tester-pool/me").status_code == 401
 
@@ -240,16 +245,41 @@ def test_community_directory_browsing_and_acceptance_are_separate(client):
     assert "email" not in str(directory) and "accepted_participants" not in str(directory)
     assert post(client, "/apps/" + aid + "/tester-pool/accept", tester).status_code == 200
     pref = client.get("/tester-pool/me", headers=tester[1]).json()
-    assert pref["enabled"] and pref["active_apps"] == 1
+    assert not pref["enabled"] and pref["active_apps"] == 1
+    assert post(client, "/tester-pool/me", tester, {"enabled": True}).json()["enabled"]
     directory = client.get("/tester-pool/apps", headers=tester[1]).json()
     assert directory[0]["joined"] and not directory[0]["available"]
 
 
-def test_group_confirmation_automatically_lists_ready_app(client):
+def test_group_confirmation_shows_ready_app_without_recruitment(client):
     owner = actor()
     aid = campaign(owner)
     response = post(client, "/apps/" + aid + "/google-group/confirm", owner, {"configured": True})
     assert response.status_code == 200, response.text
-    assert client.get("/apps/" + aid + "/supply", headers=owner[1]).json()["listed"]
+    assert not client.get("/apps/" + aid + "/supply", headers=owner[1]).json()["listed"]
     post(client, "/apps/" + aid + "/google-group/confirm", owner, {"configured": False})
     assert not client.get("/apps/" + aid + "/supply", headers=owner[1]).json()["listed"]
+
+
+def test_directory_includes_complete_unlisted_and_paused_but_not_incomplete_apps(client):
+    owner, tester = actor(), actor()
+    unlisted = campaign(owner)
+    paused = campaign(owner)
+    incomplete = campaign(owner)
+    open_app(client, paused, owner)
+    post(client, "/apps/" + paused + "/pool-listing", owner, {"enabled": False})
+    with SessionLocal() as db:
+        db.get(PoolListing, paused).enabled = False
+        db.commit()
+    with SessionLocal() as db:
+        item = db.get(App, incomplete)
+        item.google_group_configured = False
+        item.icon_url = None
+        db.commit()
+    rows = client.get("/tester-pool/apps", headers=tester[1]).json()
+    by_id = {row["app_id"]: row for row in rows}
+    assert {unlisted, paused} <= by_id.keys()
+    assert incomplete not in by_id
+    assert all(not by_id[aid]["available"] for aid in (unlisted, paused))
+    for aid in (unlisted, paused, incomplete):
+        assert post(client, "/apps/" + aid + "/tester-pool/accept", tester).status_code == 404

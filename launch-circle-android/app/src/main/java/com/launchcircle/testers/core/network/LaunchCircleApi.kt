@@ -53,6 +53,10 @@ interface LaunchCircleApi {
 
     @GET("app-groups")
     suspend fun appGroups(@Header("Authorization") auth: String): List<com.launchcircle.testers.core.model.AppTestGroup>
+    @GET("apps/{appId}/app-groups")
+    suspend fun ownerAppGroups(@Header("Authorization") auth: String, @Path("appId") appId: String): com.launchcircle.testers.core.model.OwnerAppGroups
+    @POST("apps/{appId}/app-groups/{groupId}/join")
+    suspend fun joinOwnerAppGroup(@Header("Authorization") auth: String, @Path("appId") appId: String, @Path("groupId") groupId: String, @Body body: com.launchcircle.testers.core.model.AppGroupConsent): com.launchcircle.testers.core.model.AppGroupJoinResult
     @POST("app-groups/{groupId}/leave")
     suspend fun leaveAppGroup(@Header("Authorization") auth: String, @Path("groupId") groupId: String): Map<String, Any>
     @POST("app-groups/{groupId}/join")

@@ -1094,22 +1094,7 @@ def confirm_google_group(
             db, current_user.id, "google_group_confirmed",
             f"google-group-confirmed:{app.id}", app_id=app.id,
         )
-    if body.configured:
-        from app.api.pool import ready, place_in_group
-        from app.models.pool import PoolListing
-        if ready(app):
-            listing = db.get(PoolListing, app.id)
-            if listing is None:
-                db.add(PoolListing(app_id=app.id, enabled=True, updated_at=now))
-            else:
-                listing.enabled, listing.updated_at = True, now
-            db.flush()
-            place_in_group(db, app, now)
-    else:
-        from app.models.pool import PoolListing
-        listing = db.get(PoolListing, app.id)
-        if listing:
-            listing.enabled, listing.updated_at = False, now
+    # Test access confirmation does not recruit or place the App in a group.
     db.commit()
     db.refresh(app)
     return app_read(app)

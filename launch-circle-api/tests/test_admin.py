@@ -7,6 +7,8 @@ from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.models.admin import AdminAudit, AdminRecommendation
 from app.models.launch import TesterAssignment
+from app.models.pool import AppGroup
+from tests.test_owner_app_group_selection import make_group
 from app.services.admin_auth import password_hash, password_matches
 from tests.test_shared_pool import actor, campaign, open_app, post
 
@@ -129,6 +131,33 @@ def test_assets_safe_headers_and_unknown_paths(client):
     assert client.get("/admin/assets/admin.js").status_code == 200
     assert client.get("/admin/assets/admin.css").status_code == 200
     assert client.get("/admin/assets/config.py").status_code == 422
+
+
+def test_operator_can_close_and_reopen_group_with_reason_audit(operator):
+    group_id = make_group("USB")
+    closed = operator.post(
+        f"/admin/api/app-groups/{group_id}/status",
+        json={"status": "CLOSED", "reason": "Pause group for scheduled review"},
+        headers=HEADERS,
+    )
+    assert closed.status_code == 200 and closed.json()["status"] == "CLOSED"
+    reopened = operator.post(
+        f"/admin/api/app-groups/{group_id}/status",
+        json={"status": "OPEN", "reason": "Reopen after scheduled review"},
+        headers=HEADERS,
+    )
+    assert reopened.status_code == 200 and reopened.json()["status"] == "OPEN"
+    with SessionLocal() as db:
+        group = db.get(AppGroup, group_id)
+        assert group.status == "OPEN"
+        rows = db.scalars(select(AdminAudit).where(
+            AdminAudit.action == "APP_GROUP_STATUS_CHANGED",
+            AdminAudit.target_id == group_id,
+        ).order_by(AdminAudit.created_at)).all()
+        assert len(rows) == 2
+        assert rows[0].detail["before"]["status"] == "OPEN"
+        assert rows[0].detail["after"]["status"] == "CLOSED"
+        assert rows[0].detail["reason"] == "Pause group for scheduled review"
 
 
 def test_recommendation_order_priority_and_expiry(operator, monkeypatch):

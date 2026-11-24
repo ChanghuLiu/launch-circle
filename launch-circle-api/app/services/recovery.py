@@ -20,8 +20,9 @@ def evaluate_app_recovery(
     """Refresh health, preserve history, and idempotently fill active-cycle shortage."""
     refresh_app_health(db, app, now)
     evaluate_lifecycle(db, app, now)
-    from app.models.pool import PoolListing
-    replacements = [] if db.get(PoolListing, app.id) else assign_replacements(db, app, now)
+    # Recovery uses the same app-specific authorization gate as initial matching:
+    # only active members who explicitly joined this app's Group can be selected.
+    replacements = assign_replacements(db, app, now)
     if include_readiness:
         calculate_readiness(db, app, now)
     return replacements

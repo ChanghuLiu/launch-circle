@@ -216,6 +216,7 @@ private fun AppRoot(
             AppDestination.HOME -> {
                 var groupBack by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<(() -> Unit)?>(null) }
                 var poolOpen by rememberSaveable(state.profile.id) { mutableStateOf(false) }
+                var poolAppId by rememberSaveable(state.profile.id) { mutableStateOf<String?>(null) }
                 fun closePool() {
                     poolOpen = false
                     launchViewModel.refresh()
@@ -226,7 +227,7 @@ private fun AppRoot(
                         androidx.compose.ui.Modifier.fillMaxSize().navigationBarsPadding()
                     ) {
                         com.launchcircle.testers.feature.launch.LaunchAppHeader(onBack = { closePool() }, onGuideAction = { closePool(); launchViewModel.openGuideDestination(it, state.profile.login_email.equals("liuchanghu2018@gmail.com", ignoreCase = true)) })
-                        com.launchcircle.testers.feature.launch.SharedPoolScreen(apiBaseUrl, tokenStore, refreshSession)
+                        com.launchcircle.testers.feature.launch.SharedPoolScreen(apiBaseUrl, tokenStore, refreshSession, ownerAppId = poolAppId)
                     }
                 } else LaunchWorkspace(
                     profile = state.profile,
@@ -235,7 +236,8 @@ private fun AppRoot(
                     deletionError = (accountDeletionState as? AccountDeletionUiState.Error)?.message,
                     onDeleteAccount = onDeleteAccount,
                     onLogout = onLogout,
-                    onSharedPool = { poolOpen = true },
+                    onSharedPool = { poolAppId = null; poolOpen = true },
+                    onViewMyGroup = { appId -> poolAppId = appId; poolOpen = true },
                     homeBack = groupBack,
                     communityHome = {
                         com.launchcircle.testers.feature.launch.SharedPoolScreen(
