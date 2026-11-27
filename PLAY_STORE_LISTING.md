@@ -6,19 +6,17 @@
 Launch Circle: 12 Testers
 
 **Short description**  
-Find Android testers and manage your 14-day closed testing workflow.
+Plan Android beta tests with missions, private feedback, and retest tracking.
 
 **Full description**
 
-Launch Circle helps Android developers organize the work required for a meaningful Google Play closed test.
+Launch Circle helps Android developers organize useful closed-test QA with other developers.
 
-Find available developers, invite people to your testing circle, and track progress toward the 12-tester minimum. A 15-tester target provides room for inactive or dropped testers while keeping the launch useful even when the community is still growing.
+Add your Android app, invite developers or match available testers, and view your assigned tests. Review the app and task details, then use the official Google Play opt-in flow to participate if you choose.
 
-Follow a coordinated 14-day workflow with focused missions for first impressions, core features, edge cases, second use, retesting, and final feedback. Testers confirm opt-in and installation, complete currently available missions, and submit factual issues and suggestions.
+Use the official Google Play opt-in flow, try the requested app journeys as a real user, and send honest, private feedback. Follow focused missions for first impressions, core features, edge cases, second use, retesting, and final feedback. Developers can track tester status, mission and feedback progress, issues, changes made from feedback, and a testing summary based on recorded evidence.
 
-Developers can monitor active, new, at-risk, inactive, dropped, and replacement testers; review mission and feedback progress; record changes made from feedback; and prepare a production testing summary based on stored evidence.
-
-Launch Circle supports production access preparation. It does not access your Play Console, submit applications for you, guarantee production access, or guarantee Google approval. Launch Circle is not affiliated with or endorsed by Google.
+Participation is voluntary. When developers agree to a reciprocal test, each contributes real testing and private feedback for the other. No cash or credits are offered for installs, and store ratings or reviews are not requested or exchanged. Tester availability and engagement vary. Launch Circle does not guarantee a tester count, 14 continuous days, production access, or Google approval. Launch Circle is not affiliated with or endorsed by Google.
 
 ## Play Console recommendations
 
@@ -50,7 +48,7 @@ Recapture clean portrait screenshots from the release-configured build with sani
 
 1. First onboarding screen — product promise, no debug controls.
 2. My Launches — one healthy launch and one early/cold-start launch.
-3. Launch Dashboard — readiness, 13/15 testers, Day X/14, and circle health.
+3. Launch Dashboard — test progress, tester status, Day X/14, and circle health. Avoid suggesting that listing 15 seats guarantees 15 active testers.
 4. Invite Developer — use a nonfunctional example invite code/link.
 5. Tester Status — active, new, needs-attention, replacement, and dropped states without emails.
 6. Today Tests — meaningful available missions without acceptance labels.

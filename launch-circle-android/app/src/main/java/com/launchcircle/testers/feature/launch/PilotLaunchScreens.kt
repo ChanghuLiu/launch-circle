@@ -261,7 +261,7 @@ fun LaunchWorkspace(
                             }
                         }
                         LaunchDestination.TODAY_TESTS -> Today(
-                            state.todayAssignments, state.pilotConfig, viewModel::showAssignment,
+                            state.todayAssignments, viewModel::showAssignment,
                             access = state.testerGroupAccess,
                             accessCard = { TesterGroupAccessCard(state.testerGroupAccess, profile.login_email, state.loading, viewModel::updateTesterGroupAccess, viewModel::refreshTesterGroupAccess) },
                         )
@@ -1257,12 +1257,10 @@ private fun JoinSuccess(
 @Composable
 private fun Today(
     assignments: List<TestAssignment>,
-    config: PilotConfig,
     onAssignment: (TestAssignment) -> Unit,
     access: com.launchcircle.testers.core.model.TesterGroupAccess?,
     accessCard: @Composable () -> Unit,
 ) {
-    val uri = LocalUriHandler.current
     val completed = assignments.filter { it.status == "COMPLETED" || it.completed_at != null || it.feedback_submitted }
     val toDo = assignments.filterNot { it.status == "COMPLETED" || it.completed_at != null || it.feedback_submitted }
     LazyColumn(
@@ -1273,7 +1271,15 @@ private fun Today(
         item {
             Text(stringResource(R.string.tests), style = MaterialTheme.typography.headlineLarge)
             Text(stringResource(R.string.todays_tests), style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 4.dp))
-            Text(lcText("Set up once, then follow each app’s test steps.", "完成一次测试访问设置，再按每个 App 的步骤操作。"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                lcText(
+                    if (access?.ready == true) "Shared group access is ready. Each app still needs its own Play opt-in."
+                    else "Join the shared tester group once, then opt in to each assigned app separately.",
+                    if (access?.ready == true) "共用群组访问已就绪。每个 App 仍需单独加入 Play 闭测。"
+                    else "加入一次共用测试群组，然后分别加入每个已分配 App 的 Play 闭测。",
+                ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
         item { accessCard() }
         item {
