@@ -262,4 +262,13 @@
     <string name="mission_prompt_generic">Conclua o teste atribuído e compartilhe seu feedback.</string>
     <string name="publisher_account_unlimited">Publicador Google Play verificado · apps ilimitados</string>
     <string name="verified_play_publisher_unlimited">Publicador Google Play verificado · apps ilimitados</string>
+    <string name="app_version_label">Versão do app</string>
+    <string name="public_pool_action">Encontrar testadores / testar outros apps</string>
+    <string name="public_pool_help">Publique seu app para voluntários ou escolha um app para testar. Não é necessário código de convite. Confira a elegibilidade do Google Play no Play Console.</string>
+    <string name="private_circle_optional">Opcional: convide pessoas conhecidas</string>
+    <string name="private_invite_action">Convidar amigos ou colegas (opcional)</string>
+    <string name="test_enrollment_steps">1. Abra o link de teste do Play e participe usando a conta do Google Play deste telefone.\n2. Instale pelo Google Play e volte para confirmar.\n3. Faça o teste abaixo e relate o que realmente aconteceu. Essas confirmações são seus relatos, não uma verificação do Google Play.</string>
+    <string name="add_app_closed_testing_link_help">Cole um dos links de testadores do Play Console: Join on Android ou Join on the web. Apenas o formato do link é verificado; a elegibilidade para o teste fechado não é.</string>
+    <string name="add_app_closed_testing_link_invalid">Insira um link válido do Play Console, Join on Android ou Join on the web, com o nome do pacote do app. Apenas o formato do link é verificado; a elegibilidade para o teste fechado não é.</string>
+    <string name="add_app_closed_testing_link_placeholder">Link de testadores do Play Console</string>
 </resources>

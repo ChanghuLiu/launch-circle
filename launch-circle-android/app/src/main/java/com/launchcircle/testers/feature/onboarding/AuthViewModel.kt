@@ -57,6 +57,11 @@ class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
         _state.value = AuthUiState.SignedIn(profile)
     }
 
+    fun expireSession() {
+        repository.clearSession()
+        _state.value = AuthUiState.SignedOut
+    }
+
     fun saveProfile(
         displayName: String?,
         country: String,

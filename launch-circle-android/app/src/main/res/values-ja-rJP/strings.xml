@@ -262,4 +262,13 @@
     <string name="mission_prompt_generic">割り当てられたテストを行い、フィードバックを共有します。</string>
     <string name="publisher_account_unlimited">認証済み Google Play パブリッシャー · アプリ数無制限</string>
     <string name="verified_play_publisher_unlimited">認証済み Google Play パブリッシャー · アプリ数無制限</string>
+    <string name="app_version_label">アプリのバージョン</string>
+    <string name="public_pool_action">テスターを探す／他のアプリをテスト</string>
+    <string name="public_pool_help">ボランティアテスター向けにアプリを公開するか、テストするアプリを選択します。招待コードは不要です。Google Play の対象条件は Play Console で確認してください。</string>
+    <string name="private_circle_optional">任意：知り合いを招待</string>
+    <string name="private_invite_action">友人やチームメンバーを招待（任意）</string>
+    <string name="test_enrollment_steps">1. Play のテストリンクを開き、このスマートフォンの Google Play アカウントで参加します。\n2. Google Play からインストールし、戻って確認します。\n3. 下のテストを実行し、実際に起きたことを送信します。この確認はユーザーの報告であり、Google Play の検証ではありません。</string>
+    <string name="add_app_closed_testing_link_help">Play Console のテスターリンク「Join on Android」または「Join on the web」のいずれかを貼り付けてください。リンク形式のみを確認し、クローズドテストの参加資格は確認しません。</string>
+    <string name="add_app_closed_testing_link_invalid">アプリのパッケージ名を含む、有効な Play Console の「Join on Android」または「Join on the web」リンクを入力してください。リンク形式のみを確認し、クローズドテストの参加資格は確認しません。</string>
+    <string name="add_app_closed_testing_link_placeholder">Play Console のテスターリンク</string>
 </resources>

@@ -56,10 +56,13 @@ fun RequireCurrentVersion(policy: AndroidVersionPolicy?, checking: Boolean, fail
             }
         }
     }
-    // Keep form state mounted during foreground checks; the surface below blocks input.
-    val canShowContent = !failed && !required && policy != null
-    if (canShowContent) content()
-    if (!checking && canShowContent) return
+    // Once a valid policy is cached, keep the app usable during foreground rechecks.
+    // If a later response requires an update, `required` immediately gates the app.
+    val canShowContent = policy != null && !required
+    if (canShowContent) {
+        content()
+        return
+    }
     Surface(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterVertically)) {
             Text("Launch Circle", style = MaterialTheme.typography.titleLarge)

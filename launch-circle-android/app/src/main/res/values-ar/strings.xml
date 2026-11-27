@@ -262,4 +262,13 @@
     <string name="mission_prompt_generic">أكمل الاختبار المحدد وشارك ملاحظاتك.</string>
     <string name="publisher_account_unlimited">ناشر Google Play موثّق · تطبيقات غير محدودة</string>
     <string name="verified_play_publisher_unlimited">ناشر Google Play موثّق · تطبيقات غير محدودة</string>
+    <string name="app_version_label">إصدار التطبيق</string>
+    <string name="public_pool_action">العثور على مختبِرين / اختبار تطبيقات أخرى</string>
+    <string name="public_pool_help">انشر تطبيقك للمتطوعين للاختبار أو اختر تطبيقًا لاختباره. لا يلزم رمز دعوة. تحقّق من أهلية Google Play في Play Console.</string>
+    <string name="private_circle_optional">اختياري: ادعُ أشخاصًا تعرفهم</string>
+    <string name="private_invite_action">دعوة الأصدقاء أو زملاء الفريق (اختياري)</string>
+    <string name="test_enrollment_steps">1. افتح رابط اختبار Play وانضم باستخدام حساب Google Play على هذا الهاتف.\n2. ثبّت التطبيق من Google Play ثم عُد للتأكيد.\n3. نفّذ الاختبار أدناه وأرسل ما حدث فعلًا. هذه التأكيدات تقاريرك وليست تحققًا من Google Play.</string>
+    <string name="add_app_closed_testing_link_help">الصق أيًّا من رابطَي المختبرين في Play Console: Join on Android أو Join on the web. يتحقق هذا من تنسيق الرابط فقط، ولا يتحقق من أهلية الاختبار المغلق.</string>
+    <string name="add_app_closed_testing_link_invalid">أدخِل رابطًا صالحًا من Play Console، إما Join on Android أو Join on the web، مع اسم حزمة التطبيق. يتحقق هذا من تنسيق الرابط فقط، ولا يتحقق من أهلية الاختبار المغلق.</string>
+    <string name="add_app_closed_testing_link_placeholder">رابط مختبري Play Console</string>
 </resources>

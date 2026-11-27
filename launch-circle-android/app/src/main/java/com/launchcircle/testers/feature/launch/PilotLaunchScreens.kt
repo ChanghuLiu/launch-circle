@@ -1,6 +1,7 @@
 package com.launchcircle.testers.feature.launch
 
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.core.graphics.drawable.toBitmap
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -31,12 +32,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Groups
+import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.RocketLaunch
 import androidx.compose.material.icons.rounded.Science
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
@@ -58,6 +61,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -100,6 +104,7 @@ fun LaunchWorkspace(
     onLogout: () -> Unit,
     onSharedPool: () -> Unit = {},
     onViewMyGroup: (String) -> Unit = { onSharedPool() },
+    guideStartSignal: Int = 0,
     communityHome: @Composable () -> Unit = {},
     homeBack: (() -> Unit)? = null,
 ) {
@@ -107,6 +112,7 @@ fun LaunchWorkspace(
     val activity = LocalActivity.current
     LaunchedEffect(viewModel, profile.id) { viewModel.loadLaunches(profile.id) }
     val primaryDestination = state.pilotSurface == PilotSurface.NONE && state.destination in setOf(
+        LaunchDestination.COMMUNITY_HOME,
         LaunchDestination.MY_LAUNCHES,
         LaunchDestination.DASHBOARD,
         LaunchDestination.TODAY_TESTS,
@@ -118,7 +124,7 @@ fun LaunchWorkspace(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
-            LaunchAppHeader(onGuideAction = { viewModel.openGuideDestination(it, profile.login_email.equals("liuchanghu2018@gmail.com", ignoreCase = true)) }, guideAccountId = profile.id.toString(), onBack = if (state.destination == LaunchDestination.MY_LAUNCHES && state.pilotSurface == PilotSurface.NONE) homeBack else if (primaryDestination) null else ({
+            LaunchAppHeader(testerAccess = { TesterGroupAccessCard(state.testerGroupAccess, profile.login_email, state.loading, viewModel::updateTesterGroupAccess, viewModel::refreshTesterGroupAccess) }, onAccountAction = viewModel::showAccount, onGuideAction = { step -> if (step == 3) { if (state.capabilities.appGroupSelection) onSharedPool() } else viewModel.openGuideDestination(step, profile.login_email.equals("liuchanghu2018@gmail.com", ignoreCase = true)) }, guideAccountId = profile.id.toString(), guideStartSignal = guideStartSignal, onBack = if (state.destination == LaunchDestination.MY_LAUNCHES && state.pilotSurface == PilotSurface.NONE) homeBack else if (primaryDestination) null else ({
                 if (state.pilotSurface == PilotSurface.GROUP_SETUP) viewModel.skipGroupSetup()
                 else viewModel.back()
             }))
@@ -127,10 +133,11 @@ fun LaunchWorkspace(
             if (primaryDestination) {
                 LaunchNavigation(
                     destination = state.destination,
-                    onHome = viewModel::showMyLaunch,
+                    onHome = viewModel::showCommunityHome,
                     onTests = viewModel::showToday,
                     onMyLaunch = viewModel::showHome,
-                    onCircle = viewModel::showAccount,
+                    onCircle = onSharedPool,
+                    showCircle = state.capabilities.appGroupSelection,
                 )
             }
         },
@@ -141,7 +148,7 @@ fun LaunchWorkspace(
             Box(Modifier.fillMaxSize()) {
                 when (state.pilotSurface) {
                     PilotSurface.INVITE -> InviteScreen(
-                        state.invite, state.loading, viewModel::refreshInvite,
+                        state.selectedApp, state.pilotConfig,
                         viewModel::closePilotSurface,
                     )
                     PilotSurface.JOIN -> JoinScreen(
@@ -159,8 +166,9 @@ fun LaunchWorkspace(
                         },
                         {
                             viewModel.closePilotSurface()
-                            viewModel.showCircle()
+                            onSharedPool()
                         },
+                        showCircle = state.capabilities.appGroupSelection,
                     )
                     PilotSurface.GROUP_SETUP -> state.selectedApp?.let {
                         GroupSetup(
@@ -198,12 +206,13 @@ fun LaunchWorkspace(
                         )
                     }
                     PilotSurface.NONE -> when (state.destination) {
+                        LaunchDestination.COMMUNITY_HOME -> communityHome()
                         LaunchDestination.MY_LAUNCHES -> communityHome()
                         LaunchDestination.ADD_APP -> AddApp(
-                            state.pilotConfig, state.availableCircles, viewModel::createApp,
-                            profile.login_email.equals("liuchanghu2018@gmail.com", ignoreCase = true),
+                            viewModel::createApp,
                             viewModel::setDraftIcon,
                             loading = state.loading,
+                            supportsOwnerAttestation = state.capabilities.ownerAttestation,
                         )
                         LaunchDestination.DASHBOARD -> {
                             val selected = state.selectedApp?.takeIf { it.owner_id == profile.id }
@@ -211,7 +220,8 @@ fun LaunchWorkspace(
                             val dashboard = selected?.let { state.dashboards[it.id] }
                             if (selected != null && dashboard != null) {
                                 Dashboard(
-                                    selected, dashboard, state.loading,
+                                    selected, dashboard, state.launches.filter { it.owner_id == profile.id }, state.loading,
+                                    viewModel::showDashboard,
                                     viewModel::showInvite, viewModel::matchTesters,
                                     viewModel::showTesters, viewModel::showFeedback,
                                     viewModel::showGoogleGroupSetup,
@@ -219,8 +229,10 @@ fun LaunchWorkspace(
                                     { trigger -> viewModel.recordManagedOfferViewed(selected.id, trigger) },
                                     { viewModel.startManagedCheckout(selected.id) },
                                     if (state.pilotConfig.cold_start_evidence_enabled) viewModel::showEvidence else null,
-                                    viewModel::setAppIcon, { onViewMyGroup(selected.id) }, onSharedPool,
+                                    viewModel::setAppIcon, { if (state.capabilities.appGroupSelection) onViewMyGroup(selected.id) },
                                     onAdd = if (profile.login_email.equals("liuchanghu2018@gmail.com", ignoreCase = true)) viewModel::showAddApp else null,
+                                    onAttestOwnership = { viewModel.attestOwnership(selected.id) },
+                                    supportsAppGroupSelection = state.capabilities.appGroupSelection,
                                 )
                             } else if (!state.loading) {
                                 Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
@@ -228,20 +240,28 @@ fun LaunchWorkspace(
                                     Text(lcText("Your app starts here", "从你的第一个 App 开始"), style = MaterialTheme.typography.titleLarge)
                                     Text(lcText("Add your app, set up test access, then join a matching group. You can manage everything here.", "添加 App、设置测试访问，再加入匹配的小组。应用的配置和管理都在这里完成。"))
                                     Button(onClick = viewModel::showAddApp, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(lcText("Add my app", "添加我的 App")) }
-                                    Text(lcText("Use your app’s Google Play link. No developer account number needed.", "准备好 App 的 Google Play 链接即可，不用输入开发者账号 ID。"), style = MaterialTheme.typography.bodySmall)
                                 }
                             }
                         }
                         LaunchDestination.TODAY_TESTS -> Today(
                             state.todayAssignments, state.pilotConfig, viewModel::showAssignment,
+                            access = state.testerGroupAccess,
+                            accessCard = { TesterGroupAccessCard(state.testerGroupAccess, profile.login_email, state.loading, viewModel::updateTesterGroupAccess, viewModel::refreshTesterGroupAccess) },
                         )
                         LaunchDestination.ASSIGNMENT -> state.selectedAssignment?.let {
                             EvidenceAssignmentScreen(it, state.assignmentMissions, state.loading,
+                                groupReady = state.testerGroupAccess?.ready == true,
+                                sharedGroupUrl = state.pilotConfig.google_group_join_url,
+                                accessCard = { TesterGroupAccessCard(state.testerGroupAccess, profile.login_email, state.loading, viewModel::updateTesterGroupAccess, viewModel::refreshTesterGroupAccess) },
                                 viewModel::confirmAssignmentOptIn, viewModel::confirmAssignmentInstalled,
                                 viewModel::showMission)
                         }
                         LaunchDestination.MISSION -> state.selectedMission?.let {
-                            if (state.pilotConfig.cold_start_evidence_enabled) {
+                            if (state.testerGroupAccess?.ready != true) {
+                                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) {
+                                    TesterGroupAccessCard(state.testerGroupAccess, profile.login_email, state.loading, viewModel::updateTesterGroupAccess, viewModel::refreshTesterGroupAccess)
+                                }
+                            } else if (state.pilotConfig.cold_start_evidence_enabled) {
                                 MissionEvidenceScreen(state.evidenceContext, state.loading,
                                     state.evidenceSavedId, viewModel::submitMissionEvidence,
                                     onHistory = viewModel::showMissionEvidenceHistory)
@@ -288,12 +308,14 @@ fun LaunchWorkspace(
 }
 
 @Composable
-private fun LaunchNavigation(
+internal fun LaunchNavigation(
     destination: LaunchDestination,
     onHome: () -> Unit,
     onTests: () -> Unit,
     onMyLaunch: () -> Unit,
     onCircle: () -> Unit,
+    showCircle: Boolean = true,
+    circleSelected: Boolean = false,
 ) {
     data class Item(
         val label: String,
@@ -301,12 +323,14 @@ private fun LaunchNavigation(
         val selected: Boolean,
         val onClick: () -> Unit,
     )
-    val items = listOf(
-        Item(lcText("Home", "首页"), Icons.Rounded.Home, destination == LaunchDestination.MY_LAUNCHES, onHome),
-        Item(lcText("Tests", "我的测试"), Icons.Rounded.Science, destination == LaunchDestination.TODAY_TESTS, onTests),
-        Item(lcText("My Launch", "我的发布"), Icons.Rounded.RocketLaunch, destination == LaunchDestination.DASHBOARD, onMyLaunch),
-        Item(lcText("Account", "账号"), Icons.Rounded.Groups, destination == LaunchDestination.ACCOUNT, onCircle),
-    )
+    val items = buildList {
+        add(
+        Item(lcText("Home", "首页"), Icons.Rounded.Home, destination in setOf(LaunchDestination.COMMUNITY_HOME, LaunchDestination.MY_LAUNCHES), onHome),
+        )
+        if (showCircle) add(Item(lcText("Circle", "互测圈"), Icons.Rounded.Groups, circleSelected, onCircle))
+        add(Item(lcText("Tests", "我的测试"), Icons.Rounded.Science, destination == LaunchDestination.TODAY_TESTS, onTests))
+        add(Item(lcText("My Launch", "我的发布"), Icons.Rounded.RocketLaunch, destination == LaunchDestination.DASHBOARD, onMyLaunch))
+    }
     NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
         items.forEach { item ->
             NavigationBarItem(
@@ -354,7 +378,7 @@ private fun Home(
         }
         items(apps, key = { "app-${it.id}" }) { app ->
             OutlinedButton(onClick = { onOpen(app) }, modifier = Modifier.fillMaxWidth()) {
-                AppIcon(app.name, app.icon_url)
+                AppIcon(app.name, app.icon_url, app.package_name)
                 Spacer(Modifier.width(12.dp))
                 Text(app.name, modifier = Modifier.weight(1f))
             }
@@ -662,56 +686,135 @@ private fun ManagedLaunchPayment(
 
 @Composable
 private fun AddApp(
-    config: PilotConfig,
-    circles: List<LaunchCircle>,
-    onCreate: (String, String, String, String?, String, List<String>, String, String?) -> Unit,
-    isAdmin: Boolean,
+    onCreate: (String, String, String, String?, String, List<String>, String, String?, Boolean) -> Unit,
     onDraftIcon: (String?) -> Unit,
     loading: Boolean = false,
+    supportsOwnerAttestation: Boolean,
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var playLink by rememberSaveable { mutableStateOf("") }
     var name by rememberSaveable { mutableStateOf("") }
     var workflowText by rememberSaveable { mutableStateOf("") }
-    var advanced by rememberSaveable { mutableStateOf(false) }
-    var customGroup by rememberSaveable { mutableStateOf(false) }
-    var ownUrl by rememberSaveable { mutableStateOf("") }
     var draftIcon by androidx.compose.runtime.remember { mutableStateOf<String?>(null) }
+    var ownershipAuthorized by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) { onDraftIcon(null) }
-    val packageName = com.launchcircle.testers.core.launch.PlayAppLink.packageName(playLink)
+    val link = playLink.trim()
+    val parsedPlayLink = com.launchcircle.testers.core.launch.PlayAppLink.parseClosedTestingLink(link)
     val steps = parseCoreWorkflowSteps(workflowText)
-    val valid = packageName != null && name.isNotBlank() && steps.size in 2..4 && steps.all { it.length <= 200 } && (!customGroup || ownUrl.startsWith("https://groups.google.com/"))
+    val stepsTooLong = steps.any { it.length > 200 }
+    val stepsInvalid = steps.size > 4 || stepsTooLong
+    val valid = parsedPlayLink != null && name.isNotBlank() && draftIcon != null && steps.size >= 2 && !stepsInvalid &&
+        (!supportsOwnerAttestation || ownershipAuthorized)
     val example = lcText("Open the app and try its main feature using sample data.\nCheck the result and report anything confusing.", "打开应用，用示例数据尝试主要功能。\n检查结果，反馈遇到的问题或不清楚的地方。")
     Column(Modifier.fillMaxSize()) {
-        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(lcText("Add your app", "添加自己的 App"), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text(lcText("Three details to get started. Play access is set up after saving.", "填写三项即可保存，之后再配置测试访问。"), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            OutlinedTextField(playLink, { playLink = it }, label = { Text(lcText("1 · Google Play app link", "1 · Google Play 应用链接")) },
-                supportingText = { Text(lcText("Paste a store link or closed-test link. You can also enter the package name.", "粘贴商店链接或闭测链接，也可以输入包名。")) },
-                isError = playLink.isNotBlank() && packageName == null,
-                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Ascii, autoCorrectEnabled = false),
-                singleLine = true, enabled = !loading, modifier = Modifier.fillMaxWidth())
-            if (packageName != null) Text(lcText("Detected: ", "已识别包名：") + packageName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-            else if (playLink.isNotBlank()) Text(lcText("Use a play.google.com store/test link, or a package such as com.example.app.", "请输入 play.google.com 的商店／闭测链接，或类似 com.example.app 的包名。"), color = MaterialTheme.colorScheme.error)
-            OutlinedTextField(name, { name = it }, label = { Text(lcText("2 · App name", "2 · 应用名称")) }, singleLine = true, enabled = !loading, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(workflowText, { workflowText = it }, label = { Text(lcText("3 · What should testers do?", "3 · 希望测试者做什么？")) },
-                supportingText = { Text(lcText("Write 2–4 short steps, one per line, up to 200 characters each.", "填写 2–4 条简短步骤，每行一条，每条不超过 200 字符。")) },
-                minLines = 3, maxLines = 5, enabled = !loading, modifier = Modifier.fillMaxWidth())
-            TextButton(onClick = { workflowText = example }, enabled = !loading && workflowText.isBlank()) { Text(lcText("Use starter steps, then edit", "使用示例步骤后修改")) }
-            Text(lcText("No Developer Account ID to type. Package access is checked through the server's publisher connection; external apps may need ownership review.", "不用填写开发者账号 ID。后台会检查包名访问权限；外部开发者的 App 可能需要所有权审核。"), style = MaterialTheme.typography.bodySmall)
-            TextButton(onClick = { advanced = !advanced }, enabled = !loading) { Text(lcText(if (advanced) "Hide optional settings" else "Icon & optional settings", if (advanced) "收起可选设置" else "图标与可选设置")) }
-            if (advanced) {
-                IconUpload(name.ifBlank { "App" }, draftIcon) { data -> draftIcon = "data:image/png;base64,$data"; onDraftIcon(data) }
-                Text(lcText("Optional PNG/JPEG, up to 1 MB. You can import the Play icon later.", "图标可选，PNG/JPEG 不超过 1 MB，也可稍后导入 Play 图标。"), style = MaterialTheme.typography.bodySmall)
-                OutlinedButton(onClick = { customGroup = !customGroup }, enabled = !loading) { Text(lcText(if (customGroup) "Use Launch Circle Google Group" else "Use my own Google Group", if (customGroup) "改用 Launch Circle Google 群组" else "使用自己的 Google 群组")) }
-                if (customGroup) OutlinedTextField(ownUrl, { ownUrl = it }, label = { Text(lcText("Google Group link", "Google 群组链接")) }, singleLine = true, enabled = !loading, modifier = Modifier.fillMaxWidth())
+            Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(18.dp)) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Surface(color = MaterialTheme.colorScheme.primary, shape = CircleShape) {
+                            Text("1", Modifier.padding(horizontal = 12.dp, vertical = 6.dp), color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(lcText("App details", "应用信息"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text(lcText("App icon, Play link and name", "应用图标、Play 链接和名称"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
             }
-            if (isAdmin) Text(lcText("Administrator: multiple apps allowed.", "管理员账号可添加多个 App。"), style = MaterialTheme.typography.bodySmall)
+            IconUpload(name.ifBlank { "App" }, draftIcon?.let { "data:image/png;base64,$it" }, enabled = !loading) { data ->
+                draftIcon = data
+                onDraftIcon(data)
+            }
+            Text(lcText("Closed testing link (required)", "封闭测试链接（必填）"), fontWeight = FontWeight.SemiBold)
+            OutlinedTextField(
+                value = playLink,
+                onValueChange = { playLink = it },
+                label = { Text(lcText("Google Play test link", "Google Play 测试链接")) },
+                placeholder = { Text(stringResource(R.string.add_app_closed_testing_link_placeholder)) },
+                supportingText = {
+                    Text(
+                        stringResource(
+                            if (playLink.isNotBlank() && parsedPlayLink == null)
+                                R.string.add_app_closed_testing_link_invalid
+                            else R.string.add_app_closed_testing_link_help,
+                        )
+                    )
+                },
+                isError = playLink.isNotBlank() && parsedPlayLink == null,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Uri),
+                singleLine = true,
+                enabled = !loading,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedButton(
+                onClick = {
+                    runCatching {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://play.google.com/console")))
+                    }
+                },
+                enabled = !loading,
+            ) { Text(lcText("Open Play Console ↗", "打开 Play Console ↗")) }
+            OutlinedTextField(name, { name = it }, label = { Text(lcText("App name (required)", "应用名称（必填）")) }, singleLine = true, enabled = !loading, modifier = Modifier.fillMaxWidth())
+            Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(16.dp)) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Surface(color = MaterialTheme.colorScheme.primary, shape = CircleShape) {
+                        Text("2", Modifier.padding(horizontal = 12.dp, vertical = 6.dp), color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold)
+                    }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(lcText("Write test steps", "填写测试步骤"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text(lcText("2–4 steps · one per line", "2–4 条测试步骤 · 每行一条"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    androidx.compose.material3.AssistChip(
+                        onClick = { workflowText = if (workflowText.isBlank()) example else workflowText.trimEnd() + "\n" + example },
+                        enabled = !loading && steps.size < 2,
+                        label = { Text(lcText("Use starter steps", "使用示例步骤"), maxLines = 1) },
+                    )
+                }
+            }
+            OutlinedTextField(workflowText, { workflowText = it }, label = { Text(lcText("Test steps (required)", "测试步骤（必填）")) },
+                isError = stepsInvalid,
+                supportingText = {
+                    val message = when {
+                        steps.size > 4 -> lcText("Keep at most 4 test steps.", "最多填写 4 条测试步骤，请删减。")
+                        stepsTooLong -> lcText("Shorten each step to 200 characters or fewer.", "每条测试步骤最多 200 字，请缩短。")
+                        steps.isEmpty() -> lcText("Write 2 to 4 steps, one per line, or use the starter steps.", "请填写 2 到 4 条，每条另起一行，也可以使用示例步骤。")
+                        steps.size == 1 -> lcText("Add at least 1 more step on a new line.", "还差至少 1 条，请另起一行填写。")
+                        else -> lcText("Test steps complete (${steps.size})", "测试步骤已完成（${steps.size} 条）")
+                    }
+                    val color = when {
+                        stepsInvalid -> MaterialTheme.colorScheme.error
+                        steps.size < 2 -> MaterialTheme.colorScheme.primary
+                        androidx.compose.foundation.isSystemInDarkTheme() -> androidx.compose.ui.graphics.Color(0xFF8DDBA4)
+                        else -> androidx.compose.ui.graphics.Color(0xFF176C38)
+                    }
+                    Text(message, color = color, fontWeight = FontWeight.SemiBold)
+                },
+                minLines = 3, maxLines = 5, enabled = !loading, modifier = Modifier.fillMaxWidth())
+            if (supportsOwnerAttestation) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Checkbox(checked = ownershipAuthorized, onCheckedChange = { ownershipAuthorized = it }, enabled = !loading)
+                    Text(lcText(
+                        "I own this app or am authorized to submit it for testing. Publisher identity is self-reported and may not be independently verified.",
+                        "我拥有此应用，或已获授权提交测试。发布者身份由我自报，可能未经独立核验。",
+                    ), style = MaterialTheme.typography.bodySmall)
+                }
+            } else {
+                Text(
+                    lcText("Ownership confirmation will be available after the service is updated. You can save this app now; it will remain pending until then.", "所有权确认将在服务端更新后可用。你现在可以保存此 App；在此之前它会保持待确认状态。"),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             Spacer(Modifier.height(8.dp))
         }
         Surface(tonalElevation = 3.dp) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (!valid) Text(lcText("Complete the three fields above to continue.", "填写上面的三项后即可继续。"), style = MaterialTheme.typography.bodySmall)
-                Button(onClick = { onCreate(name.trim(), checkNotNull(packageName), com.launchcircle.testers.core.launch.PlayAppLink.testUrl(packageName), ownUrl.takeIf { customGroup }, if (customGroup) "OWN_GROUP" else "LAUNCH_CIRCLE", steps, "", null) },
+                if (!valid) Text(lcText(if (supportsOwnerAttestation) "To continue, add an app icon, a closed testing link, an app name, 2–4 test steps, and confirm submission authority." else "To continue, add an app icon, a closed testing link, an app name, and 2–4 test steps.", if (supportsOwnerAttestation) "继续前请添加应用图标、封闭测试链接、应用名称、2–4 条测试步骤，并确认提交权限。" else "继续前请添加应用图标、封闭测试链接、应用名称和 2–4 条测试步骤。"), style = MaterialTheme.typography.bodySmall)
+                Button(onClick = {
+                    val closedTestingLink = checkNotNull(parsedPlayLink)
+                    onCreate(name.trim(), closedTestingLink.packageName, closedTestingLink.optInUrl, null, "LAUNCH_CIRCLE", steps, "", null, supportsOwnerAttestation && ownershipAuthorized)
+                },
                     enabled = valid && !loading, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(lcText(if (loading) "Saving…" else "Save & set up test access", if (loading) "保存中…" else "保存并设置测试访问")) }
             }
         }
@@ -727,18 +830,34 @@ private fun GroupSetup(
     onLater: () -> Unit,
 ) {
     val context = LocalContext.current
+    val uri = LocalUriHandler.current
+    var consoleOpenFailed by remember { mutableStateOf(false) }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(stringResource(R.string.connect_tester_access), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text(app.name, color = MaterialTheme.colorScheme.primary)
+        Text(
+            lcText(
+                "This is the one Launch Circle tester group. Add its email to every app's Play closed-test track. Testers join with the invite link once, then open each app's own Play test link.",
+                "Launch Circle 统一使用这一个测试群组。发布者需将群组邮箱添加到每个 App 的 Play 封闭测试轨道。测试者通过邀请链接加入一次，再逐个打开各 App 的 Play 测试链接。",
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Highlight {
-            Text(stringResource(R.string.launch_circle_google_group), fontWeight = FontWeight.SemiBold)
+            Text(lcText("Shared tester group email · for Play Console", "共用测试群组邮箱 · 用于 Play Console"), fontWeight = FontWeight.SemiBold)
             Text(config.google_group_email)
-            OutlinedButton(onClick = { copy(context, config.google_group_email) }) { Text(stringResource(R.string.copy_group_email)) }
+            Text(lcText("Copy this email into every Launch Circle app's closed-test track. The invite link below is for testers.", "请将此邮箱添加到每个 Launch Circle App 的封闭测试轨道。下方邀请链接供测试者使用。"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedButton(onClick = { copy(context, config.google_group_email) }) { Text(lcText("Copy group email", "复制群组邮箱")) }
         }
-        Text(stringResource(R.string.add_group_in_play_console), style = MaterialTheme.typography.titleMedium)
+        Text(lcText("Add this group to this app in Play Console", "在 Play Console 中为此 App 添加群组"), style = MaterialTheme.typography.titleMedium)
+        OutlinedButton(
+            onClick = { consoleOpenFailed = runCatching { uri.openUri("https://play.google.com/console") }.isFailure },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text(lcText("Open Google Play Console", "打开 Google Play Console")) }
+        if (consoleOpenFailed) Text(lcText("Open play.google.com/console in your browser, then select this app.", "请在浏览器打开 play.google.com/console，然后选择此 App。"), color = MaterialTheme.colorScheme.error)
         listOf(
             stringResource(R.string.group_setup_step_open_console),
             stringResource(R.string.group_setup_step_closed_testing),
@@ -748,13 +867,22 @@ private fun GroupSetup(
             stringResource(R.string.group_setup_step_save),
             stringResource(R.string.group_setup_step_return_continue),
         ).forEach { Text(it) }
+        AppTestInvitation(app, config)
+        Text(
+            lcText(
+                "After saving the group in Play Console and publishing a closed-test release, confirm here. Launch Circle cannot check Play Console for you. A ready app will then appear on Home; internal App Groups are separate.",
+                "在 Play Console 保存群组并开放封闭测试版本后，再回来确认。Launch Circle 无法替你读取 Play Console。App 满足上架条件后会显示在首页；内部互测小组是独立功能。",
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Text(
             stringResource(R.string.play_console_user_confirmation_note),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Button(onClick = onConfirm, enabled = !loading && !app.google_group_configured, modifier = Modifier.fillMaxWidth()) {
-            Text(if (app.google_group_configured) "Test access configured" else stringResource(R.string.i_added_the_google_group))
+            Text(if (app.google_group_configured) lcText("Tester access confirmed", "测试访问已确认") else lcText("I added the group to this app", "我已将群组添加到此 App"))
         }
         OutlinedButton(onClick = onLater, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.do_this_later)) }
     }
@@ -764,7 +892,9 @@ private fun GroupSetup(
 private fun Dashboard(
     app: LaunchApp,
     data: LaunchDashboard,
+    ownedApps: List<LaunchApp>,
     loading: Boolean,
+    onSelectApp: (LaunchApp) -> Unit,
     onInvite: () -> Unit,
     onMatch: () -> Unit,
     onTesters: () -> Unit,
@@ -776,8 +906,9 @@ private fun Dashboard(
     onEvidence: (() -> Unit)?,
     onIcon: (String, String?) -> Unit,
     onPool: () -> Unit,
-    onManageRecruitment: () -> Unit,
     onAdd: (() -> Unit)? = null,
+    onAttestOwnership: () -> Unit,
+    supportsAppGroupSelection: Boolean,
 ) {
     var coordinationMinutesText by rememberSaveable(app.id) { mutableStateOf("") }
     var showPriorityOffer by rememberSaveable(app.id) { mutableStateOf(false) }
@@ -790,27 +921,77 @@ private fun Dashboard(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
-            androidx.compose.foundation.layout.Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(lcText("My Launch", "我的发布"), style = MaterialTheme.typography.headlineMedium)
-                if (onAdd != null) TextButton(onClick = onAdd, enabled = !loading) { Text(lcText("Add app", "添加 App")) }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.foundation.layout.Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(lcText("My Launch", "我的发布"), style = MaterialTheme.typography.headlineMedium)
+                    if (onAdd != null) TextButton(onClick = onAdd, enabled = !loading) { Text(lcText("Add app", "添加 App")) }
+                }
+                if (ownedApps.size > 1) {
+                    var appMenuOpen by rememberSaveable(app.id) { mutableStateOf(false) }
+                    Box {
+                        OutlinedButton(onClick = { appMenuOpen = true }, enabled = !loading, modifier = Modifier.fillMaxWidth()) {
+                            Text(lcText("Managing: ", "正在管理：") + app.name + "  ▾", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        androidx.compose.material3.DropdownMenu(expanded = appMenuOpen, onDismissRequest = { appMenuOpen = false }) {
+                            ownedApps.forEach { item ->
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(item.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                    onClick = { appMenuOpen = false; onSelectApp(item) },
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    Text(app.name, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
             }
+        }
+        if (!supportsAppGroupSelection) item {
             Text(
-                app.name,
-                style = MaterialTheme.typography.titleLarge,
+                lcText("Owner confirmation and App Groups will be available after the service is updated.", "所有者确认和互测小组将在服务端更新后可用。"),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodySmall,
             )
         }
-        item {
-            OutlinedButton(onClick = onGroupSetup, enabled = !loading && !app.google_group_configured, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(if (app.google_group_configured) R.string.tester_access_confirmed else R.string.tester_access_setup_needed))
+        if (supportsAppGroupSelection && !app.ownership_authorized) item {
+            OutlinedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        lcText("PENDING_ATTESTATION · Owner confirmation needed", "PENDING_ATTESTATION · 待所有者确认"),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(lcText(
+                        "This app was saved by an older client without an ownership statement. It cannot join a group or receive testers until you confirm that you own it or are authorized to submit it.",
+                        "此 App 由旧版客户端保存，尚无所有权声明。确认你拥有该 App 或获准提交后，才能加入小组或招募测试者。",
+                    ))
+                    Button(onClick = onAttestOwnership, enabled = !loading, modifier = Modifier.fillMaxWidth()) {
+                        Text(lcText("I own this app or am authorized to submit it", "我拥有此 App 或获准提交它"))
+                    }
+                }
             }
         }
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onPool, enabled = !loading, modifier = Modifier.fillMaxWidth()) { Text(lcText("Choose an App Group", "选择互测小组")) }
-                OutlinedButton(onClick = onManageRecruitment, enabled = !loading, modifier = Modifier.fillMaxWidth()) { Text(lcText("Manage recruitment / Resume matching", "管理招募／恢复匹配")) }
+            OutlinedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(lcText("Google Play tester access", "Google Play 测试访问"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    OutlinedButton(onClick = onInvite, enabled = !loading, modifier = Modifier.fillMaxWidth()) { Text(lcText("Share this app’s test invitation", "分享此 App 的测试邀请")) }
+                    if (app.google_group_configured) {
+                        Text(lcText("Confirmed. Your app is listed in Home. Internal App Groups are separate and optional.", "已确认。你的 App 已列入首页。Launch Circle 内部互测小组是独立的可选功能。"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (supportsAppGroupSelection) Button(onClick = onPool, enabled = !loading, modifier = Modifier.fillMaxWidth()) {
+                            Text(lcText("Browse App Groups", "浏览互测小组"))
+                        }
+                    } else {
+                        Text(lcText("For this app, add the shared Launch Circle tester Google Group to its Play Console closed-test track, then come back and confirm.", "请为这个 App 在 Play Console 封闭测试轨道添加 Launch Circle 共用测试群组，然后回来确认。"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Button(onClick = onGroupSetup, enabled = !loading, modifier = Modifier.fillMaxWidth()) {
+                            Text(lcText("Set up tester access", "配置测试访问"))
+                        }
+                    }
+                }
             }
         }
         if (onEvidence != null) item {
@@ -825,9 +1006,9 @@ private fun Dashboard(
             ) {
                 Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(lcText("Testing progress", "测试进度"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                         Text(
-                            if (!app.google_group_configured) "Test access setup needed"
-                            else if (data.testing_started_at == null) "Recruiting testers"
+                            if (data.testing_started_at == null) lcText("Waiting for tester activity", "等待测试者开始")
                             else stringResource(R.string.day_progress, data.day, data.total_days),
                             style = MaterialTheme.typography.headlineMedium,
                         )
@@ -868,21 +1049,8 @@ private fun Dashboard(
             }
         }
         item {
-            SectionHeader("Tester coverage")
-            Text("${data.qualifying_tester_count} / ${data.required_tester_count} currently qualifying", style = MaterialTheme.typography.titleLarge)
-            Text("These are platform reports. Confirm Google Play eligibility in Play Console.", style = MaterialTheme.typography.bodySmall)
-        }
-        item {
             SectionHeader(stringResource(R.string.milestones))
             MilestoneTimeline(data)
-        }
-        item {
-            SectionHeader("Participation status")
-            Text(when {
-                data.qualifying_tester_count == 0 -> "Waiting for testers to join and install."
-                data.qualifying_tester_count < data.required_tester_count -> "More testers are needed. Keep testing with your group."
-                else -> "Platform coverage reached. Verify continuity in Play Console."
-            })
         }
         item {
             OutlinedCard(Modifier.fillMaxWidth()) {
@@ -934,8 +1102,8 @@ private fun Dashboard(
         }
         item {
             var editIcon by rememberSaveable(app.id) { mutableStateOf(false) }
-            OutlinedButton(onClick = { editIcon = !editIcon }, enabled = !loading) { Text(if (editIcon) "Close app settings" else "App settings") }
-            if (editIcon) AppIconEditor(app, onIcon)
+            OutlinedButton(onClick = { editIcon = !editIcon }, enabled = !loading) { Text(if (editIcon) "Close icon editor" else "Update app icon") }
+            if (editIcon) AppIconEditor(app, loading, onIcon)
         }
         item {
             Text(data.approval_disclaimer, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -968,52 +1136,36 @@ private fun MilestoneTimeline(data: LaunchDashboard) {
 }
 
 @Composable
-private fun InviteScreen(invite: LaunchInvite?, loading: Boolean, onNew: () -> Unit, onClose: () -> Unit) {
+private fun InviteScreen(app: LaunchApp?, config: PilotConfig, onClose: () -> Unit) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        TextButton(onClick = onClose) { Text(lcText("Back", "返回")) }
+        if (app == null) Text(lcText("Select your app in My Launch first.", "请先在我的发布选择自己的 App。"))
+        else AppTestInvitation(app, config)
+    }
+}
+
+@Composable
+private fun AppTestInvitation(app: LaunchApp, config: PilotConfig) {
     val context = LocalContext.current
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
-    ) {
-        TextButton(
-            onClick = onClose,
-            modifier = Modifier.defaultMinSize(minHeight = 48.dp),
-        ) { Text(stringResource(R.string.back)) }
-        Text(stringResource(R.string.invite_developers_title), style = MaterialTheme.typography.headlineLarge)
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(stringResource(R.string.grow_your_testing_circle), style = MaterialTheme.typography.titleLarge)
-            Text(
-                stringResource(R.string.invite_developer_exchange_testing),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+    val uri = LocalUriHandler.current
+    var help by rememberSaveable(app.id) { mutableStateOf(false) }
+    var openFailed by remember { mutableStateOf(false) }
+    val invitation = lcText(
+        "Please test " + app.name + "\n\nJoin this app's Google Play test:\n" + app.opt_in_url + "\n\nFirst time testing with Launch Circle? Join our shared Google Group once:\n" + config.google_group_join_url + "\n\nUse the same Google account for the group, Play test and Play Store. Then install, try the app and send feedback.",
+        "邀请你测试 " + app.name + "\n\n加入此 App 的 Google Play 测试：\n" + app.opt_in_url + "\n\n首次参与 Launch Circle 测试？先加入共用 Google 群组一次：\n" + config.google_group_join_url + "\n\n群组、Play 测试和 Play 商店请使用同一个 Google 账号。然后安装、使用并提交反馈。",
+    )
+    Highlight {
+        Text(lcText("Invite testers for ", "邀请测试：") + app.name, style = MaterialTheme.typography.titleMedium)
+        Text(app.opt_in_url, style = MaterialTheme.typography.bodySmall)
+        Button(onClick = { share(context, invitation, app.name) }, modifier = Modifier.fillMaxWidth()) { Text(lcText("Share this app's test invitation", "分享此 App 的测试邀请")) }
+        OutlinedButton(onClick = { copy(context, invitation) }, modifier = Modifier.fillMaxWidth()) { Text(lcText("Copy test invitation", "复制测试邀请")) }
+        OutlinedButton(onClick = { openFailed = runCatching { uri.openUri(app.opt_in_url) }.isFailure }, modifier = Modifier.fillMaxWidth()) { Text(lcText("Open this app's Play test", "打开此 App 的 Play 测试页面")) }
+        if (openFailed) Text(lcText("Copy the invitation and open its Play link in your browser.", "请复制邀请，并在浏览器打开其中的 Play 链接。"), color = MaterialTheme.colorScheme.error)
+        TextButton(onClick = { help = !help }) { Text(lcText("First-time tester help", "首次测试者帮助")) }
+        if (help) {
+            Text(lcText("Join the shared Google Group once, then use this app's Play link above. Existing members can go straight to the Play link.", "首次加入共用 Google 群组后，再打开上方此 App 的 Play 链接。已有成员可以直接打开 Play 链接。"))
+            OutlinedButton(onClick = { openFailed = runCatching { uri.openUri(config.google_group_join_url) }.isFailure }) { Text(lcText("Join the shared Google Group", "加入共用 Google 群组")) }
         }
-        Card(
-            Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        ) {
-            Column(
-                Modifier.fillMaxWidth().padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                if (invite == null) {
-                    CircularProgressIndicator()
-                } else {
-                    Text(stringResource(R.string.your_invite_code), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                    Text(
-                        invite.invite_code,
-                        style = MaterialTheme.typography.displaySmall.copy(fontFamily = FontFamily.Monospace),
-                        maxLines = 1,
-                    )
-                    PrimaryLaunchButton(stringResource(R.string.share_invite), onClick = { share(context, invite.share_url) })
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                        TextButton(onClick = { copy(context, invite.share_url) }) { Text(stringResource(R.string.copy_link)) }
-                        TextButton(onClick = { copy(context, invite.invite_code) }) { Text(stringResource(R.string.copy_code)) }
-                    }
-                }
-            }
-        }
-        SecondaryLaunchButton(stringResource(R.string.create_another_invite_code), onNew, enabled = !loading)
     }
 }
 
@@ -1044,6 +1196,8 @@ private fun JoinSuccess(
     onAdd: () -> Unit,
     onTests: () -> Unit,
     onCircle: () -> Unit,
+    showCircle: Boolean = true,
+    circleSelected: Boolean = false,
 ) {
     val uri = LocalUriHandler.current
     Column(
@@ -1055,10 +1209,17 @@ private fun JoinSuccess(
         Text(stringResource(R.string.join_launch_circle_group_step))
         Text(stringResource(R.string.add_android_app_step))
         Text(stringResource(R.string.help_test_developers_step))
+        Text(
+            lcText(
+                "Group membership alone does not enroll you in any specific Play closed test.",
+                "加入群组本身不会让你自动加入任何一个 App 的 Play 闭测。",
+            ),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Button(onClick = { uri.openUri(config.google_group_join_url) }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.join_google_group)) }
         OutlinedButton(onClick = onAdd, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.add_my_app)) }
         OutlinedButton(onClick = onTests, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.view_test_apps)) }
-        OutlinedButton(onClick = onCircle, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.view_circle_members)) }
+        if (showCircle) OutlinedButton(onClick = onCircle, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.view_circle_members)) }
     }
 }
 
@@ -1067,6 +1228,8 @@ private fun Today(
     assignments: List<TestAssignment>,
     config: PilotConfig,
     onAssignment: (TestAssignment) -> Unit,
+    access: com.launchcircle.testers.core.model.TesterGroupAccess?,
+    accessCard: @Composable () -> Unit,
 ) {
     val uri = LocalUriHandler.current
     val completed = assignments.filter { it.status == "COMPLETED" || it.completed_at != null || it.feedback_submitted }
@@ -1079,9 +1242,16 @@ private fun Today(
         item {
             Text(stringResource(R.string.tests), style = MaterialTheme.typography.headlineLarge)
             Text(stringResource(R.string.todays_tests), style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 4.dp))
-            Text(stringResource(R.string.short_checks_today), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(lcText("Set up once, then follow each app’s test steps.", "完成一次测试访问设置，再按每个 App 的步骤操作。"), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        if (assignments.isEmpty()) item { EmptyCard(stringResource(R.string.you_are_caught_up), stringResource(R.string.no_tests_today)) }
+        item { accessCard() }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                MetricCard(lcText("To do", "待测试"), toDo.size.toString(), lcText("Assigned apps", "分配的应用"), modifier = Modifier.weight(1f))
+                MetricCard(lcText("Done", "已完成"), completed.size.toString(), lcText("Saved feedback", "已保存反馈"), modifier = Modifier.weight(1f))
+            }
+        }
+        if (assignments.isEmpty()) item { EmptyCard(lcText("You’re ready for the next task", "等待下一项测试任务"), lcText("No tests are assigned today. Browse App Groups to see your group and its apps.", "今天没有分配的测试。可前往 App Groups 查看自己的小组和应用。")) }
         if (toDo.isNotEmpty()) item { SectionHeader(stringResource(R.string.to_do)) }
         items(toDo, key = { "todo-${it.id}" }) { assignment ->
             TodayAssignmentCard(assignment, { onAssignment(assignment) })
@@ -1170,7 +1340,7 @@ private fun TodayAssignmentCard(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                AppIcon(assignment.app_name, assignment.icon_url)
+                AppIcon(assignment.app_name, assignment.icon_url, assignment.package_name)
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
                         assignment.app_name,
@@ -1713,23 +1883,23 @@ private fun copy(context: Context, value: String) {
     clipboard.setPrimaryClip(ClipData.newPlainText("Launch Circle", value))
 }
 
-private fun share(context: Context, value: String) {
+private fun share(context: Context, value: String, message: String = "Join my Android testing circle") {
     val intent = Intent(Intent.ACTION_SEND).apply {
         type = "text/plain"
-        putExtra(Intent.EXTRA_TEXT, "Join my Android testing circle\n\n" + value)
+        putExtra(Intent.EXTRA_TEXT, message + "\n\n" + value)
     }
     context.startActivity(Intent.createChooser(intent, "Share invite"))
 }
 
 
 @Composable
-private fun AppIconEditor(app: LaunchApp, onIcon: (String, String?) -> Unit) {
-    IconUpload(app.name, app.icon_url) { onIcon(app.id, it) }
+private fun AppIconEditor(app: LaunchApp, loading: Boolean, onIcon: (String, String?) -> Unit) {
+    IconUpload(app.name, app.icon_url, app.package_name, enabled = !loading) { onIcon(app.id, it) }
     TextButton(onClick = { onIcon(app.id, null) }) { Text(lcText("Get icon from Google Play", "从 Google Play 获取图标")) }
 }
 
 @Composable
-private fun IconUpload(name: String, url: String?, onUpload: (String) -> Unit) {
+internal fun IconUpload(name: String, url: String?, packageName: String? = null, enabled: Boolean = true, onUpload: (String) -> Unit) {
     val context = LocalContext.current
     var error by androidx.compose.runtime.remember { mutableStateOf<String?>(null) }
     val picker = androidx.activity.compose.rememberLauncherForActivityResult(
@@ -1740,24 +1910,57 @@ private fun IconUpload(name: String, url: String?, onUpload: (String) -> Unit) {
                 val bytes = context.contentResolver.openInputStream(uri)?.use { it.readIconBytes() }
                     ?: error("Cannot read this image")
                 require(bytes.size <= 1048576) { "Choose an image smaller than 1 MB" }
+                require((bytes.size >= 8 && bytes.copyOfRange(0, 8).contentEquals(byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a))) ||
+                    (bytes.size >= 3 && bytes[0] == 0xff.toByte() && bytes[1] == 0xd8.toByte() && bytes[2] == 0xff.toByte())) {
+                    "Choose a PNG or JPEG image"
+                }
                 require(android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size) != null) { "Choose a PNG or JPEG image" }
                 onUpload(android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP))
             }.onSuccess { error = null }.onFailure { error = it.message ?: "Cannot read this image" }
         }
     }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        AppIcon(name, url)
-        TextButton(onClick = { picker.launch("image/*") }) { Text("Upload icon") }
+    OutlinedCard(Modifier.fillMaxWidth()) {
+        androidx.compose.foundation.layout.Row(
+            Modifier.fillMaxWidth().padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            AppIcon(name, url, packageName)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    if (url.isNullOrBlank()) lcText("App icon required", "需要应用图标") else lcText("App icon added", "已添加应用图标"),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(lcText("Choose a PNG or JPEG image · up to 1 MB", "选择 PNG 或 JPEG 图片 · 最大 1 MB"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            androidx.compose.material3.FilledTonalButton(onClick = { picker.launch("image/*") }, enabled = enabled) {
+                Text(if (url.isNullOrBlank()) lcText("Choose", "选择图标") else lcText("Change", "更换"))
+            }
+        }
     }
     error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 }
 
 @Composable
-internal fun AppIcon(name: String, url: String?) {
-    var bitmap by androidx.compose.runtime.remember(url) { mutableStateOf<android.graphics.Bitmap?>(null) }
-    LaunchedEffect(url) {
+internal fun AppIcon(name: String, url: String?, packageName: String? = null) {
+    if (packageName == "com.launchcircle.testers") {
+        androidx.compose.foundation.Image(
+            painter = androidx.compose.ui.res.painterResource(com.launchcircle.testers.R.drawable.launch_circle_logo),
+            contentDescription = name,
+            modifier = Modifier.size(48.dp),
+        )
+        return
+    }
+    val context = LocalContext.current
+    var bitmap by androidx.compose.runtime.remember(url, packageName) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    LaunchedEffect(url, packageName) {
         bitmap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             runCatching {
+                if (packageName == "com.regevidencehub.cablecert") {
+                    val icon = context.packageManager.getApplicationIcon(packageName)
+                    return@runCatching icon.toBitmap()
+                }
                 val value = url ?: return@runCatching null
                 val bytes = if (value.startsWith("data:image/")) android.util.Base64.decode(value.substringAfter(","), android.util.Base64.DEFAULT) else {
                     val connection = java.net.URL(value).openConnection().apply { connectTimeout = 5000; readTimeout = 5000 }

@@ -262,4 +262,13 @@
     <string name="mission_prompt_generic">Size atanan testi tamamlayıp geri bildiriminizi paylaşın.</string>
     <string name="publisher_account_unlimited">Doğrulanmış Google Play yayıncısı · sınırsız uygulama</string>
     <string name="verified_play_publisher_unlimited">Doğrulanmış Google Play yayıncısı · sınırsız uygulama</string>
+    <string name="app_version_label">Uygulama sürümü</string>
+    <string name="public_pool_action">Test kullanıcısı bul / diğer uygulamaları test et</string>
+    <string name="public_pool_help">Uygulamanızı gönüllü test kullanıcılarına açın veya test edilecek bir uygulama seçin. Davet kodu gerekmez. Google Play uygunluğunu Play Console’da kontrol edin.</string>
+    <string name="private_circle_optional">İsteğe bağlı: tanıdıklarınızı davet edin</string>
+    <string name="private_invite_action">Arkadaşları veya ekip arkadaşlarını davet et (isteğe bağlı)</string>
+    <string name="test_enrollment_steps">1. Play test bağlantısını açın ve bu telefondaki Google Play hesabıyla katılın.\n2. Google Play’den yükleyin ve onaylamak için geri dönün.\n3. Aşağıdaki testi yapıp gerçekten olanları bildirin. Bu onaylar sizin bildiriminizdir; Google Play doğrulaması değildir.</string>
+    <string name="add_app_closed_testing_link_help">Play Console test kullanıcıları bağlantılarından birini yapıştırın: Join on Android veya Join on the web. Yalnızca bağlantı biçimi denetlenir; kapalı test uygunluğu doğrulanmaz.</string>
+    <string name="add_app_closed_testing_link_invalid">Uygulama paket adını içeren geçerli bir Play Console Join on Android veya Join on the web bağlantısı girin. Yalnızca bağlantı biçimi denetlenir; kapalı test uygunluğu doğrulanmaz.</string>
+    <string name="add_app_closed_testing_link_placeholder">Play Console test bağlantısı</string>
 </resources>

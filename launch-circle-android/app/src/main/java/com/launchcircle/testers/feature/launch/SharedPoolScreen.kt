@@ -387,6 +387,7 @@ class CommunityAppsCache {
 fun CommunityAppsScreen(
     baseUrl: String, tokens: TokenStore, refresh: suspend () -> Boolean,
     onAdd: () -> Unit, onTests: () -> Unit, onLaunch: () -> Unit, onGroup: () -> Unit,
+    showGroups: Boolean = true,
     onSessionExpired: () -> Unit = {}, onBeginnerGuide: () -> Unit = {},
     requestScope: kotlinx.coroutines.CoroutineScope,
     cache: CommunityAppsCache = remember { CommunityAppsCache() },
@@ -500,7 +501,7 @@ fun CommunityAppsScreen(
             cache.notice?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
             if (cache.error != null && !cache.sessionExpired) TextButton(onClick = { refresh() }) { Text(lcText("Try again", "重试")) }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                CommunityActionTile(
+                if (showGroups) CommunityActionTile(
                     modifier = Modifier.weight(1f),
                     title = lcText("Add my app", "添加我的 App"),
                     icon = Icons.Rounded.Add,
@@ -515,6 +516,10 @@ fun CommunityAppsScreen(
                     onClick = onGroup,
                 )
             }
+            if (!showGroups) Text(
+                lcText("App Groups will be available after the service is updated.", "互测小组将在服务端更新后可用。"),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             if (cache.loaded && cache.apps.isEmpty()) Text(lcText("No apps have been registered yet.", "目前尚未登记 App。"))
         }
         items(cache.apps, key = { "community-${it.app_id}" }) { app ->

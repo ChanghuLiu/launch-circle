@@ -20,6 +20,7 @@ import com.launchcircle.testers.core.model.ManagedCheckout
 
 class DemoLaunchRepository : LaunchRepository {
     private val config = PilotConfig()
+    private var demoTesterGroupAccess = com.launchcircle.testers.core.model.TesterGroupAccess()
     private val apps = mutableListOf(
         demoApp("healthy", "BLE Signal Analyzer", "TESTING", "2026-08-14T00:00:00Z"),
         demoApp("early", "eSIM Checker", "WAITING_FOR_TESTERS"),
@@ -65,6 +66,17 @@ class DemoLaunchRepository : LaunchRepository {
 
     override suspend fun pilotConfig() = config
     override suspend fun launches() = apps.toList()
+    override suspend fun testerGroupAccess() = demoTesterGroupAccess
+    override suspend fun updateTesterGroupAccess(email: String, status: String): com.launchcircle.testers.core.model.TesterGroupAccess {
+        require(status in setOf("SELF_CONFIRMED", "PENDING", "NOT_JOINED"))
+        demoTesterGroupAccess = demoTesterGroupAccess.copy(
+            play_email = email,
+            status = status,
+            confirmed_at = if (status == "SELF_CONFIRMED") "DEMO_ONLY" else null,
+            verification = "USER_REPORTED",
+        )
+        return demoTesterGroupAccess
+    }
 
     override suspend fun createAdditionalAppCheckout(developerAccountId: String): AdditionalAppCheckout =
         throw IllegalStateException("Checkout is available only with the real backend.")
@@ -95,7 +107,6 @@ class DemoLaunchRepository : LaunchRepository {
             package_name = request.package_name,
             opt_in_url = request.opt_in_url,
             google_group_url = request.google_group_url ?: config.google_group_join_url,
-            status = "WAITING_FOR_TESTERS",
             tester_target = 14,
             testing_start_at = null,
             testing_end_at = null,
@@ -104,9 +115,24 @@ class DemoLaunchRepository : LaunchRepository {
             circle_id = request.circle_id ?: circle.id,
             play_developer_account_id = request.play_developer_account_id,
             entitlement_status = "FIRST_APP_FREE",
+            ownership_authorized = request.ownership_authorized,
+            ownership_attested_at = if (request.ownership_authorized) "DEMO_ONLY" else null,
+            ownership_attestation_status = if (request.ownership_authorized) "CONFIRMED" else "PENDING_ATTESTATION",
+            status = if (request.ownership_authorized) "WAITING_FOR_TESTERS" else "DRAFT",
         )
         apps.add(0, app)
         return app
+    }
+
+    override suspend fun attestOwnership(appId: String): LaunchApp {
+        val index = apps.indexOfFirst { it.id == appId }
+        require(index >= 0) { "App not found" }
+        return apps[index].copy(
+            ownership_authorized = true,
+            ownership_attested_at = "DEMO_ONLY",
+            ownership_attestation_status = "CONFIRMED",
+            status = if (apps[index].status == "DRAFT") "WAITING_FOR_TESTERS" else apps[index].status,
+        ).also { apps[index] = it }
     }
 
     override suspend fun dashboard(appId: String): LaunchDashboard {

@@ -20,6 +20,7 @@ import com.launchcircle.testers.core.model.PilotConfig
 import com.launchcircle.testers.core.model.TestMission
 import com.launchcircle.testers.core.model.TestAssignment
 import com.launchcircle.testers.core.model.TesterAssignment
+import com.launchcircle.testers.core.network.ApiCapabilities
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.delay
 import retrofit2.HttpException
@@ -28,7 +29,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 enum class LaunchDestination {
-    MY_LAUNCHES, ADD_APP, DASHBOARD, TODAY_TESTS, ASSIGNMENT, MISSION, TESTERS, FEEDBACK, ACCOUNT, EVIDENCE, EVIDENCE_DETAIL, EVIDENCE_RETEST, EVIDENCE_HISTORY
+    COMMUNITY_HOME, MY_LAUNCHES, ADD_APP, DASHBOARD, TODAY_TESTS, ASSIGNMENT, MISSION, TESTERS, FEEDBACK, ACCOUNT, EVIDENCE, EVIDENCE_DETAIL, EVIDENCE_RETEST, EVIDENCE_HISTORY
 }
 
 enum class PilotSurface {
@@ -36,9 +37,12 @@ enum class PilotSurface {
 }
 
 data class LaunchUiState(
-    val destination: LaunchDestination = LaunchDestination.MY_LAUNCHES,
+    val capabilities: ApiCapabilities = ApiCapabilities.Unsupported,
+    val appIntakes: List<com.launchcircle.testers.core.model.AppIntakeStatus> = emptyList(),
+    val destination: LaunchDestination = LaunchDestination.COMMUNITY_HOME,
     val pilotSurface: PilotSurface = PilotSurface.NONE,
     val pilotConfig: PilotConfig = PilotConfig(),
+    val testerGroupAccess: com.launchcircle.testers.core.model.TesterGroupAccess? = null,
     val launches: List<LaunchApp> = emptyList(),
     val dashboards: Map<String, LaunchDashboard> = emptyMap(),
     val selectedApp: LaunchApp? = null,
@@ -76,6 +80,9 @@ class LaunchViewModel(
 
     private var loadedUserId: String? = null
     private var pendingAppRequest: CreateAppRequest? = null
+    private var draftIcon: String? = null
+
+    fun setDraftIcon(data: String?) { draftIcon = data }
     private var playBillingGateway: PlayBillingGateway? = null
     private var activePurchaseId: String? = null
     private var activePurchaseType: String? = null
@@ -89,10 +96,6 @@ class LaunchViewModel(
         loadWorkspace()
     }
 
-    private var draftIcon: String? = null
-
-    fun setDraftIcon(data: String?) { draftIcon = data }
-
     fun setAppIcon(appId: String, data: String?) = runTask {
         val updated = repository.setAppIcon(appId, data)
         _state.value.copy(launches = _state.value.launches.map { if (it.id == appId) updated else it },
@@ -105,6 +108,8 @@ class LaunchViewModel(
 
     private fun loadWorkspace() {
         runTask {
+            val capabilities = runCatching { repository.capabilities() }
+                .getOrDefault(ApiCapabilities.Unsupported)
             val config = runCatching { repository.pilotConfig() }.getOrDefault(PilotConfig())
             val apps = repository.launches()
             val dashboards = apps.associate { it.id to repository.dashboard(it.id) }
@@ -115,7 +120,10 @@ class LaunchViewModel(
             val circle = selected?.let { repository.circle(it.id) }
             _state.value.copy(
                 destination = _state.value.destination,
+                capabilities = capabilities,
                 pilotConfig = config,
+                testerGroupAccess = runCatching { repository.testerGroupAccess() }.getOrNull(),
+                appIntakes = repository.appIntakes(),
                 launches = apps,
                 dashboards = dashboards,
                 selectedApp = selected,
@@ -134,6 +142,10 @@ class LaunchViewModel(
         } else {
             showDashboard(app)
         }
+    }
+
+    fun showCommunityHome() {
+        _state.value = _state.value.copy(destination = LaunchDestination.COMMUNITY_HOME, pilotSurface = PilotSurface.NONE, error = null)
     }
 
     fun showMyLaunch() {
@@ -156,6 +168,7 @@ class LaunchViewModel(
         val own = _state.value.selectedApp?.takeIf { it.owner_id == loadedUserId }
             ?: _state.value.launches.firstOrNull { it.owner_id == loadedUserId }
         when (step) {
+            0 -> showCommunityHome()
             1 -> if (own == null || isAdmin) showAddApp() else showHome()
             2 -> if (own == null) showHome() else {
                 _state.value = _state.value.copy(selectedApp = own, destination = LaunchDestination.DASHBOARD, pilotSurface = PilotSurface.GROUP_SETUP, error = null)
@@ -166,6 +179,11 @@ class LaunchViewModel(
         }
     }
 
+    fun requestAppReview(name: String, packageName: String, publisher: String, steps: List<String>) = runTask {
+        repository.submitAppIntake(com.launchcircle.testers.core.model.AppIntakeRequest(name.trim(), packageName, publisher.trim(), steps))
+        _state.value.copy(appIntakes = repository.appIntakes())
+    }
+
     fun showAddApp() {
         _state.value = _state.value.copy(
             destination = LaunchDestination.ADD_APP,
@@ -173,28 +191,6 @@ class LaunchViewModel(
             error = null,
         )
     }
-
-    fun createApp(name: String, packageName: String, optInUrl: String, groupUrl: String?) =
-        createApp(name, packageName, optInUrl, groupUrl, "LAUNCH_CIRCLE")
-
-    fun createApp(
-        name: String,
-        packageName: String,
-        optInUrl: String,
-        groupUrl: String?,
-        groupMode: String,
-    ) = createApp(name, packageName, optInUrl, groupUrl, groupMode, emptyList())
-
-    fun createApp(
-        name: String,
-        packageName: String,
-        optInUrl: String,
-        groupUrl: String?,
-        groupMode: String,
-        coreWorkflowSteps: List<String>,
-    ) = createApp(
-        name, packageName, optInUrl, groupUrl, groupMode, coreWorkflowSteps, "",
-    )
 
     fun createApp(
         name: String,
@@ -205,23 +201,32 @@ class LaunchViewModel(
         coreWorkflowSteps: List<String>,
         playDeveloperAccountId: String,
         circleId: String? = null,
+        ownershipAuthorized: Boolean,
     ) = runTask {
         val request = CreateAppRequest(
             name = name,
             package_name = packageName,
             opt_in_url = optInUrl,
+            icon_data = checkNotNull(draftIcon) { "An app icon is required" },
             google_group_url = groupUrl?.ifBlank { null },
             google_group_mode = groupMode,
             core_workflow_steps = coreWorkflowSteps,
             play_developer_account_id = playDeveloperAccountId,
             circle_id = circleId,
+            ownership_authorized = ownershipAuthorized,
         )
         val app = try {
             repository.createApp(request)
         } catch (error: HttpException) {
             if (error.code() != 402) throw error
             pendingAppRequest = request
-            val payment = repository.createAdditionalAppCheckout(playDeveloperAccountId)
+            val payment = try {
+                repository.createAdditionalAppCheckout(playDeveloperAccountId)
+            } catch (checkoutError: HttpException) {
+                if (checkoutError.code() != 409) throw checkoutError
+                pendingAppRequest = null
+                return@runTask additionalAppCheckoutUnavailable(_state.value)
+            }
             return@runTask _state.value.copy(
                 pilotSurface = PilotSurface.ADDITIONAL_APP_PAYMENT,
                 pendingPayment = payment,
@@ -230,7 +235,6 @@ class LaunchViewModel(
             )
         }
         pendingAppRequest = null
-        draftIcon?.let { repository.setAppIcon(app.id, it) }
         draftIcon = null
         val apps = repository.launches()
         val dashboards = apps.associate { it.id to repository.dashboard(it.id) }
@@ -309,7 +313,6 @@ class LaunchViewModel(
         val request = pendingAppRequest.takeIf { oldPayment?.id == purchaseId }
         if (refreshed.status in setOf("PAID", "CONSUMED") && request != null) {
             val app = repository.createApp(request)
-            draftIcon?.let { repository.setAppIcon(app.id, it) }
             draftIcon = null
             pendingAppRequest = null
             val apps = repository.launches()
@@ -455,6 +458,17 @@ class LaunchViewModel(
         )
     }
 
+    fun attestOwnership(appId: String) = runTask {
+        check(_state.value.capabilities.ownerAttestation) { "Owner confirmation is unavailable until the service is updated." }
+        val updated = repository.attestOwnership(appId)
+        val apps = repository.launches()
+        _state.value.copy(
+            selectedApp = updated,
+            launches = apps,
+            dashboards = _state.value.dashboards + (appId to repository.dashboard(appId)),
+        )
+    }
+
     fun showEvidence() {
         if (!_state.value.pilotConfig.cold_start_evidence_enabled) return
         _state.value = _state.value.copy(destination = LaunchDestination.EVIDENCE,
@@ -518,9 +532,32 @@ class LaunchViewModel(
             evidenceNotice = "Fix declared; a passing retest is still required")
     }
 
+    fun updateTesterGroupAccess(email: String, status: String) = runTask {
+        val oldEmail = _state.value.testerGroupAccess?.play_email
+        val access = repository.updateTesterGroupAccess(email.trim(), status)
+        val assignments = repository.todaysAssignments()
+        val accountChanged = oldEmail != access.play_email
+        val selected = _state.value.selectedAssignment?.let { current ->
+            assignments.firstOrNull { it.id == current.id }
+                ?: if (accountChanged) current.copy(status = "ASSIGNED") else current
+        }
+        _state.value.copy(
+            testerGroupAccess = access,
+            todayAssignments = assignments,
+            selectedAssignment = selected,
+            selectedMission = if (accountChanged) null else _state.value.selectedMission,
+            destination = if (accountChanged && selected != null && _state.value.destination == LaunchDestination.MISSION) LaunchDestination.ASSIGNMENT else _state.value.destination,
+        )
+    }
+
+    fun refreshTesterGroupAccess() = runTask {
+        _state.value.copy(testerGroupAccess = repository.testerGroupAccess())
+    }
+
     fun showToday() = runTask {
         _state.value.copy(
             destination = LaunchDestination.TODAY_TESTS,
+            testerGroupAccess = repository.testerGroupAccess(),
             pilotSurface = PilotSurface.NONE,
             todayAssignments = repository.todaysAssignments(),
         )
@@ -727,28 +764,10 @@ class LaunchViewModel(
 
     fun showInvite() {
         val app = _state.value.selectedApp ?: _state.value.launches.firstOrNull()
-        _state.value = _state.value.copy(pilotSurface = PilotSurface.INVITE, error = null)
-        if (_state.value.invite == null) {
-            runTask {
-                val invite = app?.let { repository.createInvite(it.id) }
-                    ?: repository.createCircleInvite()
-                _state.value.copy(
-                    pilotSurface = PilotSurface.INVITE,
-                    invite = invite,
-                )
-            }
-        }
+        _state.value = _state.value.copy(selectedApp = app, pilotSurface = PilotSurface.INVITE, error = null)
     }
 
-    fun refreshInvite() = runTask {
-        val app = _state.value.selectedApp ?: _state.value.launches.firstOrNull()
-        val invite = app?.let { repository.createInvite(it.id) }
-            ?: repository.createCircleInvite()
-        _state.value.copy(
-            pilotSurface = PilotSurface.INVITE,
-            invite = invite,
-        )
-    }
+    fun refreshInvite() = showInvite()
 
     fun createInvite() = showInvite()
 
@@ -795,7 +814,8 @@ class LaunchViewModel(
             LaunchDestination.EVIDENCE_DETAIL -> _state.value.evidenceDetailReturn
             LaunchDestination.EVIDENCE_RETEST -> LaunchDestination.EVIDENCE_DETAIL
             LaunchDestination.EVIDENCE_HISTORY -> LaunchDestination.MISSION
-            LaunchDestination.MY_LAUNCHES -> LaunchDestination.MY_LAUNCHES
+            LaunchDestination.MY_LAUNCHES -> LaunchDestination.COMMUNITY_HOME
+            LaunchDestination.COMMUNITY_HOME -> LaunchDestination.COMMUNITY_HOME
         }
         _state.value = _state.value.copy(destination = target, error = null)
     }
@@ -835,3 +855,9 @@ class LaunchViewModel(
         runTask { block(checkNotNull(_state.value.selectedMission)) }
     }
 }
+
+internal fun additionalAppCheckoutUnavailable(state: LaunchUiState): LaunchUiState = state.copy(
+    pilotSurface = PilotSurface.NONE,
+    pendingPayment = null,
+    error = "Additional app checkout is unavailable. No payment was taken; existing paid entitlements are unchanged.",
+)

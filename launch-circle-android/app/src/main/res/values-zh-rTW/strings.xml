@@ -271,4 +271,13 @@
     <string name="mission_prompt_generic">完成指派的測試並分享回饋。</string>
     <string name="publisher_account_unlimited">已验证的 Google Play 发布者 · 应用数量不限</string>
     <string name="verified_play_publisher_unlimited">已验证的 Google Play 发布者 · 应用数量不限</string>
+    <string name="app_version_label">应用版本</string>
+    <string name="public_pool_action">寻找测试者 / 测试其他应用</string>
+    <string name="public_pool_help">发布你的应用供志愿者测试，或选择一个应用进行测试。无需邀请码。Google Play 资格请在 Play Console 中确认。</string>
+    <string name="private_circle_optional">可选：邀请认识的人</string>
+    <string name="private_invite_action">邀请朋友或团队成员（可选）</string>
+    <string name="test_enrollment_steps">1. 打开 Play 测试链接，使用这台手机上的 Google Play 账号加入。\n2. 从 Google Play 安装，然后返回确认。\n3. 完成下方测试，并如实提交实际结果。这些确认是你的报告，不代表 Google Play 已核验。</string>
+    <string name="add_app_closed_testing_link_help">貼上 Play Console 提供的任一測試人員連結：「Join on Android」或「Join on the web」。這裡只檢查連結格式，不會驗證封閉測試資格。</string>
+    <string name="add_app_closed_testing_link_invalid">請輸入有效的 Play Console 測試人員連結（Join on Android 或 Join on the web），並確認包含應用程式套件名稱。這裡只檢查連結格式，不會驗證封閉測試資格。</string>
+    <string name="add_app_closed_testing_link_placeholder">Play Console 測試人員連結</string>
 </resources>

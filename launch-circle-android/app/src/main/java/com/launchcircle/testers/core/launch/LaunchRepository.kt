@@ -21,10 +21,15 @@ import com.launchcircle.testers.core.model.TestMission
 import com.launchcircle.testers.core.model.TestAssignment
 import com.launchcircle.testers.core.model.TesterAssignment
 import com.launchcircle.testers.core.network.LaunchCircleApi
+import com.launchcircle.testers.core.network.ApiCapabilities
 import com.launchcircle.testers.core.storage.TokenStore
 import retrofit2.HttpException
 
 interface LaunchRepository {
+    suspend fun capabilities(): ApiCapabilities = ApiCapabilities.Unsupported
+    suspend fun appIntakes(): List<com.launchcircle.testers.core.model.AppIntakeStatus> = emptyList()
+    suspend fun submitAppIntake(request: com.launchcircle.testers.core.model.AppIntakeRequest): com.launchcircle.testers.core.model.AppIntakeStatus = error("App review requires an online account")
+
     suspend fun setAppIcon(appId: String, data: String?): LaunchApp = error("Icon upload requires an online account")
 
     suspend fun evidenceRuns(missionId: String): List<com.launchcircle.testers.core.model.EvidenceRunFull> = error("Evidence pilot is not supported")
@@ -42,9 +47,12 @@ interface LaunchRepository {
     suspend fun submitMissionRun(missionId: String, request: com.launchcircle.testers.core.model.MissionRunRequest): com.launchcircle.testers.core.model.MissionRunRecord = error("Evidence pilot is not supported")
     suspend fun recordEnrollmentEvidence(assignmentId: String): Unit = error("Evidence pilot is not supported")
 
+    suspend fun testerGroupAccess(): com.launchcircle.testers.core.model.TesterGroupAccess = com.launchcircle.testers.core.model.TesterGroupAccess()
+    suspend fun updateTesterGroupAccess(email: String, status: String): com.launchcircle.testers.core.model.TesterGroupAccess = error("Connect to the live service to confirm group access")
     suspend fun pilotConfig(): PilotConfig
     suspend fun launches(): List<LaunchApp>
     suspend fun createApp(request: CreateAppRequest): LaunchApp
+    suspend fun attestOwnership(appId: String): LaunchApp
     suspend fun createAdditionalAppCheckout(developerAccountId: String): AdditionalAppCheckout
     suspend fun additionalAppCheckout(purchaseId: String): AdditionalAppCheckout
     suspend fun createManagedCheckout(appId: String): ManagedCheckout
@@ -78,6 +86,12 @@ class RealLaunchRepository(
     private val tokenStore: TokenStore,
     private val refreshSession: suspend () -> Boolean,
 ) : LaunchRepository {
+    override suspend fun capabilities(): ApiCapabilities = runCatching {
+        val response = api.capabilities()
+        val payload = response.body()?.use { it.string() }
+        ApiCapabilities.fromHttpResult(response.isSuccessful, payload)
+    }.getOrDefault(ApiCapabilities.Unsupported)
+
     override suspend fun setAppIcon(appId: String, data: String?) = authenticated {
         if (data == null) api.importIcon(it, appId) else api.uploadIcon(it, appId, mapOf("data" to data))
     }
@@ -123,9 +137,14 @@ class RealLaunchRepository(
             ))
         Unit
     }
+    override suspend fun testerGroupAccess() = authenticated { api.testerGroupAccess(it) }
+    override suspend fun updateTesterGroupAccess(email: String, status: String) = authenticated { api.updateTesterGroupAccess(it, com.launchcircle.testers.core.model.TesterGroupAccessUpdate(email, status)) }
     override suspend fun pilotConfig() = api.pilotConfig()
     override suspend fun launches() = authenticated { api.apps(it) }
+    override suspend fun appIntakes() = authenticated { api.appIntakes(it) }
+    override suspend fun submitAppIntake(request: com.launchcircle.testers.core.model.AppIntakeRequest) = authenticated { api.submitAppIntake(it, request) }
     override suspend fun createApp(request: CreateAppRequest) = authenticated { api.createApp(it, request) }
+    override suspend fun attestOwnership(appId: String) = authenticated { api.attestOwnership(it, appId) }
     override suspend fun createAdditionalAppCheckout(developerAccountId: String) = authenticated {
         api.createAdditionalAppCheckout(it, AdditionalAppCheckoutRequest(developerAccountId))
     }

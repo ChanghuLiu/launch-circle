@@ -2,6 +2,7 @@ package com.launchcircle.testers.core.network
 
 import com.launchcircle.testers.core.model.DeviceUpdateRequest
 import com.launchcircle.testers.core.model.CreateAppRequest
+import com.launchcircle.testers.core.model.OwnershipAttestationRequest
 import com.launchcircle.testers.core.model.AdditionalAppCheckout
 import com.launchcircle.testers.core.model.AdditionalAppCheckoutRequest
 import com.launchcircle.testers.core.model.GooglePlayPurchaseVerification
@@ -41,6 +42,9 @@ import retrofit2.http.Path
 import retrofit2.http.PUT
 
 interface LaunchCircleApi {
+    @GET("capabilities")
+    suspend fun capabilities(): retrofit2.Response<okhttp3.ResponseBody>
+
     @retrofit2.http.POST("apps/{appId}/icon")
     suspend fun uploadIcon(@retrofit2.http.Header("Authorization") auth: String, @retrofit2.http.Path("appId") appId: String, @retrofit2.http.Body body: Map<String, String>): com.launchcircle.testers.core.model.LaunchApp
     @retrofit2.http.POST("apps/{appId}/icon/google-play")
@@ -56,7 +60,7 @@ interface LaunchCircleApi {
     @GET("apps/{appId}/app-groups")
     suspend fun ownerAppGroups(@Header("Authorization") auth: String, @Path("appId") appId: String): com.launchcircle.testers.core.model.OwnerAppGroups
     @POST("apps/{appId}/app-groups/{groupId}/join")
-    suspend fun joinOwnerAppGroup(@Header("Authorization") auth: String, @Path("appId") appId: String, @Path("groupId") groupId: String, @Body body: com.launchcircle.testers.core.model.AppGroupConsent): com.launchcircle.testers.core.model.AppGroupJoinResult
+    suspend fun joinOwnerAppGroup(@Header("Authorization") auth: String, @Path("appId") appId: String, @Path("groupId") groupId: String, @retrofit2.http.Body body: com.launchcircle.testers.core.model.AppGroupConsent): com.launchcircle.testers.core.model.AppGroupJoinResult
     @POST("app-groups/{groupId}/leave")
     suspend fun leaveAppGroup(@Header("Authorization") auth: String, @Path("groupId") groupId: String): Map<String, Any>
     @POST("app-groups/{groupId}/join")
@@ -67,6 +71,8 @@ interface LaunchCircleApi {
     suspend fun setPoolPreference(@Header("Authorization") auth: String, @Body body: com.launchcircle.testers.core.model.PoolOptIn): com.launchcircle.testers.core.model.PoolPreference
     @GET("tester-pool/apps")
     suspend fun poolOpportunities(@Header("Authorization") auth: String): List<com.launchcircle.testers.core.model.PoolOpportunity>
+    @GET("tester-pool/apps")
+    suspend fun communityApps(@Header("Authorization") auth: String): List<com.launchcircle.testers.core.model.PoolOpportunity>
     @GET("apps/{appId}/supply")
     suspend fun poolSupply(@Header("Authorization") auth: String, @Path("appId") appId: String): com.launchcircle.testers.core.model.PoolSupply
     @POST("apps/{appId}/pool-listing")
@@ -106,6 +112,12 @@ interface LaunchCircleApi {
 
     @GET("android-version")
     suspend fun androidVersion(): com.launchcircle.testers.feature.launch.AndroidVersionPolicy
+
+    @GET("tester-group-access")
+    suspend fun testerGroupAccess(@Header("Authorization") authorization: String): com.launchcircle.testers.core.model.TesterGroupAccess
+
+    @retrofit2.http.PUT("tester-group-access")
+    suspend fun updateTesterGroupAccess(@Header("Authorization") authorization: String, @Body body: com.launchcircle.testers.core.model.TesterGroupAccessUpdate): com.launchcircle.testers.core.model.TesterGroupAccess
 
     @GET("pilot-config")
     suspend fun pilotConfig(): PilotConfig
@@ -148,6 +160,13 @@ interface LaunchCircleApi {
 
     @POST("apps")
     suspend fun createApp(@Header("Authorization") authorization: String, @Body body: CreateAppRequest): LaunchApp
+
+    @POST("apps/{appId}/ownership-attestation")
+    suspend fun attestOwnership(
+        @Header("Authorization") authorization: String,
+        @Path("appId") appId: String,
+        @Body body: OwnershipAttestationRequest = OwnershipAttestationRequest(),
+    ): LaunchApp
 
     @POST("payments/additional-app-checkout")
     suspend fun createAdditionalAppCheckout(

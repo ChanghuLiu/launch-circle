@@ -262,4 +262,13 @@
     <string name="mission_prompt_generic">배정된 테스트를 완료하고 피드백을 공유하세요.</string>
     <string name="publisher_account_unlimited">인증된 Google Play 게시자 · 앱 수 제한 없음</string>
     <string name="verified_play_publisher_unlimited">인증된 Google Play 게시자 · 앱 수 제한 없음</string>
+    <string name="app_version_label">앱 버전</string>
+    <string name="public_pool_action">테스터 찾기 / 다른 앱 테스트</string>
+    <string name="public_pool_help">자원 테스터에게 앱을 공개하거나 테스트할 앱을 선택하세요. 초대 코드는 필요하지 않습니다. Google Play 자격은 Play Console에서 확인하세요.</string>
+    <string name="private_circle_optional">선택사항: 아는 사람 초대</string>
+    <string name="private_invite_action">친구 또는 팀원 초대 (선택사항)</string>
+    <string name="test_enrollment_steps">1. Play 테스트 링크를 열고 이 휴대전화의 Google Play 계정으로 참여하세요.\n2. Google Play에서 설치한 뒤 돌아와 확인하세요.\n3. 아래 테스트를 수행하고 실제 결과를 제출하세요. 이 확인은 사용자 보고이며 Google Play 검증이 아닙니다.</string>
+    <string name="add_app_closed_testing_link_help">Play Console 테스터 링크인 Join on Android 또는 Join on the web 중 하나를 붙여넣으세요. 링크 형식만 확인하며 비공개 테스트 자격은 확인하지 않습니다.</string>
+    <string name="add_app_closed_testing_link_invalid">앱 패키지 이름이 포함된 올바른 Play Console Join on Android 또는 Join on the web 링크를 입력하세요. 링크 형식만 확인하며 비공개 테스트 자격은 확인하지 않습니다.</string>
+    <string name="add_app_closed_testing_link_placeholder">Play Console 테스터 링크</string>
 </resources>

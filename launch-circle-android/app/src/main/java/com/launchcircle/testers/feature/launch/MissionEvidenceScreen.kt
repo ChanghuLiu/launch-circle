@@ -35,37 +35,81 @@ fun EvidenceAssignmentScreen(
     assignment: TestAssignment,
     missions: List<TestMission>,
     loading: Boolean,
+    groupReady: Boolean,
+    sharedGroupUrl: String,
+    accessCard: @Composable () -> Unit,
     onOptIn: () -> Unit,
     onInstalled: () -> Unit,
     onMission: (TestMission) -> Unit,
 ) {
     val uri = LocalUriHandler.current
+    val needsGroupMembership = assignment.status == "ASSIGNED" && !assignment.google_group_url.isNullOrBlank() && assignment.google_group_url != sharedGroupUrl
+    var groupMembershipConfirmed by rememberSaveable(assignment.id) { mutableStateOf(!needsGroupMembership) }
+    var playLinkOpened by rememberSaveable(assignment.id) { mutableStateOf(false) }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(assignment.app_name, style = MaterialTheme.typography.headlineMedium)
-        Text(stringResource(R.string.evidence_guided_test))
-        Text(stringResource(R.string.test_enrollment_steps))
-        if (assignment.status == "ASSIGNED") assignment.google_group_url?.let { groupUrl ->
-            Text("First-time testers: join this app's Google Group with the same Google account used by Play Store. If already a member, continue to the Play test link.")
-            OutlinedButton(onClick = { uri.openUri(groupUrl) }, enabled = !loading, modifier = Modifier.fillMaxWidth()) {
-                Text("Join Google Group for this app")
-            }
+        Text(lcText("Follow these steps in order. Your progress is saved to your account.", "按顺序完成以下步骤，进度会保存到你的账号。"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        TestFlowStep(1, lcText("Google Group", "Google 群组"), lcText("Join once with your Play account", "使用 Play 账号加入一次"), complete = groupReady, current = !groupReady)
+        accessCard()
+        if (!groupReady) {
+            Text(lcText("Complete the group step above to unlock this app’s Play test link.", "完成上方群组步骤后，即可打开这个 App 的 Play 测试链接。"))
+            return@Column
         }
+        if (needsGroupMembership) {
+            Text(
+                lcText("This app also needs its own Google Group", "这个 App 还要求加入它自己的 Google 群组"),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                lcText(
+                    "Use the same Google account as Play Store. If you have already joined, skip to the confirmation below. Wait for approval if Google Groups shows a pending request.",
+                    "请使用与 Play 商店相同的 Google 账号。如果你已加入，可直接在下方确认；如果 Google 群组显示申请待批准，请先等待批准。",
+                ),
+            )
+            OutlinedButton(
+                onClick = { uri.openUri(checkNotNull(assignment.google_group_url)) },
+                enabled = !loading,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(lcText("Open group join link", "打开群组加入链接")) }
+            Text(
+                lcText(
+                    "Launch Circle cannot verify group membership automatically.",
+                    "Launch Circle 无法自动核实群组成员身份。",
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Button(
+                onClick = { groupMembershipConfirmed = true },
+                enabled = !loading,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(lcText("I have joined this group", "我已加入此群组")) }
+        }
+
+        TestFlowStep(2, lcText("Join this app’s Play test", "加入此 App 的 Play 闭测"), lcText("Choose Become a tester on Google Play", "在 Google Play 页面选择成为测试者"), complete = assignment.status != "ASSIGNED", current = assignment.status == "ASSIGNED")
+        Text(lcText("Joining the Google Group does not enroll you in this app. Use the same Play account.", "加入 Google 群组不会自动加入这个 App，请继续使用同一个 Play 账号。"), style = MaterialTheme.typography.bodySmall)
         OutlinedButton(
-            onClick = { uri.openUri(assignment.opt_in_url) },
-            enabled = !loading, modifier = Modifier.fillMaxWidth(),
+            onClick = { uri.openUri(assignment.opt_in_url); playLinkOpened = true },
+            enabled = !loading && groupReady && groupMembershipConfirmed,
+            modifier = Modifier.fillMaxWidth(),
         ) { Text(stringResource(R.string.open_play_testing_link)) }
         if (assignment.status == "ASSIGNED") {
-            Button(onClick = onOptIn, enabled = !loading, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.confirm_opt_in))
-            }
-        } else if (assignment.status == "OPTED_IN") {
+            Button(
+                onClick = onOptIn,
+                enabled = !loading && groupReady && groupMembershipConfirmed && playLinkOpened,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(stringResource(R.string.confirm_opt_in)) }
+        }
+        TestFlowStep(3, lcText("Install from Google Play", "从 Google Play 安装"), lcText("Install and open the app, then return here", "安装并打开应用，然后返回这里"), complete = assignment.status in setOf("INSTALLED", "ACTIVE", "COMPLETED"), current = assignment.status == "OPTED_IN")
+        if (assignment.status == "OPTED_IN") {
             Button(onClick = onInstalled, enabled = !loading, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.confirm_installed))
             }
         }
+        TestFlowStep(4, lcText("Test and send feedback", "完成测试并提交反馈"), lcText("Follow the mission and record what happened", "按任务要求操作，并记录实际结果"), current = assignment.status in setOf("INSTALLED", "ACTIVE"))
         missions.forEach { mission ->
             OutlinedButton(
                 onClick = { onMission(mission) },

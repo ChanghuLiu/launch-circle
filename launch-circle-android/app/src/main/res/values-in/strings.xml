@@ -262,4 +262,13 @@
     <string name="mission_prompt_generic">Selesaikan pengujian yang diberikan dan bagikan masukan.</string>
     <string name="publisher_account_unlimited">Penerbit Google Play terverifikasi · aplikasi tanpa batas</string>
     <string name="verified_play_publisher_unlimited">Penerbit Google Play terverifikasi · aplikasi tanpa batas</string>
+    <string name="app_version_label">Versi aplikasi</string>
+    <string name="public_pool_action">Cari penguji / uji aplikasi lain</string>
+    <string name="public_pool_help">Publikasikan aplikasi untuk penguji sukarela atau pilih aplikasi untuk diuji. Kode undangan tidak diperlukan. Periksa kelayakan Google Play di Play Console.</string>
+    <string name="private_circle_optional">Opsional: undang orang yang Anda kenal</string>
+    <string name="private_invite_action">Undang teman atau rekan tim (opsional)</string>
+    <string name="test_enrollment_steps">1. Buka tautan uji Play dan bergabung menggunakan akun Google Play di ponsel ini.\n2. Instal dari Google Play, lalu kembali untuk mengonfirmasi.\n3. Jalankan pengujian di bawah dan laporkan kejadian sebenarnya. Konfirmasi ini adalah laporan Anda, bukan verifikasi Google Play.</string>
+    <string name="add_app_closed_testing_link_help">Tempel salah satu tautan penguji dari Play Console: Join on Android atau Join on the web. Ini hanya memeriksa format tautan, bukan kelayakan closed testing.</string>
+    <string name="add_app_closed_testing_link_invalid">Masukkan tautan Play Console Join on Android atau Join on the web yang valid beserta nama paket aplikasi. Ini hanya memeriksa format tautan, bukan kelayakan closed testing.</string>
+    <string name="add_app_closed_testing_link_placeholder">Tautan penguji Play Console</string>
 </resources>

@@ -2,6 +2,7 @@ package com.launchcircle.testers
 
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import java.util.UUID
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
@@ -9,6 +10,8 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -47,27 +50,46 @@ class MainActivity : ComponentActivity() {
     private var versionChecking by mutableStateOf(true)
     private var versionFailed by mutableStateOf(false)
     private var versionJob: kotlinx.coroutines.Job? = null
+    private var lastVersionCheckAtMs = 0L
+    private val versionCheckMinIntervalMs = 300_000L
 
     private fun checkAppVersion() {
-        versionJob?.cancel()
-        versionChecking = true
-        versionJob = lifecycleScope.launch {
-            do {
-                try {
-                    val policy = kotlinx.coroutines.withTimeout(12_000) { versionApi.androidVersion() }
-                    require(policy.latest_version_code > 0 && policy.latest_version_name.isNotBlank())
-                    versionPolicy = policy
-                    versionFailed = false
-                } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
-                    versionFailed = true
-                } catch (e: kotlinx.coroutines.CancellationException) {
-                    throw e
-                } catch (_: Exception) {
-                    versionFailed = true
-                } finally { versionChecking = false }
-                kotlinx.coroutines.delay(300_000)
-            } while (true)
+        if (BuildConfig.USE_DEMO_REPOSITORY) {
+            versionPolicy = com.launchcircle.testers.feature.launch.AndroidVersionPolicy(
+                BuildConfig.VERSION_CODE,
+                BuildConfig.VERSION_NAME,
+                "",
+            )
+            versionFailed = false
+            versionChecking = false
+            return
         }
+        val now = SystemClock.elapsedRealtime()
+        if (versionPolicy != null && now - lastVersionCheckAtMs < versionCheckMinIntervalMs) return
+        versionJob?.cancel()
+        // Only block first launch while the installed version is unknown. Foreground
+        // rechecks must not cover an already-validated Home screen.
+        versionChecking = versionPolicy == null
+        lastVersionCheckAtMs = now
+        versionJob = lifecycleScope.launch {
+            try {
+                val policy = kotlinx.coroutines.withTimeout(12_000) { versionApi.androidVersion() }
+                require(policy.latest_version_code > 0 && policy.latest_version_name.isNotBlank())
+                versionPolicy = policy
+                versionFailed = false
+            } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
+                versionFailed = true
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                versionFailed = true
+            } finally { versionChecking = false }
+        }
+    }
+
+    private fun retryAppVersionCheck() {
+        lastVersionCheckAtMs = 0L
+        checkAppVersion()
     }
 
     override fun onResume() {
@@ -112,7 +134,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             LaunchCircleTheme {
-                com.launchcircle.testers.feature.launch.RequireCurrentVersion(versionPolicy, versionChecking, versionFailed, ::checkAppVersion) {
+                com.launchcircle.testers.feature.launch.RequireCurrentVersion(versionPolicy, versionChecking, versionFailed, ::retryAppVersionCheck) {
                 val pilotPreferences = getSharedPreferences("launch_circle_pilot", MODE_PRIVATE)
                 var onboardingComplete by rememberSaveable {
                     mutableStateOf(pilotPreferences.getBoolean("onboarding_complete", false))
@@ -215,19 +237,59 @@ private fun AppRoot(
             AppDestination.PROFILE -> ProfileScreen(state.profile, onSaveProfile)
             AppDestination.HOME -> {
                 var groupBack by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<(() -> Unit)?>(null) }
+                val communityAppsRequestScope = androidx.compose.runtime.rememberCoroutineScope()
+                val communityAppsCache = androidx.compose.runtime.remember(state.profile.id) {
+                    com.launchcircle.testers.feature.launch.CommunityAppsCache()
+                }
                 var poolOpen by rememberSaveable(state.profile.id) { mutableStateOf(false) }
+                var poolHome by rememberSaveable(state.profile.id) { mutableStateOf(true) }
                 var poolAppId by rememberSaveable(state.profile.id) { mutableStateOf<String?>(null) }
+                var guideStartSignal by rememberSaveable(state.profile.id) { mutableStateOf(0) }
+                val launchUi by launchViewModel.state.collectAsState()
                 fun closePool() {
                     poolOpen = false
                     launchViewModel.refresh()
                 }
                 androidx.activity.compose.BackHandler(enabled = poolOpen) { closePool() }
                 if (poolOpen) {
-                    androidx.compose.foundation.layout.Column(
-                        androidx.compose.ui.Modifier.fillMaxSize().navigationBarsPadding()
-                    ) {
-                        com.launchcircle.testers.feature.launch.LaunchAppHeader(onBack = { closePool() }, onGuideAction = { closePool(); launchViewModel.openGuideDestination(it, state.profile.login_email.equals("liuchanghu2018@gmail.com", ignoreCase = true)) })
-                        com.launchcircle.testers.feature.launch.SharedPoolScreen(apiBaseUrl, tokenStore, refreshSession, ownerAppId = poolAppId)
+                    if (!launchUi.capabilities.appGroupSelection) {
+                        androidx.compose.foundation.layout.Column(
+                            modifier = androidx.compose.ui.Modifier.fillMaxSize().padding(24.dp),
+                            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+                        ) {
+                            androidx.compose.material3.Text("服务端更新后可用 / App Groups will be available after the service is updated.")
+                            androidx.compose.material3.TextButton(onClick = { poolOpen = false }) {
+                                androidx.compose.material3.Text("Back")
+                            }
+                        }
+                    } else androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.fillMaxSize()) {
+                        com.launchcircle.testers.feature.launch.LaunchAppHeader(
+                            guideAccountId = state.profile.id.toString(),
+                            testerAccess = { com.launchcircle.testers.feature.launch.TesterGroupAccessCard(launchUi.testerGroupAccess, state.profile.login_email, launchUi.loading, launchViewModel::updateTesterGroupAccess, launchViewModel::refreshTesterGroupAccess) },
+                            onBack = { if (groupBack != null) groupBack?.invoke() else closePool() },
+                            onAccountAction = { closePool(); launchViewModel.showAccount() },
+                            onGuideAction = { step -> if (step != 3) { closePool(); launchViewModel.openGuideDestination(step, state.profile.login_email.equals("liuchanghu2018@gmail.com", ignoreCase = true)) } },
+                        )
+                        androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.weight(1f)) {
+                            com.launchcircle.testers.feature.launch.SharedPoolScreen(
+                                apiBaseUrl, tokenStore, refreshSession,
+                                home = poolHome,
+                                ownerAppId = poolAppId,
+                                onAdd = { closePool(); launchViewModel.openGuideDestination(5, state.profile.login_email.equals("liuchanghu2018@gmail.com", ignoreCase = true)) },
+                                onTests = { closePool(); launchViewModel.showToday() },
+                                onLaunch = { closePool(); launchViewModel.showHome() },
+                                onBackChange = { groupBack = it },
+                                onSessionExpired = authViewModel::expireSession,
+                            )
+                        }
+                        com.launchcircle.testers.feature.launch.LaunchNavigation(
+                            destination = com.launchcircle.testers.feature.launch.LaunchDestination.TESTERS,
+                            onHome = { closePool(); launchViewModel.showCommunityHome() },
+                            onTests = { closePool(); launchViewModel.showToday() },
+                            onMyLaunch = { closePool(); launchViewModel.showHome() },
+                            onCircle = { poolHome = true },
+                            circleSelected = true,
+                        )
                     }
                 } else LaunchWorkspace(
                     profile = state.profile,
@@ -236,16 +298,22 @@ private fun AppRoot(
                     deletionError = (accountDeletionState as? AccountDeletionUiState.Error)?.message,
                     onDeleteAccount = onDeleteAccount,
                     onLogout = onLogout,
-                    onSharedPool = { poolAppId = null; poolOpen = true },
-                    onViewMyGroup = { appId -> poolAppId = appId; poolOpen = true },
+                    onSharedPool = { poolAppId = null; poolHome = true; poolOpen = true },
+                    onViewMyGroup = { appId -> poolAppId = appId; poolHome = false; poolOpen = true },
+                    guideStartSignal = guideStartSignal,
                     homeBack = groupBack,
                     communityHome = {
-                        com.launchcircle.testers.feature.launch.SharedPoolScreen(
-                            apiBaseUrl, tokenStore, refreshSession, home = true,
+                        com.launchcircle.testers.feature.launch.CommunityAppsScreen(
+                            apiBaseUrl, tokenStore, refreshSession,
                             onAdd = launchViewModel::showAddApp,
                             onTests = launchViewModel::showToday,
                             onLaunch = launchViewModel::showHome,
-                            onBackChange = { groupBack = it },
+                            onGroup = { poolAppId = null; poolHome = true; poolOpen = true },
+                            showGroups = launchUi.capabilities.appGroupSelection,
+                            onSessionExpired = authViewModel::expireSession,
+                            onBeginnerGuide = { guideStartSignal++ },
+                            requestScope = communityAppsRequestScope,
+                            cache = communityAppsCache,
                         )
                     },
                 )

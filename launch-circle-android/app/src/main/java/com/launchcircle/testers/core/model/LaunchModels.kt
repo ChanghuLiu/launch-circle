@@ -33,6 +33,9 @@ data class LaunchApp(
     val play_developer_account_id: String? = null,
     val entitlement_status: String = "LEGACY",
     val developer_account_unlimited: Boolean = false,
+    val ownership_authorized: Boolean = false,
+    val ownership_attested_at: String? = null,
+    val ownership_attestation_status: String = "PENDING_ATTESTATION",
     val icon_url: String? = null,
 )
 
@@ -40,12 +43,16 @@ data class CreateAppRequest(
     val name: String,
     val package_name: String,
     val opt_in_url: String,
+    val icon_data: String,
     val google_group_url: String?,
     val google_group_mode: String = "LAUNCH_CIRCLE",
     val core_workflow_steps: List<String> = emptyList(),
     val play_developer_account_id: String = "",
     val circle_id: String? = null,
+    val ownership_authorized: Boolean = false,
 )
+
+data class OwnershipAttestationRequest(val confirmed: Boolean = true)
 
 data class AdditionalAppCheckoutRequest(val play_developer_account_id: String)
 
@@ -290,3 +297,15 @@ data class PilotConfig(
     val google_group_join_url: String = "https://groups.google.com/g/launch-circle-12-testers",
     val invite_base_url: String = "https://launchcircle.app/join",
 )
+
+
+data class TesterGroupAccess(
+    val group_email: String = "launch-circle-12-testers@googlegroups.com",
+    val group_url: String = "https://groups.google.com/g/launch-circle-12-testers",
+    val play_email: String? = null,
+    val status: String = "NOT_JOINED",
+    val confirmed_at: String? = null,
+    val verification: String = "USER_REPORTED",
+) { val ready: Boolean get() = status == "SELF_CONFIRMED" && !play_email.isNullOrBlank() && confirmed_at != null }
+
+data class TesterGroupAccessUpdate(val play_email: String, val status: String)

@@ -262,4 +262,13 @@
     <string name="mission_prompt_generic">Выполните назначенный тест и поделитесь отзывом.</string>
     <string name="publisher_account_unlimited">Подтверждённый издатель Google Play · неограниченное число приложений</string>
     <string name="verified_play_publisher_unlimited">Подтверждённый издатель Google Play · неограниченное число приложений</string>
+    <string name="app_version_label">Версия приложения</string>
+    <string name="public_pool_action">Найти тестировщиков / тестировать другие приложения</string>
+    <string name="public_pool_help">Опубликуйте приложение для добровольных тестировщиков или выберите приложение для тестирования. Код приглашения не нужен. Проверьте доступность в Google Play Console.</string>
+    <string name="private_circle_optional">Необязательно: пригласить знакомых</string>
+    <string name="private_invite_action">Пригласить друзей или коллег (необязательно)</string>
+    <string name="test_enrollment_steps">1. Откройте ссылку на тест и присоединитесь с аккаунтом Google Play на этом телефоне.\n2. Установите приложение из Google Play и вернитесь, чтобы подтвердить.\n3. Выполните тест ниже и сообщите, что произошло на самом деле. Это ваши отчёты, а не проверка Google Play.</string>
+    <string name="add_app_closed_testing_link_help">Вставьте одну из ссылок для тестировщиков из Play Console: Join on Android или Join on the web. Проверяется только формат ссылки, а не право на участие в закрытом тестировании.</string>
+    <string name="add_app_closed_testing_link_invalid">Укажите действительную ссылку Play Console Join on Android или Join on the web с именем пакета приложения. Проверяется только формат ссылки, а не право на участие в закрытом тестировании.</string>
+    <string name="add_app_closed_testing_link_placeholder">Ссылка для тестировщиков Play Console</string>
 </resources>

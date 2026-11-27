@@ -7,8 +7,15 @@ object ApiFactory {
     fun create(baseUrl: String): LaunchCircleApi = Retrofit.Builder()
         .baseUrl(baseUrl)
         .client(okhttp3.OkHttpClient.Builder().addInterceptor { chain ->
-            val timed = if (chain.request().url.encodedPath.endsWith("/icon/google-play")) chain.withReadTimeout(60, java.util.concurrent.TimeUnit.SECONDS) else chain
-            timed.proceed(chain.request())
+            val request = chain.request().newBuilder()
+                .header("X-Client-Version", com.launchcircle.testers.BuildConfig.VERSION_NAME)
+                .header("X-Client-Platform", "android")
+                .header("X-Device-Type", "mobile")
+                .build()
+            val timed = if (request.url.encodedPath.endsWith("/icon/google-play")) {
+                chain.withReadTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            } else chain
+            timed.proceed(request)
         }.build())
         .addConverterFactory(GsonConverterFactory.create())
         .build()

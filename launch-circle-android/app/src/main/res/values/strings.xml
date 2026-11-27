@@ -106,18 +106,18 @@
     <string name="google_group_url">Google Group URL</string>
     <string name="use_email_tester_list">Use email tester list</string>
     <string name="manage_fallback_list_in_play_console">Manage a fallback list in Play Console.</string>
-    <string name="connect_tester_access">Connect tester access</string>
+    <string name="connect_tester_access">Set up tester access</string>
     <string name="launch_circle_google_group">Launch Circle Google Group</string>
     <string name="add_group_in_play_console">Add the group in Play Console</string>
-    <string name="group_setup_step_open_console">1. Open Play Console</string>
-    <string name="group_setup_step_closed_testing">2. Closed testing</string>
-    <string name="group_setup_step_manage_testers">3. Manage testers</string>
-    <string name="group_setup_step_add_group">4. Add Google Group</string>
-    <string name="group_setup_step_enter_group">5. Enter: %1$s</string>
-    <string name="group_setup_step_save">6. Save</string>
-    <string name="group_setup_step_return_continue">7. Return here and continue</string>
-    <string name="play_console_user_confirmation_note">This is your confirmation. Launch Circle does not modify or verify Play Console.</string>
-    <string name="i_added_the_google_group">I’ve added the Google Group</string>
+    <string name="group_setup_step_open_console">1. Select this app</string>
+    <string name="group_setup_step_closed_testing">2. Open Closed testing and choose the track</string>
+    <string name="group_setup_step_manage_testers">3. Open Testers / Manage testers</string>
+    <string name="group_setup_step_add_group">4. Add a Google Group tester</string>
+    <string name="group_setup_step_enter_group">5. Enter this shared address: %1$s</string>
+    <string name="group_setup_step_save">6. Save the tester change</string>
+    <string name="group_setup_step_return_continue">7. Make sure a test release is available, then return here</string>
+    <string name="play_console_user_confirmation_note">Launch Circle cannot check this setting in Play Console. Confirm only after saving it for this app.</string>
+    <string name="i_added_the_google_group">I added the group to this app</string>
     <string name="do_this_later">I’ll do this later</string>
     <string name="my_launch">My Launch</string>
     <string name="waiting_for_testers">Waiting for testers</string>
@@ -192,6 +192,9 @@
     <string name="completion_saved">Your completion is saved.</string>
     <string name="mark_test_complete">Mark test complete</string>
     <string name="open_play_testing_link">Open Play Testing Link</string>
+    <string name="add_app_closed_testing_link_help">Paste either Play Console tester link: Join on Android or Join on the web. This checks link format only; closed-testing eligibility is not verified.</string>
+    <string name="add_app_closed_testing_link_invalid">Enter a valid Play Console Join on Android or Join on the web link with an app package name. This checks link format only; closed-testing eligibility is not verified.</string>
+    <string name="add_app_closed_testing_link_placeholder">Play Console tester link</string>
     <string name="confirm_opt_in">Confirm Opt-In</string>
     <string name="confirm_installed">Confirm Installed</string>
     <string name="your_mission">Your mission</string>
@@ -339,7 +342,5 @@
     <string name="public_pool_help">Publish your app for volunteers or choose an app to test. No invitation code is needed. Google Play eligibility must be checked in Play Console.</string>
     <string name="private_circle_optional">Optional: invite people you know</string>
     <string name="private_invite_action">Invite friends or teammates (optional)</string>
-    <string name="test_enrollment_steps">1. Open the Play test link and join using this phone’s Google Play account.
-2. Install from Google Play, then return and confirm.
-3. Run the test below and submit what actually happened. These confirmations are your reports, not Google Play verification.</string>
+    <string name="test_enrollment_steps">Join the tester Google Group → join this app’s Play test → install → test and send feedback. Use the same Google account throughout.</string>
 </resources>

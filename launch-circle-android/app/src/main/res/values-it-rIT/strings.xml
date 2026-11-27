@@ -262,4 +262,13 @@
     <string name="mission_prompt_generic">Completa il test assegnato e condividi il feedback.</string>
     <string name="publisher_account_unlimited">Editore Google Play verificato · app illimitate</string>
     <string name="verified_play_publisher_unlimited">Editore Google Play verificato · app illimitate</string>
+    <string name="app_version_label">Versione dell’app</string>
+    <string name="public_pool_action">Trova tester / prova altre app</string>
+    <string name="public_pool_help">Pubblica la tua app per i tester volontari oppure scegli un’app da provare. Non serve un codice invito. Verifica l’idoneità su Google Play Console.</string>
+    <string name="private_circle_optional">Facoltativo: invita persone che conosci</string>
+    <string name="private_invite_action">Invita amici o colleghi (facoltativo)</string>
+    <string name="test_enrollment_steps">1. Apri il link del test Play e partecipa con l’account Google Play di questo telefono.\n2. Installa da Google Play, poi torna e conferma.\n3. Esegui il test qui sotto e invia ciò che è successo davvero. Queste conferme sono segnalazioni, non verifiche di Google Play.</string>
+    <string name="add_app_closed_testing_link_help">Incolla uno dei link tester di Play Console: Join on Android oppure Join on the web. Viene controllato solo il formato, non l’idoneità al test chiuso.</string>
+    <string name="add_app_closed_testing_link_invalid">Inserisci un link Play Console valido, Join on Android o Join on the web, con il nome del pacchetto dell’app. Viene controllato solo il formato, non l’idoneità al test chiuso.</string>
+    <string name="add_app_closed_testing_link_placeholder">Link tester di Play Console</string>
 </resources>

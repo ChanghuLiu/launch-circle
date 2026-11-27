@@ -21,8 +21,8 @@ android {
         applicationId = "com.launchcircle.testers"
         minSdk = 27
         targetSdk = 36
-        versionCode = 20
-        versionName = "1.0.18"
+        versionCode = 46
+        versionName = "1.0.44"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -71,7 +71,19 @@ android {
 
     buildTypes {
         getByName("debug") {
-            if (providers.gradleProperty("launchCircleEvidencePilotBuild").orElse("false").get().toBoolean()) {
+            val uiPreviewBuild = providers.gradleProperty("launchCircleUiPreviewBuild").orElse("false").get().toBoolean()
+            val attestationPreviewBuild = providers.gradleProperty("launchCircleAttestationPreviewBuild").orElse("false").get().toBoolean()
+            if (uiPreviewBuild) {
+                applicationIdSuffix = ".uipreview"
+                versionNameSuffix = "-ui-preview"
+                buildConfigField("boolean", "USE_DEMO_REPOSITORY", "true")
+                buildConfigField("boolean", "ENABLE_DEVELOPMENT_AUTH", "true")
+            } else if (attestationPreviewBuild) {
+                applicationIdSuffix = ".attestationpreview"
+                versionNameSuffix = "-attestation-preview"
+                buildConfigField("boolean", "USE_DEMO_REPOSITORY", "true")
+                buildConfigField("boolean", "ENABLE_DEVELOPMENT_AUTH", "true")
+            } else if (providers.gradleProperty("launchCircleEvidencePilotBuild").orElse("false").get().toBoolean()) {
                 applicationIdSuffix = ".evidencepilot"
                 versionNameSuffix = "-evidencepilot"
                 // Device acceptance builds must exercise real customer authentication and data.

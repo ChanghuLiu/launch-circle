@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -54,40 +55,44 @@ fun FirstRunOnboarding(onComplete: () -> Unit) {
     var page by rememberSaveable { mutableIntStateOf(0) }
     val content = PilotOnboarding.pages[page]
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 20.dp),
-        verticalArrangement = Arrangement.Center,
+        Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 24.dp, vertical = 20.dp),
     ) {
-        Image(
-            painter = painterResource(R.drawable.launch_circle_logo),
-            contentDescription = stringResource(R.string.launch_circle_logo),
-            modifier = Modifier.size(80.dp),
-        )
-        Spacer(Modifier.height(16.dp))
-        Text(
-            stringResource(R.string.launch_circle),
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.primary,
-        )
-        Spacer(Modifier.height(20.dp))
-        Text(
-            when(page) { 0 -> lcText("Test apps together", "和开发者一起互测"); 1 -> lcText("Start with your app", "从添加自己的 App 开始"); else -> stringResource(content.title) },
-            style = MaterialTheme.typography.displaySmall,
-            fontWeight = FontWeight.Bold,
-        )
-        Text(
-            if (page == 1) lcText("Add your app, configure Play test access, then join your matched App Group. Each app still needs its own Play enrollment and installation.", "添加自己的 App、配置 Play 测试访问，再加入匹配的小组。每个 App 仍需分别加入 Play 测试并安装。") else stringResource(content.body),
-            style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.padding(top = 12.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(24.dp))
-        ProductionJourney()
-        Spacer(Modifier.height(24.dp))
-        Text(
-            stringResource(R.string.page_of_pages, page + 1, PilotOnboarding.pages.size),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Column(
+            Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Image(
+                painter = painterResource(R.drawable.launch_circle_logo),
+                contentDescription = stringResource(R.string.launch_circle_logo),
+                modifier = Modifier.size(80.dp),
+            )
+            Spacer(Modifier.height(16.dp))
+            Text(
+                stringResource(R.string.launch_circle),
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.height(20.dp))
+            Text(
+                when(page) { 0 -> lcText("Test apps together", "和开发者一起互测"); 1 -> lcText("Start with your app", "从添加自己的 App 开始"); else -> stringResource(content.title) },
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                if (page == 1) lcText("Add your app, configure Play test access, then join your matched App Group. Each app still needs its own Play enrollment and installation.", "添加自己的 App、配置 Play 测试访问，再加入匹配的小组。每个 App 仍需分别加入 Play 测试并安装。") else stringResource(content.body),
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.padding(top = 12.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(24.dp))
+            ProductionJourney()
+            Spacer(Modifier.height(24.dp))
+            Text(
+                stringResource(R.string.page_of_pages, page + 1, PilotOnboarding.pages.size),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         Button(
             onClick = {
                 if (page == PilotOnboarding.pages.lastIndex) onComplete() else page += 1
