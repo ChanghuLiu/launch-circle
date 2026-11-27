@@ -2,12 +2,12 @@ from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import func, select
-from tests.test_shared_pool import actor
 
 from app.core.database import SessionLocal
 from app.models.launch import App, DeveloperAccount
 from app.models.pool import AppIntake
 from app.services.intake import approve_intake
+from tests.test_shared_pool import actor
 
 
 def body(package="com.external.first", publisher="98765432101234567"):

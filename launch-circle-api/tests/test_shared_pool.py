@@ -51,7 +51,7 @@ def post(client, path, who, body=None):
 
 
 def open_app(client, aid, owner):
-    from app.api.admin import recruitment, RecruitmentUpdate
+    from app.api.admin import RecruitmentUpdate, recruitment
     with SessionLocal() as db:
         assert recruitment(aid, RecruitmentUpdate(enabled=True, reason="Complete app setup for recruitment"), db, True)["ok"]
 

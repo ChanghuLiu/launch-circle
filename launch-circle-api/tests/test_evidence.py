@@ -7,8 +7,8 @@ from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.models.evidence import EnrollmentEvidence
 from app.services.clock import aware
-from tests.test_pilot import create_launch, join_circle, register
 from tests.group_fixtures import seed_app_group_consent
+from tests.test_pilot import create_launch, join_circle, register
 
 
 @pytest.fixture

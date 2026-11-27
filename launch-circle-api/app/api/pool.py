@@ -14,7 +14,14 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.admin import AdminAppControl, AdminRecommendation
 from app.models.launch import App, BackendEvent, Circle, CircleMember, TesterAssignment
-from app.models.pool import AppGroup, AppGroupApp, AppGroupMember, AppGroupTaskQueue, PoolListing, TesterPoolPreference
+from app.models.pool import (
+    AppGroup,
+    AppGroupApp,
+    AppGroupMember,
+    AppGroupTaskQueue,
+    PoolListing,
+    TesterPoolPreference,
+)
 from app.models.user import User
 from app.services.assignments import assignment_day
 from app.services.circles import active_member_count

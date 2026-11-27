@@ -1,4 +1,5 @@
-from app.services.tester_access import require_tester_group, require_test_enrollment
+from app.services.tester_access import require_test_enrollment, require_tester_group
+
 """Opt-in pilot evidence APIs. They do not assert Google eligibility or grant rewards."""
 
 import hashlib

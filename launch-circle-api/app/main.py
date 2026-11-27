@@ -4,7 +4,6 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 import app.models
-from app.middleware.activity import user_activity_middleware
 from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
 from app.api.capabilities import router as capabilities_router
@@ -15,6 +14,7 @@ from app.api.pool import router as pool_router
 from app.api.users import router as users_router
 from app.core.config import get_settings
 from app.core.database import Base, engine, ensure_sqlite_phase1_schema
+from app.middleware.activity import user_activity_middleware
 
 settings = get_settings()
 Base.metadata.create_all(bind=engine)

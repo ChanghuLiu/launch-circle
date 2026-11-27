@@ -64,10 +64,10 @@ def test_recommendation_is_not_assignment_and_pause_preserves_work(operator):
     aid = campaign(owner)
     open_app(operator, aid, owner)
     post(operator, "/tester-pool/me", tester, {"enabled": True})
-    control = {"kind": "CUSTOMER", "priority": 95, "paused": False, "note": "First real customer"}
+    control = {"kind": "CUSTOMER", "priority": 95, "paused": False, "note": "First real customer", "reason": "Classify initial customer app"}
     assert operator.post(f"/admin/api/apps/{aid}/control", json=control, headers=HEADERS).status_code == 200
     path = f"/admin/api/apps/{aid}/recommend"
-    body = {"tester_id": tester[0], "enabled": True}
+    body = {"tester_id": tester[0], "enabled": True, "reason": "Surface voluntary opportunity"}
     for _ in range(2):
         r = operator.post(path, json=body, headers=HEADERS)
         assert r.status_code == 200 and r.json()["assignment_created"] is False
@@ -102,22 +102,22 @@ def test_consent_ready_limits_and_classification(operator):
     owner, tester = actor(), actor()
     aids = [campaign(owner) for _ in range(3)]
     path = f"/admin/api/apps/{aids[0]}/recommend"
-    assert operator.post(path, json={"tester_id": tester[0]}, headers=HEADERS).status_code == 409
+    assert operator.post(path, json={"tester_id": tester[0], "reason": "Surface voluntary opportunity"}, headers=HEADERS).status_code == 409
     for aid in aids:
         open_app(operator, aid, owner)
     post(operator, "/tester-pool/me", tester, {"enabled": True})
-    cfg = {"kind": "OWN", "priority": 10, "paused": False}
+    cfg = {"kind": "OWN", "priority": 10, "paused": False, "reason": "Set owner classification"}
     operator.post(f"/admin/api/apps/{aids[0]}/control", json=cfg, headers=HEADERS)
     assert operator.get("/admin/api/overview").json()["customer_count"] == 0
     cfg["kind"] = "SYNTHETIC"
     operator.post(f"/admin/api/apps/{aids[0]}/control", json=cfg, headers=HEADERS)
-    assert operator.post(path, json={"tester_id": tester[0]}, headers=HEADERS).status_code == 409
+    assert operator.post(path, json={"tester_id": tester[0], "reason": "Surface voluntary opportunity"}, headers=HEADERS).status_code == 409
     assert aids[0] not in [a["app_id"] for a in operator.get("/tester-pool/opportunities", headers=tester[1]).json()]
     for aid in aids[1:]:
         assert post(operator, f"/apps/{aid}/tester-pool/accept", tester).status_code == 200
     cfg["kind"] = "OWN"
     operator.post(f"/admin/api/apps/{aids[0]}/control", json=cfg, headers=HEADERS)
-    assert operator.post(path, json={"tester_id": tester[0]}, headers=HEADERS).status_code == 409
+    assert operator.post(path, json={"tester_id": tester[0], "reason": "Surface voluntary opportunity"}, headers=HEADERS).status_code == 409
     cfg["priority"] = 101
     assert operator.post(f"/admin/api/apps/{aids[0]}/control", json=cfg, headers=HEADERS).status_code == 422
 
@@ -172,11 +172,11 @@ def test_recommendation_order_priority_and_expiry(operator, monkeypatch):
     post(operator, "/tester-pool/me", tester, {"enabled": True})
     for aid, priority in zip(aids, [5, 90, 50], strict=True):
         operator.post(f"/admin/api/apps/{aid}/control", json={
-            "kind": "OWN", "priority": priority, "paused": False}, headers=HEADERS)
+            "kind": "OWN", "priority": priority, "paused": False, "reason": "Set app priority"}, headers=HEADERS)
     def found():
         return [r["app_id"] for r in operator.get("/tester-pool/opportunities", headers=tester[1]).json()]
     assert found() == [aids[1], aids[2], aids[0]]
-    operator.post(f"/admin/api/apps/{aids[0]}/recommend", json={"tester_id": tester[0]}, headers=HEADERS)
+    operator.post(f"/admin/api/apps/{aids[0]}/recommend", json={"tester_id": tester[0], "reason": "Surface voluntary opportunity"}, headers=HEADERS)
     assert found() == [aids[0], aids[1], aids[2]]
     with SessionLocal() as db:
         db.scalar(select(AdminSession)).expires_at = datetime.now(UTC) - timedelta(seconds=1)

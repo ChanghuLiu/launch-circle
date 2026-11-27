@@ -1,5 +1,6 @@
 """Create and retain verified SQLite backups without copying a live database file."""
 
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -38,6 +39,7 @@ def create_backup(source: Path, destination: Path, keep: int = 14) -> Path:
                 result = backup_db.execute("PRAGMA integrity_check").fetchone()
                 if result != ("ok",):
                     raise RuntimeError(f"backup integrity check failed: {result}")
+        os.chmod(temporary_path, 0o600)
         temporary_path.replace(final_path)
     finally:
         if temporary_path.exists():
