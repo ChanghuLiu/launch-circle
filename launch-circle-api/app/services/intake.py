@@ -6,11 +6,11 @@ from datetime import datetime
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from app.core.security import is_app_admin
 from app.models.launch import App, DeveloperAccount
 from app.models.pool import AppIntake
 from app.models.user import User
 from app.services.circles import ensure_owner_circle
+from app.core.security import is_app_admin
 
 
 def approve_intake(

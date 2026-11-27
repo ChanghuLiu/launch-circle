@@ -19,11 +19,15 @@ def register(client: TestClient, email: str, name: str) -> dict:
     assert response.status_code == 201, response.text
     token = response.json()["access_token"]
     profile = client.get("/me", headers={"Authorization": f"Bearer {token}"}).json()
-    return {
+    result = {
         "id": profile["id"],
         "email": email,
         "headers": {"Authorization": f"Bearer {token}"},
     }
+    # Existing scenario explicitly starts with a synthetic confirmed Play account.
+    confirmed = client.put("/tester-group-access", headers=result["headers"], json={"status": "SELF_CONFIRMED", "play_email": email})
+    assert confirmed.status_code == 200, confirmed.text
+    return result
 
 
 def create_circle_invite(client: TestClient, owner: dict, email: str | None = None) -> dict:
@@ -52,7 +56,7 @@ def test_owner_circle_persists_and_fifteen_active_members_are_capacity_bound(cli
     app_response = client.post(
         "/apps",
         headers=owner["headers"],
-        json={
+        json={"ownership_authorized": True, "icon_data": 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGPUjTrBwMDAxMDAwMDAAAAPQwFTH4I6DQAAAABJRU5ErkJggg==',
             "name": "Circle App",
             "package_name": "com.example.circleapp",
             "opt_in_url": "https://play.google.com/apps/testing/com.example.circleapp",
@@ -121,7 +125,7 @@ def test_joined_member_can_create_an_app_in_shared_circle_with_fourteen_tester_t
     created = client.post(
         "/apps",
         headers=member["headers"],
-        json={
+        json={"ownership_authorized": True, "icon_data": 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGPUjTrBwMDAxMDAwMDAAAAPQwFTH4I6DQAAAABJRU5ErkJggg==',
             "name": "Shared Circle App",
             "package_name": "com.example.sharedcircleapp",
             "opt_in_url": "https://play.google.com/apps/testing/com.example.sharedcircleapp",
@@ -138,18 +142,18 @@ def test_joined_member_can_create_an_app_in_shared_circle_with_fourteen_tester_t
         headers=member["headers"],
     )
     assert matched.status_code == 200, matched.text
-    assert matched.json()["assigned_now"] == 1
+    assert matched.json()["assigned_now"] == 0
     testers = client.get(
         f"/apps/{created.json()['id']}/testers",
         headers=member["headers"],
     )
-    assert [row["tester_id"] for row in testers.json()] == [owner["id"]]
+    assert testers.json() == []
 
     outsider = register(client, "shared-circle-outsider@example.com", "Outsider")
     denied = client.post(
         "/apps",
         headers=outsider["headers"],
-        json={
+        json={"ownership_authorized": True, "icon_data": 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGPUjTrBwMDAxMDAwMDAAAAPQwFTH4I6DQAAAABJRU5ErkJggg==',
             "name": "Unauthorized Circle App",
             "package_name": "com.example.unauthorizedcircleapp",
             "opt_in_url": "https://play.google.com/apps/testing/com.example.unauthorizedcircleapp",
@@ -170,7 +174,7 @@ def test_matching_only_uses_active_members_of_the_app_circle(client):
     app_response = client.post(
         "/apps",
         headers=owner["headers"],
-        json={
+        json={"ownership_authorized": True, "icon_data": 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGPUjTrBwMDAxMDAwMDAAAAPQwFTH4I6DQAAAABJRU5ErkJggg==',
             "name": "Matching App",
             "package_name": "com.example.matchingapp",
             "opt_in_url": "https://play.google.com/apps/testing/com.example.matchingapp",
@@ -183,16 +187,16 @@ def test_matching_only_uses_active_members_of_the_app_circle(client):
 
     matched = client.post(f"/apps/{app_id}/match-testers", headers=owner["headers"])
     assert matched.status_code == 200
-    assert matched.json()["assigned_now"] == 1
+    assert matched.json()["assigned_now"] == 0
     rows = client.get(f"/apps/{app_id}/testers", headers=owner["headers"]).json()
-    assert [row["tester_id"] for row in rows] == [member["id"]]
+    assert rows == []
 
 
 def test_admin_can_read_other_app_circle_without_joining(client, monkeypatch):
     owner = register(client, "owner-circle-access@example.com", "Owner")
     admin = register(client, "admin-circle-access@example.com", "Admin")
     outsider = register(client, "outsider-circle-access@example.com", "Outsider")
-    response = client.post("/apps", headers=owner["headers"], json={
+    response = client.post("/apps", headers=owner["headers"], json={"ownership_authorized": True, "icon_data": 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGPUjTrBwMDAxMDAwMDAAAAPQwFTH4I6DQAAAABJRU5ErkJggg==',
         "name": "Circle Access", "package_name": "com.example.circleaccess",
         "opt_in_url": "https://play.google.com/apps/testing/com.example.circleaccess",
         "play_developer_account_id": "1000000000000000099",

@@ -155,6 +155,7 @@ def test_saving_app_does_not_assign_existing_circle_members(client):
         headers=owner[1],
         json={
             "icon_data": "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGPUjTrBwMDAxMDAwMDAAAAPQwFTH4I6DQAAAABJRU5ErkJggg==",
+            "ownership_authorized": True,
             "name": "Saved App",
             "package_name": package,
             "opt_in_url": f"https://play.google.com/apps/testing/{package}",

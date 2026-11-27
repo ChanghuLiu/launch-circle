@@ -51,6 +51,11 @@ def todays_assignments(
     now: datetime,
 ) -> list[TesterAssignment]:
     day = assignment_day(now)
+    # A previously consented FIFO queue advances when the tester opens Tests;
+    # assignment creation still observes the UTC daily and active-work limits.
+    from app.api.pool import dispatch_group_tasks
+
+    dispatch_group_tasks(db, now, tester_id=requester_id)
     circle_ids = _active_circle_ids(db, requester_id)
     if not circle_ids:
         return []

@@ -21,11 +21,15 @@ def register(client, email: str, display_name: str) -> dict:
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
     me = client.get("/me", headers=headers)
     assert me.status_code == 200, me.text
-    return {"id": me.json()["id"], "headers": headers}
+    result = {"id": me.json()["id"], "headers": headers}
+    # Existing scenario explicitly starts with a synthetic confirmed Play account.
+    confirmed = client.put("/tester-group-access", headers=result["headers"], json={"status": "SELF_CONFIRMED", "play_email": email})
+    assert confirmed.status_code == 200, confirmed.text
+    return result
 
 
 def app_payload(package_name: str, developer_account_id: str) -> dict:
-    return {
+    return {"ownership_authorized": True, "icon_data": 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGPUjTrBwMDAxMDAwMDAAAAPQwFTH4I6DQAAAABJRU5ErkJggg==',
         "name": "Entitlement Test App",
         "package_name": package_name,
         "opt_in_url": f"https://play.google.com/apps/testing/{package_name}",
@@ -68,48 +72,32 @@ def test_legacy_app_also_uses_person_quota(client):
     assert create_app(client, owner, "com.example.new", "1234567890123456789").status_code == 409
 
 
-def test_production_first_app_requires_canonical_account_and_verified_package(
-    client, monkeypatch
-):
-    owner = register(client, "publisher@example.com", "Publisher")
+def test_external_customer_registration_in_production(client, monkeypatch):
+    from app.models.launch import DeveloperAccount
+    owner = register(client, "selena@regevidencehub.com", "Selena")
     monkeypatch.setattr(phase0_settings, "app_env", "production")
-    monkeypatch.setattr(
-        phase0_settings, "google_play_developer_account_id", "123456789"
-    )
-
-    wrong_account = create_app(
-        client, owner, "com.example.wrongaccount", "987654321"
-    )
-    assert wrong_account.status_code == 403
-
-    monkeypatch.setattr(
-        "app.api.phase0.verify_app_package_ownership",
-        lambda *_args: (_ for _ in ()).throw(GooglePlayPackageNotOwned()),
-    )
-    wrong_package = create_app(
-        client, owner, "com.example.notowned", "123456789"
-    )
-    assert wrong_package.status_code == 403
-
-    monkeypatch.setattr(
-        "app.api.phase0.verify_app_package_ownership", lambda *_args: None
-    )
-    verified = create_app(
-        client, owner, "com.example.verified", "123456789"
-    )
-    assert verified.status_code == 201, verified.text
-    assert verified.json()["entitlement_status"] == "FIRST_APP_FREE"
+    monkeypatch.setattr(phase0_settings, "google_play_developer_account_id", "123456789")
+    def reject_operator_lookup(*args):
+        raise AssertionError("External packages must not use operator publisher credentials")
+    monkeypatch.setattr("app.api.phase0.verify_app_package_ownership", reject_operator_lookup)
+    response = create_app(client, owner, "com.external.customer", "987654321")
+    assert response.status_code == 201, response.text
+    assert response.json()["play_developer_account_id"] is None
+    assert response.json()["entitlement_status"] == "FIRST_APP_FREE"
+    with SessionLocal() as db:
+        item = db.get(App, response.json()["id"])
+        account = db.get(DeveloperAccount, item.developer_account_id)
+        assert account.verification_status == "UNVERIFIED"
+        assert account.identity_method == "USER_PROVIDED"
+        assert account.play_developer_account_id == "user:" + owner["id"]
+    assert create_app(client, owner, "com.external.second", "987654321").status_code == 409
 
 
-def test_app_creation_resolves_publisher_without_user_entering_account_id(client, monkeypatch):
+def test_customer_without_publisher_configuration_can_submit(client, monkeypatch):
     owner = register(client, "simple@example.com", "Simple")
     monkeypatch.setattr(phase0_settings, "app_env", "production")
-    monkeypatch.setattr(phase0_settings, "google_play_developer_account_id", "8195223677488114201")
-    verified = []
-    monkeypatch.setattr("app.api.phase0.verify_app_package_ownership", lambda settings, package: verified.append(package))
-    payload = app_payload("com.example.simple", "8195223677488114201")
-    payload.pop("play_developer_account_id")
+    monkeypatch.setattr(phase0_settings, "google_play_developer_account_id", "")
+    payload = app_payload("com.external.simple", "")
     response = client.post("/apps", headers=owner["headers"], json=payload)
     assert response.status_code == 201, response.text
-    assert response.json()["play_developer_account_id"] == "8195223677488114201"
-    assert verified == ["com.example.simple"]
+    assert response.json()["play_developer_account_id"] is None

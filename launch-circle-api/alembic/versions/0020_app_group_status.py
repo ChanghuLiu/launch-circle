@@ -67,8 +67,33 @@ def upgrade():
             sa.Column("joined_at", sa.DateTime(timezone=True), nullable=False),
         )
 
+    if op.get_bind().dialect.name == "sqlite":
+        op.execute("""
+            CREATE TRIGGER IF NOT EXISTS trg_no_new_assignment_for_closed_app_group
+            BEFORE INSERT ON tester_assignments
+            WHEN EXISTS (
+                SELECT 1 FROM app_group_apps AS group_app
+                JOIN app_groups AS group_row ON group_row.id = group_app.group_id
+                WHERE group_app.app_id = NEW.app_id AND group_row.status = 'CLOSED'
+            )
+            BEGIN
+                SELECT RAISE(ABORT, 'APP_GROUP_CLOSED');
+            END
+        """)
+
 
 def downgrade():
+    bind = op.get_bind()
     columns = {column["name"] for column in sa.inspect(op.get_bind()).get_columns("app_groups")}
+    closed_count = bind.execute(
+        sa.text("SELECT COUNT(*) FROM app_groups WHERE status = 'CLOSED'")
+    ).scalar_one()
+    if closed_count:
+        raise RuntimeError(
+            "Refusing to downgrade App Group status while CLOSED groups exist; "
+            "preserve 0020+ schema and restore the prior application version instead."
+        )
+    if bind.dialect.name == "sqlite":
+        op.execute("DROP TRIGGER IF EXISTS trg_no_new_assignment_for_closed_app_group")
     if "status" in columns:
         op.drop_column("app_groups", "status")

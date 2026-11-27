@@ -1,3 +1,4 @@
+from app.services.tester_access import require_tester_group, require_test_enrollment
 """Opt-in pilot evidence APIs. They do not assert Google eligibility or grant rewards."""
 
 import hashlib
@@ -83,6 +84,8 @@ def record_enrollment(
     )
     if actor.id != expected_actor:
         raise HTTPException(403, "Evidence source does not match the recording actor")
+    if body.event == "JOINED" and body.source == "SELF_REPORTED":
+        require_tester_group(actor)
     if body.event == "JOINED" and assignment.status == "DROPPED":
         raise HTTPException(409, "Create a new assignment before rejoining")
     row = EnrollmentEvidence(
@@ -167,6 +170,10 @@ def submit_run(
     if existing is not None:
         return existing
     assignment = mission.assignment
+    if body.execution_source == "HUMAN_MANUAL" and actor.id != assignment.tester_id:
+        raise HTTPException(403, "Only the assigned tester can submit manual tester evidence")
+    if body.execution_source == "HUMAN_MANUAL":
+        require_test_enrollment(actor, assignment)
     refresh_mission_availability(db, [mission], now)
     if (
         body.result in {"PASS", "FAIL"}
@@ -176,8 +183,6 @@ def submit_run(
         raise HTTPException(409, "Mission is not available for execution")
     if assignment.status == "DROPPED":
         raise HTTPException(409, "Cannot submit new runs for a dropped assignment")
-    if body.execution_source == "HUMAN_MANUAL" and actor.id != assignment.tester_id:
-        raise HTTPException(403, "Only the assigned tester can submit manual tester evidence")
     if body.result in {"PASS", "FAIL"} and assignment.installed_at is None:
         raise HTTPException(409, "Confirm installation before recording executed steps")
     if body.package_name != assignment.app.package_name:

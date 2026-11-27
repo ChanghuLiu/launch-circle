@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import func, select
-from test_shared_pool import actor
+from tests.test_shared_pool import actor
 
 from app.core.database import SessionLocal
 from app.models.launch import App, DeveloperAccount

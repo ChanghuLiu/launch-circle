@@ -1,4 +1,5 @@
 from app.models.admin import AdminAppControl, AdminAudit, AdminRecommendation, AdminSession
+from app.models.activity import UserActivityEvent
 from app.models.device import Device
 from app.models.evidence import CampaignBuild, EnrollmentEvidence, MissionRun, MissionRunFix
 from app.models.launch import (
@@ -18,14 +19,7 @@ from app.models.launch import (
     TesterAssignment,
     TestMission,
 )
-from app.models.pool import (
-    AppGroup,
-    AppGroupApp,
-    AppGroupMember,
-    AppIntake,
-    PoolListing,
-    TesterPoolPreference,
-)
+from app.models.pool import AppIntake, PoolListing, TesterPoolPreference, AppGroup, AppGroupApp, AppGroupMember
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 
@@ -39,9 +33,6 @@ __all__ = [
     "AdminSession",
     "App",
     "AppChange",
-    "AppGroup",
-    "AppGroupApp",
-    "AppGroupMember",
     "AppIntake",
     "BackendEvent",
     "CampaignBuild",
@@ -64,5 +55,6 @@ __all__ = [
     "TestMission",
     "TesterAssignment",
     "TesterPoolPreference",
+    "UserActivityEvent",
     "User",
 ]

@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.admin import AdminAppControl
-from app.models.launch import BackendEvent, TesterAssignment
+from app.models.launch import App, BackendEvent, TesterAssignment
 from app.models.pool import AppGroup, AppGroupApp, AppGroupMember, PoolListing
 
 
@@ -28,6 +28,9 @@ def has_app_group_consent(db: Session, app_id: str, tester_id: str) -> bool:
 
 
 def app_group_recruitment_open(db: Session, app_id: str) -> bool:
+    app = db.get(App, app_id)
+    if app is None or not app.ownership_authorized:
+        return False
     if db.get(AppGroupApp, app_id) is None:
         return False
     listing = db.get(PoolListing, app_id)
@@ -40,6 +43,14 @@ def app_group_recruitment_open(db: Session, app_id: str) -> bool:
         and group.status == "OPEN"
         and not (control and (control.paused or control.kind == "SYNTHETIC"))
     )
+
+
+def app_group_is_closed(db: Session, app_id: str) -> bool:
+    group_id = db.scalar(select(AppGroupApp.group_id).where(AppGroupApp.app_id == app_id))
+    if group_id is None:
+        return False
+    group = db.get(AppGroup, group_id)
+    return group is None or group.status == "CLOSED"
 
 
 def explicitly_consented_assignment_ids(

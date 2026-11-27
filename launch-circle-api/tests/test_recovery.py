@@ -1,5 +1,5 @@
-from datetime import date, datetime, timedelta, timezone
 import hashlib
+from datetime import UTC, date, datetime, timedelta
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -7,6 +7,7 @@ from sqlalchemy import select
 from app.core.database import SessionLocal
 from app.main import app as fastapi_app
 from app.models.launch import App, CircleMember, TesterAssignment
+from app.models.pool import AppGroup, AppGroupApp, AppGroupMember, PoolListing
 from app.services.clock import get_now
 
 
@@ -28,11 +29,15 @@ def register(client: TestClient, email: str, name: str) -> dict:
     assert response.status_code == 201, response.text
     token = response.json()["access_token"]
     profile = client.get("/me", headers={"Authorization": f"Bearer {token}"}).json()
-    return {
+    result = {
         "id": profile["id"],
         "email": email,
         "headers": {"Authorization": f"Bearer {token}"},
     }
+    # Existing scenario explicitly starts with a synthetic confirmed Play account.
+    confirmed = client.put("/tester-group-access", headers=result["headers"], json={"status": "SELF_CONFIRMED", "play_email": email})
+    assert confirmed.status_code == 200, confirmed.text
+    return result
 
 
 def join_circle(client: TestClient, owner: dict, member: dict) -> None:
@@ -53,7 +58,7 @@ def create_app(client: TestClient, owner: dict, suffix: str, target: int = 12) -
     response = client.post(
         "/apps",
         headers=owner["headers"],
-        json={
+        json={"ownership_authorized": True, "icon_data": 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGPUjTrBwMDAxMDAwMDAAAAPQwFTH4I6DQAAAABJRU5ErkJggg==',
             "name": f"Recovery App {suffix}",
             "package_name": f"com.example.recovery{suffix}",
             "opt_in_url": f"https://play.google.com/apps/testing/com.example.recovery{suffix}",
@@ -62,6 +67,12 @@ def create_app(client: TestClient, owner: dict, suffix: str, target: int = 12) -
         },
     )
     assert response.status_code == 201, response.text
+    confirmed = client.post(
+        f"/apps/{response.json()['id']}/google-group/confirm",
+        headers=owner["headers"],
+        json={"configured": True},
+    )
+    assert confirmed.status_code == 200, confirmed.text
     return response.json()
 
 
@@ -83,6 +94,7 @@ def build_cycle(
     for member in members:
         join_circle(client, owner, member)
     app = create_app(client, owner, str(member_count))
+    consent_group_members(app["id"], members, now)
     matched = client.post(f"/apps/{app['id']}/match-testers", headers=owner["headers"])
     assert matched.status_code == 200, matched.text
     rows = client.get(f"/apps/{app['id']}/testers", headers=owner["headers"])
@@ -110,14 +122,30 @@ def clear_clock():
     fastapi_app.dependency_overrides.pop(get_now, None)
 
 
+def consent_group_members(app_id: str, members: list[dict], now: datetime):
+    from uuid import uuid4
+
+    with SessionLocal() as db:
+        item = db.get(App, app_id)
+        assert item is not None
+        group_id = str(uuid4())
+        db.add(AppGroup(id=group_id, name="Recovery fixture group", created_at=now))
+        db.add(AppGroupApp(app_id=app_id, group_id=group_id))
+        db.add(PoolListing(app_id=app_id, enabled=True, updated_at=now))
+        for member in members:
+            db.add(AppGroupMember(group_id=group_id, user_id=member["id"], joined_at=now))
+        db.commit()
+
+
 def test_health_states_are_server_evaluated_and_deterministic(client):
-    now = datetime(2026, 8, 20, 12, tzinfo=timezone.utc)
+    now = datetime(2026, 8, 20, 12, tzinfo=UTC)
     set_clock(now)
     try:
         owner = register(client, "health-owner@example.com", "Owner")
         member = register(client, "health-member@example.com", "Member")
         join_circle(client, owner, member)
         app = create_app(client, owner, "states", target=1)
+        consent_group_members(app["id"], [member], now)
         matched = client.post(f"/apps/{app['id']}/match-testers", headers=owner["headers"])
         assert matched.status_code == 200
         row = client.get(f"/apps/{app['id']}/testers", headers=owner["headers"]).json()[0]
@@ -145,7 +173,7 @@ def test_health_states_are_server_evaluated_and_deterministic(client):
 
 
 def test_dropout_assigns_one_same_circle_replacement_once_and_restores_coverage(client):
-    now = datetime(2026, 8, 20, 12, tzinfo=timezone.utc)
+    now = datetime(2026, 8, 20, 12, tzinfo=UTC)
     set_clock(now)
     try:
         owner, app, members, assignments = build_cycle(client, now, member_count=14)
@@ -208,11 +236,10 @@ def test_dropout_assigns_one_same_circle_replacement_once_and_restores_coverage(
             ) == 1
 
         member_by_id = {member["id"]: member for member in members}
-        completed = client.post(
-            f"/test-assignments/{replacement_id}/complete",
-            headers=member_by_id[replacement_tester_id]["headers"],
-        )
-        assert completed.status_code == 200, completed.text
+        replacement_headers = member_by_id[replacement_tester_id]["headers"]
+        assert client.patch(f"/assignments/{replacement_id}/opt-in", headers=replacement_headers).status_code == 200
+        installed = client.patch(f"/assignments/{replacement_id}/installed", headers=replacement_headers)
+        assert installed.status_code == 200, installed.text
         restored = client.get(f"/apps/{app['id']}/dashboard", headers=owner["headers"]).json()
         assert restored["qualifying_tester_count"] == 12
         assert restored["coverage_shortage"] == 0
@@ -223,13 +250,13 @@ def test_dropout_assigns_one_same_circle_replacement_once_and_restores_coverage(
 
 
 def test_replacement_respects_daily_limit_and_no_candidate_is_truthfully_at_risk(client):
-    now = datetime(2026, 8, 20, 12, tzinfo=timezone.utc)
+    now = datetime(2026, 8, 20, 12, tzinfo=UTC)
     set_clock(now)
     try:
         owner, app, members, assignments = build_cycle(client, now, member_count=13)
         spare = next(member for member in members if member["id"] not in {row["tester_id"] for row in assignments})
-        other_one = create_app(client, owner, "workloadone", target=1)
-        other_two = create_app(client, owner, "workloadtwo", target=1)
+        other_one = create_app(client, register(client, "workload-one@example.com", "Other owner one"), "workloadone", target=1)
+        other_two = create_app(client, register(client, "workload-two@example.com", "Other owner two"), "workloadtwo", target=1)
         with SessionLocal() as db:
             for other_app in (other_one, other_two):
                 db.add(
@@ -268,10 +295,10 @@ def test_replacement_respects_daily_limit_and_no_candidate_is_truthfully_at_risk
 
 
 def test_leaving_member_drops_participation_and_triggers_replacement(client):
-    now = datetime(2026, 8, 20, 12, tzinfo=timezone.utc)
+    now = datetime(2026, 8, 20, 12, tzinfo=UTC)
     set_clock(now)
     try:
-        owner, app, members, assignments = build_cycle(client, now, member_count=14)
+        _owner, app, members, assignments = build_cycle(client, now, member_count=14)
         leaving = next(member for member in members if member["id"] == assignments[0]["tester_id"])
         response = client.post(
             f"/circles/{app['circle_id']}/leave", headers=leaving["headers"]
@@ -300,10 +327,10 @@ def test_leaving_member_drops_participation_and_triggers_replacement(client):
 
 
 def test_day_fourteen_with_unresolved_shortage_stays_at_risk_and_keeps_start(client):
-    now = datetime(2026, 8, 20, 12, tzinfo=timezone.utc)
+    now = datetime(2026, 8, 20, 12, tzinfo=UTC)
     set_clock(now)
     try:
-        owner, app, members, assignments = build_cycle(client, now, member_count=12)
+        owner, app, _members, assignments = build_cycle(client, now, member_count=12)
         with SessionLocal() as db:
             original = db.get(TesterAssignment, assignments[0]["id"])
             assert original is not None
@@ -337,6 +364,6 @@ def test_day_fourteen_with_unresolved_shortage_stays_at_risk_and_keeps_start(cli
         with SessionLocal() as db:
             saved = db.get(App, app["id"])
             assert saved is not None
-            assert saved.testing_start_at.replace(tzinfo=timezone.utc) == started_at.replace(tzinfo=timezone.utc)
+            assert saved.testing_start_at.replace(tzinfo=UTC) == started_at.replace(tzinfo=UTC)
     finally:
         clear_clock()

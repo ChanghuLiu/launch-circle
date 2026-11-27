@@ -33,6 +33,8 @@ class AppCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     package_name: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+$", max_length=255)
     opt_in_url: HttpUrl
+    icon_data: str = Field(min_length=1, max_length=1400000)
+    ownership_authorized: bool = False
     play_developer_account_id: str = Field(default="", pattern=r"^(\d{1,32})?$", max_length=32)
     core_workflow_steps: list[str] = Field(
         default_factory=lambda: [
@@ -42,8 +44,6 @@ class AppCreate(BaseModel):
         min_length=2,
         max_length=4,
     )
-    google_group_url: HttpUrl | None = None
-    google_group_mode: str = Field(default="LAUNCH_CIRCLE", pattern="^(LAUNCH_CIRCLE|OWN_GROUP|EMAIL_LIST)$")
     tester_target: int = Field(default=14, ge=1, le=100)
     circle_id: str | None = None
 
@@ -62,6 +62,10 @@ class AppCreate(BaseModel):
         if any(len(step) > 200 for step in steps):
             raise ValueError("each core workflow step must be 200 characters or fewer")
         return steps
+
+
+class OwnershipAttestationRequest(BaseModel):
+    confirmed: bool = False
 
 
 class AdditionalAppCheckoutCreate(BaseModel):
@@ -87,8 +91,6 @@ class AppUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     core_workflow_steps: list[str] | None = Field(default=None, min_length=2, max_length=4)
     opt_in_url: HttpUrl | None = None
-    google_group_url: HttpUrl | None = None
-    google_group_mode: str | None = Field(default=None, pattern="^(LAUNCH_CIRCLE|OWN_GROUP|EMAIL_LIST)$")
     tester_target: int | None = Field(default=None, ge=1, le=100)
 
     @field_validator("core_workflow_steps")
@@ -115,6 +117,9 @@ class AppRead(BaseModel):
     entitlement_status: str = "LEGACY"
     developer_account_unlimited: bool = False
     name: str
+    ownership_authorized: bool = False
+    ownership_attested_at: datetime | None = None
+    ownership_attestation_status: str = "PENDING_ATTESTATION"
     package_name: str
     opt_in_url: str
     core_workflow_steps: list[str] = Field(default_factory=list)
@@ -410,3 +415,17 @@ class HealthRefreshRead(BaseModel):
     replacements_assigned: int
     coverage_shortage: int = 0
     replacement_status: str = "NONE"
+
+
+class TesterGroupAccessUpdate(BaseModel):
+    play_email: EmailStr
+    status: str = Field(pattern="^(NOT_JOINED|PENDING|SELF_CONFIRMED)$")
+
+
+class TesterGroupAccessRead(BaseModel):
+    group_email: str
+    group_url: str
+    play_email: str | None
+    status: str
+    confirmed_at: datetime | None
+    verification: str = "USER_REPORTED"

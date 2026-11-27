@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.models.launch import App, BackendEvent, CircleMember, TesterAssignment
@@ -75,7 +75,6 @@ def match_testers(
     for assignment in db.scalars(
         select(TesterAssignment).where(
             TesterAssignment.assignment_day == current_day,
-            TesterAssignment.status != "DROPPED",
         )
     ):
         daily_workloads[assignment.tester_id] = daily_workloads.get(assignment.tester_id, 0) + 1
@@ -101,6 +100,17 @@ def match_testers(
 
     assigned: list[TesterAssignment] = []
     for user in eligible[:needed]:
+        db.execute(update(User).where(User.id == user.id).values(is_active=User.is_active))
+        current_user_today = db.scalar(select(func.count(TesterAssignment.id)).where(
+            TesterAssignment.tester_id == user.id,
+            TesterAssignment.assignment_day == current_day,
+        )) or 0
+        current_user_work = db.scalar(select(func.count(TesterAssignment.id)).where(
+            TesterAssignment.tester_id == user.id,
+            TesterAssignment.status.in_(ACTIVE_WORK_STATES),
+        )) or 0
+        if current_user_today >= 2 or current_user_work >= 2:
+            continue
         assignment = TesterAssignment(
             app=app,
             circle_id=app.circle_id,
@@ -191,7 +201,6 @@ def assign_replacements(
     for row in db.scalars(
         select(TesterAssignment).where(
             TesterAssignment.assignment_day == current_day,
-            TesterAssignment.status != "DROPPED",
         )
     ):
         today_workload[row.tester_id] = today_workload.get(row.tester_id, 0) + 1
@@ -240,6 +249,17 @@ def assign_replacements(
     ]
     inactive.sort(key=lambda row: (_timestamp(row.assigned_at), row.id), reverse=True)
     for member, replaced in zip(candidates[:needed], inactive):
+        db.execute(update(User).where(User.id == member.user_id).values(is_active=User.is_active))
+        current_user_today = db.scalar(select(func.count(TesterAssignment.id)).where(
+            TesterAssignment.tester_id == member.user_id,
+            TesterAssignment.assignment_day == current_day,
+        )) or 0
+        current_user_work = db.scalar(select(func.count(TesterAssignment.id)).where(
+            TesterAssignment.tester_id == member.user_id,
+            TesterAssignment.status.in_(ACTIVE_WORK_STATES),
+        )) or 0
+        if current_user_today >= 2 or current_user_work >= 2:
+            continue
         assignment = TesterAssignment(
             app=app,
             circle_id=app.circle_id,

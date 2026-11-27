@@ -9,6 +9,7 @@ from app.core.database import SessionLocal, engine
 from app.models.launch import App, Feedback, TesterAssignment as AssignmentModel
 from app.models.user import User
 from app.services.clock import get_now
+from tests.group_fixtures import seed_app_group_consent
 
 PASSWORD = "strong-password"
 
@@ -27,14 +28,18 @@ def register(client, index: int, name: str | None = None) -> dict:
     assert response.status_code == 201, response.text
     token = response.json()["access_token"]
     me = client.get("/me", headers={"Authorization": f"Bearer {token}"}).json()
-    return {"id": me["id"], "headers": {"Authorization": f"Bearer {token}"}}
+    result = {"id": me["id"], "headers": {"Authorization": f"Bearer {token}"}}
+    # Existing scenario explicitly starts with a synthetic confirmed Play account.
+    confirmed = client.put("/tester-group-access", headers=result["headers"], json={"status": "SELF_CONFIRMED", "play_email": email})
+    assert confirmed.status_code == 200, confirmed.text
+    return result
 
 
 def create_app(client, owner: dict, target: int = 15, suffix: str = "main") -> dict:
     response = client.post(
         "/apps",
         headers=owner["headers"],
-        json={
+        json={"ownership_authorized": True, "icon_data": 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGPUjTrBwMDAxMDAwMDAAAAPQwFTH4I6DQAAAABJRU5ErkJggg==',
             "name": "Phase 1 Analyzer",
             "package_name": f"com.launchcircle.phase1.{suffix}",
             "opt_in_url": f"https://play.google.com/apps/testing/com.launchcircle.phase1.{suffix}",
@@ -98,6 +103,7 @@ def test_matching_fills_15_excludes_owner_and_existing_assignment(client):
     owner = register(client, 0, "Owner")
     testers = [register(client, index) for index in range(1, 17)]
     launch = create_app(client, owner)
+    seed_app_group_consent(launch["id"], [tester["id"] for tester in testers[:14]])
     manual = client.post(
         f"/apps/{launch['id']}/assign/{testers[0]['id']}", headers=owner["headers"]
     )
@@ -121,9 +127,9 @@ def test_matching_fills_15_excludes_owner_and_existing_assignment(client):
 
 def test_matching_small_pool_succeeds_and_cold_dashboard_remains_valid(client):
     owner = register(client, 0)
-    for index in range(1, 6):
-        register(client, index)
+    testers = [register(client, index) for index in range(1, 6)]
     launch = create_app(client, owner)
+    seed_app_group_consent(launch["id"], [tester["id"] for tester in testers])
     matched = client.post(f"/apps/{launch['id']}/match-testers", headers=owner["headers"])
     assert matched.status_code == 200
     assert matched.json()["assigned_now"] == 5
@@ -138,6 +144,7 @@ def test_matching_orders_reliability_then_workload(client):
     owner = register(client, 0)
     candidates = [register(client, index) for index in range(1, 5)]
     launch = create_app(client, owner, target=2)
+    seed_app_group_consent(launch["id"], [tester["id"] for tester in candidates])
     with SessionLocal() as db:
         users = [db.get(User, item["id"]) for item in candidates]
         users[0].reliability_score = 20
@@ -165,6 +172,7 @@ def test_date_driven_mission_availability_with_test_clock(client, test_clock):
     owner = register(client, 0)
     tester = register(client, 1)
     launch = create_app(client, owner)
+    seed_app_group_consent(launch["id"], [tester["id"]])
     assignment = client.post(
         f"/apps/{launch['id']}/assign/{tester['id']}", headers=owner["headers"]
     ).json()
@@ -185,6 +193,7 @@ def test_health_replacement_and_status_transitions(client, test_clock):
     owner = register(client, 0)
     testers = [register(client, index) for index in range(1, 17)]
     launch = create_app(client, owner, target=13)
+    seed_app_group_consent(launch["id"], [tester["id"] for tester in testers[:14]])
     assert client.post(
         f"/apps/{launch['id']}/match-testers", headers=owner["headers"]
     ).json()["assigned_now"] == 13
@@ -242,6 +251,7 @@ def test_phase1_accelerated_acceptance_report_and_evidence_only_draft(client, te
     owner = register(client, 0, "Developer A")
     testers = [register(client, index) for index in range(1, 14)]
     launch = create_app(client, owner, target=12, suffix="acceptance")
+    seed_app_group_consent(launch["id"], [tester["id"] for tester in testers])
     assert client.post(
         f"/apps/{launch['id']}/match-testers", headers=owner["headers"]
     ).json()["assigned_now"] == 12
@@ -309,9 +319,10 @@ def test_phase1_accelerated_acceptance_report_and_evidence_only_draft(client, te
     ready = client.get(f"/apps/{launch['id']}/dashboard", headers=owner["headers"]).json()
     assert ready["status"] == "PRODUCTION_READY"
 
-    empty = create_app(client, owner, suffix="empty")
+    empty_owner = register(client, 500)
+    empty = create_app(client, empty_owner, suffix="empty")
     empty_draft = client.get(
-        f"/apps/{empty['id']}/production-application-draft", headers=owner["headers"]
+        f"/apps/{empty['id']}/production-application-draft", headers=empty_owner["headers"]
     ).json()
     assert empty_draft["how_testers_were_recruited"] == "Insufficient recorded evidence"
     assert empty_draft["feedback_received"] == "Insufficient recorded evidence"
@@ -333,6 +344,7 @@ def test_phase1_full_matching_replacement_day14_acceptance(client, test_clock):
     owner = register(client, 100, "Acceptance Developer A")
     testers = [register(client, index) for index in range(101, 117)]
     launch = create_app(client, owner, target=13, suffix="full_acceptance")
+    seed_app_group_consent(launch["id"], [tester["id"] for tester in testers[:14]])
     matched = client.post(f"/apps/{launch['id']}/match-testers", headers=owner["headers"])
     assert matched.json()["assigned_now"] == 13
     rows = client.get(f"/apps/{launch['id']}/testers", headers=owner["headers"]).json()
@@ -431,6 +443,7 @@ def test_dropped_tester_assigns_fresh_replacement(client, test_clock):
     first = register(client, 201)
     spare = register(client, 202)
     launch = create_app(client, owner, target=1, suffix="drop_replacement")
+    seed_app_group_consent(launch["id"], [first["id"], spare["id"]])
     assert client.post(
         f"/apps/{launch['id']}/match-testers", headers=owner["headers"]
     ).json()["assigned_now"] == 1

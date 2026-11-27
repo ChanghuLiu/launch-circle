@@ -82,6 +82,13 @@ class App(Base):
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     icon_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    no_test_required: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    ownership_authorized: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
+    ownership_attested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ownership_attestation_status: Mapped[str] = mapped_column(
+        String(32), default="PENDING_ATTESTATION",
+        server_default=text("'PENDING_ATTESTATION'"), nullable=False,
+    )
     package_name: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     opt_in_url: Mapped[str] = mapped_column(Text, nullable=False)
     core_workflow_steps: Mapped[list[str]] = mapped_column(
@@ -304,10 +311,13 @@ class TesterAssignment(Base):
     assigned_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False
     )
+    play_account_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
     opted_in_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     installed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     dropped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    waived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    waiver_reason: Mapped[str | None] = mapped_column(String(40), nullable=True)
     health_status: Mapped[str] = mapped_column(String(16), default="NEW", nullable=False)
     last_activity_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     overdue_mission_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -366,6 +376,8 @@ class TestMission(Base):
     status: Mapped[str] = mapped_column(String(16), default="PENDING", nullable=False)
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    waived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    waiver_reason: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     assignment = relationship("TesterAssignment", back_populates="missions")
     feedback_entry = relationship(

@@ -1,4 +1,5 @@
 from app.services.missions import MISSION_SCHEDULE
+from tests.group_fixtures import seed_app_group_consent
 
 
 def register(client, email: str, display_name: str) -> dict:
@@ -15,16 +16,20 @@ def register(client, email: str, display_name: str) -> dict:
     tokens = response.json()
     me = client.get("/me", headers={"Authorization": f"Bearer {tokens['access_token']}"})
     assert me.status_code == 200
-    return {
+    result = {
         "id": me.json()["id"],
         "headers": {"Authorization": f"Bearer {tokens['access_token']}"},
     }
+    # Existing scenario explicitly starts with a synthetic confirmed Play account.
+    confirmed = client.put("/tester-group-access", headers=result["headers"], json={"status": "SELF_CONFIRMED", "play_email": email})
+    assert confirmed.status_code == 200, confirmed.text
+    return result
 
 
 def create_launch(
     client, owner: dict, core_workflow_steps: list[str] | None = None
 ) -> dict:
-    request_body = {
+    request_body = {"ownership_authorized": True, "icon_data": 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGPUjTrBwMDAxMDAwMDAAAAPQwFTH4I6DQAAAABJRU5ErkJggg==',
         "name": "BLE Signal Analyzer",
         "package_name": "com.example.bleanalyzer",
         "opt_in_url": "https://play.google.com/apps/testing/com.example.bleanalyzer",
@@ -67,6 +72,7 @@ def test_phase0_vertical_slice_and_cold_start_dashboard(client):
     app = create_launch(client, owner, workflow)
     assert app["core_workflow_steps"] == workflow
     join_circle(client, owner, tester)
+    seed_app_group_consent(app["id"], [tester["id"]])
 
     cold = client.get(f"/apps/{app['id']}/dashboard", headers=owner["headers"])
     assert cold.status_code == 200
@@ -174,6 +180,7 @@ def test_owner_assignment_and_duplicate_assignment_are_rejected(client):
     tester = register(client, "tester@example.com", "Tester")
     app = create_launch(client, owner)
     join_circle(client, owner, tester)
+    seed_app_group_consent(app["id"], [tester["id"]])
 
     own_assignment = client.post(
         f"/apps/{app['id']}/assign/{owner['id']}", headers=owner["headers"]

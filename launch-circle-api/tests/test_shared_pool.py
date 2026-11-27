@@ -34,6 +34,8 @@ def campaign(owner):
             package_name="com.example.a" + uuid4().hex,
             opt_in_url="placeholder",
             google_group_configured=True,
+            ownership_authorized=True,
+            ownership_attested_at=NOW,
             core_workflow_steps=["Open app", "Complete main action"],
         )
         db.add(item)
@@ -49,7 +51,7 @@ def post(client, path, who, body=None):
 
 
 def open_app(client, aid, owner):
-    from app.api.admin import RecruitmentUpdate, recruitment
+    from app.api.admin import recruitment, RecruitmentUpdate
     with SessionLocal() as db:
         assert recruitment(aid, RecruitmentUpdate(enabled=True, reason="Complete app setup for recruitment"), db, True)["ok"]
 

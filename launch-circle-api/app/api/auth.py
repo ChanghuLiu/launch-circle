@@ -1,10 +1,12 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+import jwt
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.config import get_settings
 from app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -20,7 +22,7 @@ router = APIRouter(prefix="/v1/auth", tags=["auth"])
 
 
 @router.post("/google", response_model=TokenPair)
-def google_auth(body: GoogleAuthRequest, db: Session = Depends(get_db)) -> TokenPair:
+def google_auth(body: GoogleAuthRequest, request: Request, db: Session = Depends(get_db)) -> TokenPair:
     payload = verify_google_id_token(body.id_token)
     user = db.scalar(
         select(User).where(
@@ -30,6 +32,7 @@ def google_auth(body: GoogleAuthRequest, db: Session = Depends(get_db)) -> Token
             )
         )
     )
+    registered = user is None
     if user is None:
         user = User(
             google_subject=payload["sub"],
@@ -60,6 +63,8 @@ def google_auth(body: GoogleAuthRequest, db: Session = Depends(get_db)) -> Token
         ensure_owner_circle(db, user)
         db.commit()
 
+    request.state.activity_user_id = user.id
+    request.state.activity_event = ("auth.register" if registered else "auth.sign_in", "auth")
     return TokenPair(
         access_token=create_access_token(user.id),
         refresh_token=create_refresh_token(db, user.id),
@@ -67,11 +72,27 @@ def google_auth(body: GoogleAuthRequest, db: Session = Depends(get_db)) -> Token
 
 
 @router.post("/refresh", response_model=TokenPair)
-def refresh(body: RefreshRequest, db: Session = Depends(get_db)) -> TokenPair:
+def refresh(body: RefreshRequest, request: Request, db: Session = Depends(get_db)) -> TokenPair:
     access, refresh_token = rotate_refresh_token(db, body.refresh_token)
+    try:
+        request.state.activity_user_id = jwt.decode(
+            access, get_settings().jwt_secret, algorithms=[get_settings().jwt_algorithm]
+        ).get("sub")
+    except jwt.PyJWTError:
+        pass
+    request.state.activity_event = ("auth.session_refresh", "auth")
     return TokenPair(access_token=access, refresh_token=refresh_token)
 
 
 @router.post("/logout", status_code=204)
-def logout(body: LogoutRequest, db: Session = Depends(get_db)) -> None:
+def logout(body: LogoutRequest, request: Request, db: Session = Depends(get_db)) -> None:
+    from app.core.security import hash_refresh_token
+    from app.models.refresh_token import RefreshToken
+
+    token = db.scalar(select(RefreshToken).where(
+        RefreshToken.token_hash == hash_refresh_token(body.refresh_token)
+    ))
     revoke_refresh_token(db, body.refresh_token)
+    if token is not None:
+        request.state.activity_user_id = token.user_id
+    request.state.activity_event = ("auth.sign_out", "auth")

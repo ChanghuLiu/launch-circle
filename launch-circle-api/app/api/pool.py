@@ -3,6 +3,7 @@
 from datetime import datetime
 from typing import Annotated
 from urllib.parse import urlparse
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -13,12 +14,13 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.admin import AdminAppControl, AdminRecommendation
 from app.models.launch import App, BackendEvent, Circle, CircleMember, TesterAssignment
-from app.models.pool import AppGroup, AppGroupApp, AppGroupMember, PoolListing, TesterPoolPreference
+from app.models.pool import AppGroup, AppGroupApp, AppGroupMember, AppGroupTaskQueue, PoolListing, TesterPoolPreference
 from app.models.user import User
 from app.services.assignments import assignment_day
 from app.services.circles import active_member_count
 from app.services.clock import get_now
 from app.services.dispatch_authorization import (
+    app_group_is_closed,
     explicitly_consented_assignment_ids,
     has_app_group_consent,
     has_direct_app_consent,
@@ -70,7 +72,7 @@ def active_work(db: Session, user_id: str) -> int:
             .join(App)
             .where(
                 TesterAssignment.tester_id == user_id,
-                TesterAssignment.status != "DROPPED",
+                TesterAssignment.status.in_({"ASSIGNED", "OPTED_IN", "INSTALLED", "ACTIVE"}),
                 App.status.in_(OPEN_STATES),
             )
         )
@@ -85,7 +87,8 @@ def current_assignments(item: App):
 def profile_complete(item: App) -> bool:
     url = urlparse(item.opt_in_url)
     return bool(
-        item.google_group_configured
+        item.ownership_authorized
+        and item.google_group_configured
         and bool(item.icon_url and item.icon_url.strip())
         and item.core_workflow_steps
         and url.scheme == "https"
@@ -284,6 +287,8 @@ def accept_app(
         or not db.get(User, item.owner_id).is_active
     ):
         raise HTTPException(404, "Opportunity not available")
+    if app_group_is_closed(db, app_id):
+        raise HTTPException(409, "APP_GROUP_CLOSED")
     if item.owner_id == actor.id:
         raise HTTPException(422, "You cannot accept your own app")
     # This accepts this app only. Circle membership added below is for this
@@ -314,6 +319,14 @@ def accept_app(
         return {"assignment_id": existing.id, "status": existing.status}
     if active_work(db, actor.id) >= max_apps:
         raise HTTPException(409, "Concurrent app limit reached")
+    todays_created_count = db.scalar(
+        select(func.count(TesterAssignment.id)).where(
+            TesterAssignment.tester_id == actor.id,
+            TesterAssignment.assignment_day == assignment_day(now),
+        )
+    ) or 0
+    if todays_created_count >= 2:
+        raise HTTPException(409, "DAILY_ASSIGNMENT_LIMIT_REACHED")
     if len(current_assignments(item)) >= min(item.tester_target, 14):
         raise HTTPException(409, "This app has enough accepted participants")
     circle = db.get(Circle, item.circle_id)
@@ -590,56 +603,147 @@ def visible_group_apps(db: Session, group_id: str):
     return result
 
 
-def sync_group(db: Session, group_id: str, now: datetime):
-    # Joining explicitly covers this group's present and future apps, up to 14 other owners.
-    items = visible_group_apps(db, group_id)
+def _queue_group_tasks(db: Session, group_id: str, now: datetime) -> None:
+    group = db.scalar(select(AppGroup).where(AppGroup.id == group_id).with_for_update())
+    if group is None or group.status != "OPEN":
+        return
     for member in db.scalars(select(AppGroupMember).where(AppGroupMember.group_id == group_id)):
         actor = db.get(User, member.user_id)
         if not actor or not actor.is_active:
             continue
-        for item in items:
-            if item.no_test_required:
+        for item in visible_group_apps(db, group_id):
+            if item.no_test_required or item.owner_id == actor.id:
                 continue
-            if item.owner_id == actor.id:
+            queued = db.scalar(select(AppGroupTaskQueue).where(
+                AppGroupTaskQueue.group_id == group_id,
+                AppGroupTaskQueue.app_id == item.id,
+                AppGroupTaskQueue.tester_id == actor.id,
+            ))
+            if queued is None:
+                db.add(AppGroupTaskQueue(
+                    id=str(uuid4()), group_id=group_id, app_id=item.id,
+                    tester_id=actor.id, status="PENDING", created_at=now,
+                ))
+            elif queued.status == "CANCELLED":
+                queued.status = "PENDING"
+                queued.created_at = now
+                queued.dispatched_at = None
+                queued.assignment_id = None
+    db.flush()
+
+
+def _resume_left_assignment(db: Session, group_id: str, item: App, actor: User, now: datetime) -> None:
+    import json
+
+    previous = db.scalar(select(TesterAssignment).where(
+        TesterAssignment.app_id == item.id,
+        TesterAssignment.tester_id == actor.id,
+        TesterAssignment.status == "DROPPED",
+    ).order_by(TesterAssignment.assigned_at.desc()))
+    if previous is None or active_work(db, actor.id) >= MAX_CONCURRENT_APPS:
+        return
+    event = db.scalar(select(BackendEvent).where(
+        BackendEvent.assignment_id == previous.id,
+        BackendEvent.event_type == "APP_GROUP_LEFT",
+    ).order_by(BackendEvent.created_at.desc()).limit(1))
+    if event is None:
+        return
+    saved = json.loads(event.payload_json)
+    if saved.get("group_id") != group_id:
+        return
+    circle = db.get(Circle, previous.circle_id)
+    membership = db.scalar(select(CircleMember).where(
+        CircleMember.circle_id == previous.circle_id,
+        CircleMember.user_id == actor.id,
+    ))
+    if membership is None or membership.status != "ACTIVE":
+        if circle is None or active_member_count(db, circle.id) >= min(circle.max_members, 15):
+            return
+        if membership:
+            membership.status, membership.joined_at, membership.left_at = "ACTIVE", now, None
+        else:
+            db.add(CircleMember(
+                circle_id=circle.id, user_id=actor.id, role="MEMBER",
+                status="ACTIVE", joined_at=now,
+            ))
+    previous.status = saved.get("previous_status", "ASSIGNED")
+    previous.health_status = saved.get("previous_health", "NEW")
+    previous.dropped_at = None
+    db.flush()
+
+
+def dispatch_group_tasks(db: Session, now: datetime, *, group_id: str | None = None, tester_id: str | None = None) -> int:
+    """Dispatch consented FIFO tasks within per-day and active-work limits."""
+    if group_id:
+        groups = [group_id]
+    elif tester_id:
+        groups = list(db.scalars(
+            select(AppGroupMember.group_id)
+            .join(AppGroup, AppGroup.id == AppGroupMember.group_id)
+            .where(AppGroupMember.user_id == tester_id, AppGroup.status == "OPEN")
+        ))
+    else:
+        groups = list(db.scalars(select(AppGroup.id).where(AppGroup.status == "OPEN")))
+    if tester_id:
+        for current_group_id in groups:
+            _queue_group_tasks(db, current_group_id, now)
+    dispatched = 0
+    for current_group_id in groups:
+        group = db.scalar(select(AppGroup).where(AppGroup.id == current_group_id).with_for_update())
+        if group is None or group.status != "OPEN":
+            db.execute(update(AppGroupTaskQueue).where(
+                AppGroupTaskQueue.group_id == current_group_id,
+                AppGroupTaskQueue.status == "PENDING",
+            ).values(status="CANCELLED"))
+            continue
+        query = select(AppGroupTaskQueue).where(
+            AppGroupTaskQueue.group_id == current_group_id,
+            AppGroupTaskQueue.status == "PENDING",
+        ).join(App, App.id == AppGroupTaskQueue.app_id).order_by(
+            AppGroupTaskQueue.created_at, App.created_at, App.id,
+        )
+        if tester_id:
+            query = query.where(AppGroupTaskQueue.tester_id == tester_id)
+        for queued in db.scalars(query):
+            member = db.get(AppGroupMember, (current_group_id, queued.tester_id))
+            mapping = db.get(AppGroupApp, queued.app_id)
+            actor = db.get(User, queued.tester_id)
+            item = db.get(App, queued.app_id)
+            if not member or not mapping or mapping.group_id != current_group_id or not actor or not actor.is_active:
+                queued.status = "CANCELLED"
                 continue
-            with db.begin_nested():
-                previous = db.scalar(select(TesterAssignment).where(TesterAssignment.app_id == item.id, TesterAssignment.tester_id == actor.id).order_by(TesterAssignment.assigned_at.desc()))
-                if previous and previous.status == "DROPPED":
-                    import json
-                    event = db.scalar(select(BackendEvent).where(BackendEvent.assignment_id == previous.id).order_by(BackendEvent.created_at.desc()).limit(1))
-                    if event and event.event_type == "APP_GROUP_LEFT":
-                        saved = json.loads(event.payload_json)
-                        if saved.get("group_id") == group_id:
-                            if active_work(db, actor.id) >= 14:
-                                continue
-                            circle = db.get(Circle, previous.circle_id)
-                            membership = db.scalar(select(CircleMember).where(CircleMember.circle_id == previous.circle_id, CircleMember.user_id == actor.id))
-                            if membership is None or membership.status != "ACTIVE":
-                                if circle is None or active_member_count(db, circle.id) >= min(circle.max_members, 15):
-                                    continue
-                                if membership:
-                                    membership.status, membership.joined_at, membership.left_at = "ACTIVE", now, None
-                                else:
-                                    db.add(CircleMember(circle_id=circle.id, user_id=actor.id, role="MEMBER", status="ACTIVE", joined_at=now))
-                            previous.status = saved.get("previous_status", "ASSIGNED")
-                            previous.health_status = saved.get("previous_health", "NEW")
-                            previous.dropped_at = None
-                            db.flush()
-                try:
-                    accept_app(
-                        item.id,
-                        actor,
-                        db,
-                        now,
-                        max_apps=14,
-                        commit=False,
-                        consent_scope="APP_GROUP",
-                    )
-                except HTTPException as error:
-                    if error.status_code not in {404, 409}:
-                        raise
-                    # Existing outside work/capacity is never silently dropped.
+            if item is None or item.owner_id == actor.id or item.no_test_required:
+                queued.status = "CANCELLED"
+                continue
+            _resume_left_assignment(db, current_group_id, item, actor, now)
+            try:
+                result = accept_app(
+                    item.id, actor, db, now, max_apps=MAX_CONCURRENT_APPS,
+                    commit=False, consent_scope="APP_GROUP",
+                )
+            except HTTPException as error:
+                if error.status_code in {404, 409}:
+                    # A quota/capacity issue remains queued; an invalid app is
+                    # cancelled and can be re-enqueued after an explicit change.
+                    if error.detail in {"Opportunity not available", "APP_GROUP_CLOSED"}:
+                        queued.status = "CANCELLED"
+                    elif error.detail == "A previous assignment was dropped; contact the owner":
+                        queued.status = "SKIPPED"
                     continue
+                raise
+            queued.status = "DISPATCHED"
+            queued.dispatched_at = now
+            queued.assignment_id = result["assignment_id"]
+            dispatched += 1
+    db.flush()
+    return dispatched
+
+
+def sync_group(db: Session, group_id: str, now: datetime):
+    # Explicit group consent authorizes these peer tasks, while the dispatcher
+    # enforces both the two-per-day rule and the existing active-work ceiling.
+    _queue_group_tasks(db, group_id, now)
+    return dispatch_group_tasks(db, now, group_id=group_id)
 
 
 @router.get("/app-groups")
@@ -692,6 +796,11 @@ def leave_app_group(group_id: str, actor: Actor, db: Database, now: Clock):
         return {"ok": True, "already_left": True}
     app_ids = [app.id for app in group_apps(db, group_id)]
     owned_ids = [app.id for app in owned_apps]
+    db.execute(update(AppGroupTaskQueue).where(
+        AppGroupTaskQueue.group_id == group_id,
+        or_(AppGroupTaskQueue.tester_id == actor.id, AppGroupTaskQueue.app_id.in_(owned_ids or ["__none__"])),
+        AppGroupTaskQueue.status.in_({"PENDING", "DISPATCHED"}),
+    ).values(status="CANCELLED"))
     rows = db.scalars(select(TesterAssignment).where(
         TesterAssignment.app_id.in_(app_ids),
         or_(TesterAssignment.tester_id == actor.id, TesterAssignment.app_id.in_(owned_ids)),

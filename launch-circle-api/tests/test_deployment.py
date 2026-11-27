@@ -9,7 +9,6 @@ from app.core.database import ensure_sqlite_parent, sqlite_database_path
 from app.main import app
 from app.services.sqlite_backup import create_backup, database_path
 
-
 PILOT_SECRET = "pilot-test-secret-that-is-not-used-in-deployment"
 
 
@@ -80,6 +79,7 @@ def test_sqlite_backup_is_consistent_and_retained(tmp_path):
     third = create_backup(source, destination, keep=2)
     assert not first.exists()
     assert second.exists() and third.exists()
+    assert third.stat().st_mode & 0o777 == 0o600
     with sqlite3.connect(third) as db:
         assert db.execute("PRAGMA integrity_check").fetchone() == ("ok",)
         assert db.execute("SELECT value FROM sample").fetchone() == ("pilot-data",)

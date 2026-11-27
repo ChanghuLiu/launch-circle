@@ -29,6 +29,11 @@ class User(Base):
     tester_email_sharing_consent_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
+    tester_group_status: Mapped[str] = mapped_column(String(24), default="NOT_JOINED", server_default="NOT_JOINED", nullable=False)
+    tester_group_play_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    tester_group_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    tester_group_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     country: Mapped[str | None] = mapped_column(String(2), nullable=True)
     acquisition_source: Mapped[str] = mapped_column(
         String(120), default="UNKNOWN", server_default=text("'UNKNOWN'"), nullable=False

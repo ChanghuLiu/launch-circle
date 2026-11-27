@@ -8,6 +8,7 @@ from app.core.database import SessionLocal
 from app.models.evidence import EnrollmentEvidence
 from app.services.clock import aware
 from tests.test_pilot import create_launch, join_circle, register
+from tests.group_fixtures import seed_app_group_consent
 
 
 @pytest.fixture
@@ -18,6 +19,7 @@ def pilot(client, monkeypatch):
     other = register(client, "evidence-other@example.com", "Other")
     launch = create_launch(client, owner)
     join_circle(client, owner, tester)
+    seed_app_group_consent(launch["id"], [tester["id"]])
     response = client.post(f"/apps/{launch['id']}/assign/{tester['id']}", headers=owner["headers"])
     assert response.status_code == 201, response.text
     assignment = response.json()

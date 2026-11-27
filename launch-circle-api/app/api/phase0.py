@@ -6,7 +6,7 @@ import string
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -30,6 +30,8 @@ from app.models.launch import (
     TestMission,
 )
 from app.models.user import User
+from app.schemas.phase0 import TesterGroupAccessRead, TesterGroupAccessUpdate
+from app.services.tester_access import group_access_status, require_tester_group, require_test_enrollment
 from app.schemas.auth import TokenPair
 from app.schemas.phase0 import (
     AdditionalAppCheckoutCreate,
@@ -60,6 +62,7 @@ from app.schemas.phase0 import (
     ManagedOfferViewCreate,
     MatchingRead,
     MissionRead,
+    OwnershipAttestationRequest,
     PilotConfigRead,
     RegisterRequest,
     TestAssignmentRead,
@@ -72,16 +75,17 @@ from app.services.circles import (
     active_member_count,
     ensure_owner_circle,
 )
+from app.services.apps import apply_app_update
 from app.services.clock import aware, get_now
 from app.services.commercial import (
     MANAGED_LIST_PRICE_CENTS,
     managed_offer_snapshot,
     workload_snapshot,
 )
+from app.services.dispatch_authorization import app_group_is_closed, has_app_group_consent
 from app.services.events import emit_event, emit_pilot_event
 from app.services.google_play_billing import (
     GooglePlayBillingUnavailable,
-    GooglePlayPackageNotOwned,
     consume_product_purchase,
     get_one_time_product,
     get_product_purchase,
@@ -182,16 +186,21 @@ def app_read(app: App) -> AppRead:
         owner_id=app.owner_id,
         circle_id=app.circle_id,
         play_developer_account_id=(
-            app.developer_account.play_developer_account_id if app.developer_account else None
+            app.developer_account.play_developer_account_id
+            if app.developer_account and not app.developer_account.play_developer_account_id.startswith("user:")
+            else None
         ),
         entitlement_status=app.entitlement_status,
         developer_account_unlimited=(app.entitlement_status == "PUBLISHER_UNLIMITED"),
         name=app.name,
+        ownership_authorized=app.ownership_authorized,
+        ownership_attested_at=aware(app.ownership_attested_at) if app.ownership_attested_at else None,
+        ownership_attestation_status=app.ownership_attestation_status,
         package_name=app.package_name,
         opt_in_url=app.opt_in_url,
         core_workflow_steps=app.core_workflow_steps or [],
-        google_group_url=app.google_group_url,
-        google_group_mode=app.google_group_mode,
+        google_group_url=settings.launch_circle_google_group_join_url,
+        google_group_mode="LAUNCH_CIRCLE",
         google_group_configured=app.google_group_configured,
         google_group_confirmed_at=app.google_group_confirmed_at,
         status=app.status,
@@ -257,9 +266,9 @@ def test_assignment_read(
         icon_url=item.app.icon_url,
         package_name=item.app.package_name,
         opt_in_url=item.app.opt_in_url,
-        google_group_url=(item.app.google_group_url or settings.launch_circle_google_group_join_url) if item.app.google_group_mode == "LAUNCH_CIRCLE" else item.app.google_group_url,
+        google_group_url=settings.launch_circle_google_group_join_url,
         test_type=item.test_type,
-        status=item.status,
+        status=("ASSIGNED" if item.status not in {"COMPLETED", "DROPPED"} and item.play_account_email != item.tester.tester_group_play_email else item.status),
         feedback_submitted=(any(m.feedback_entry is not None for m in item.missions)
             and not any(m.status in {"AVAILABLE", "COMPLETED"} and m.feedback_entry is None for m in item.missions)),
         assignment_day=item.assignment_day,
@@ -353,6 +362,32 @@ def android_version(response: Response):
         "latest_version_name": settings.android_latest_version_name,
         "play_url": "https://play.google.com/store/apps/details?id=com.launchcircle.testers",
     }
+
+
+def tester_access_read(user):
+    return TesterGroupAccessRead(
+        group_email=settings.launch_circle_google_group_email,
+        group_url=settings.launch_circle_google_group_join_url,
+        play_email=user.tester_group_play_email,
+        status=group_access_status(user),
+        confirmed_at=user.tester_group_confirmed_at if group_access_status(user) == "SELF_CONFIRMED" else None,
+    )
+
+
+@router.get("/tester-group-access", response_model=TesterGroupAccessRead)
+def tester_group_access(current_user: User = Depends(get_current_user)):
+    return tester_access_read(current_user)
+
+
+@router.put("/tester-group-access", response_model=TesterGroupAccessRead)
+def update_tester_group_access(body: TesterGroupAccessUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db), now: datetime = Depends(get_now)):
+    current_user.tester_group_play_email = str(body.play_email).strip().lower()
+    current_user.tester_group_url = settings.launch_circle_google_group_join_url
+    current_user.tester_group_status = body.status
+    current_user.tester_group_confirmed_at = now if body.status == "SELF_CONFIRMED" else None
+    db.commit()
+    db.refresh(current_user)
+    return tester_access_read(current_user)
 
 
 @router.get("/pilot-config", response_model=PilotConfigRead)
@@ -520,70 +555,10 @@ def start_additional_app_checkout(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> AdditionalAppCheckoutRead:
-    canonical_developer_id = settings.google_play_developer_account_id.strip()
-    if settings.is_deployment and (
-        not canonical_developer_id
-        or body.play_developer_account_id.strip() != canonical_developer_id
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="The Play developer account is not verified for this service.",
-        )
-    developer_account = db.scalar(
-        select(DeveloperAccount)
-        .where(DeveloperAccount.play_developer_account_id == body.play_developer_account_id.strip())
-        .with_for_update()
-    )
-    if developer_account is None:
-        raise HTTPException(status_code=409, detail="Create the first free app before buying an additional-app entitlement.")
-    if developer_account.verification_status != "VERIFIED":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Verify this app through the connected Google Play developer account first.",
-        )
-    if settings.has_unlimited_play_developer_account(
-        developer_account.play_developer_account_id
-    ):
-        raise HTTPException(
-            status_code=409,
-            detail="This verified Google Play developer account has unlimited app registration; no purchase is required.",
-        )
-    linked_app_count = db.scalar(
-        select(func.count(App.id)).where(App.developer_account_id == developer_account.id)
-    ) or 0
-    if linked_app_count == 0 and developer_account.first_free_claimed_at is None:
-        raise HTTPException(status_code=409, detail="The first app for this Developer Account is free.")
-    paid_purchase = db.scalar(
-        select(AdditionalAppPurchase.id).where(
-            AdditionalAppPurchase.owner_id == current_user.id,
-            AdditionalAppPurchase.developer_account_id == developer_account.id,
-            AdditionalAppPurchase.status.in_({"PAID", "CONSUMED"}),
-            AdditionalAppPurchase.app_id.is_(None),
-            AdditionalAppPurchase.google_play_purchase_token.is_not(None),
-        )
-    )
-    if paid_purchase is not None:
-        raise HTTPException(status_code=409, detail="An additional-app entitlement is already available.")
-    purchase = db.scalar(
-        select(AdditionalAppPurchase)
-        .where(
-            AdditionalAppPurchase.owner_id == current_user.id,
-            AdditionalAppPurchase.developer_account_id == developer_account.id,
-            AdditionalAppPurchase.status == "PENDING",
-            AdditionalAppPurchase.google_play_product_id == settings.google_play_additional_app_product_id,
-        )
-        .order_by(AdditionalAppPurchase.created_at.desc()).limit(1).with_for_update()
-    )
-    if purchase is None:
-        purchase = AdditionalAppPurchase(
-            owner_id=current_user.id, developer_account_id=developer_account.id,
-            google_play_product_id=settings.google_play_additional_app_product_id,
-            amount_total=100, currency="usd",
-        )
-        db.add(purchase)
-        db.commit()
-        db.refresh(purchase)
-    return additional_app_checkout_read(purchase)
+    # Ordinary accounts have one app and administrators do not need app purchases.
+    # Preserve historical purchase verification/read routes, but never sell an
+    # entitlement that the current app-registration policy cannot fulfil.
+    raise HTTPException(409, "Additional-app purchases are unavailable. Each developer can manage one app; administrators do not need a purchase.")
 
 
 @router.get("/payments/additional-app-checkout/{purchase_id}", response_model=AdditionalAppCheckoutRead)
@@ -860,37 +835,36 @@ def create_app(
     db: Session = Depends(get_db),
     now: datetime = Depends(get_now),
 ) -> AppRead:
-    effective_publisher = body.play_developer_account_id.strip() or settings.google_play_developer_account_id.strip()
+    import base64
+    import binascii
+
+    try:
+        icon_bytes = base64.b64decode(body.icon_data, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise HTTPException(422, "Invalid icon encoding") from exc
+    icon_mime = (
+        "image/png" if icon_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+        else "image/jpeg" if icon_bytes.startswith(b"\xff\xd8\xff")
+        else None
+    )
+    if not icon_mime or len(icon_bytes) > 1048576:
+        raise HTTPException(422, "Icon must be a PNG or JPEG under 1 MB")
+    # Customer submissions are not apps in the service operator's Play account.
+    # Scope unverified registration to the authenticated user, never to a claimed
+    # publisher ID. This grants no Google Play access or publisher verification.
+    admin = is_app_admin(current_user)
+    effective_publisher = (
+        body.play_developer_account_id.strip() or settings.google_play_developer_account_id.strip()
+        if admin else "user:" + current_user.id
+    )
     if not effective_publisher:
         raise HTTPException(503, "Publisher connection is unavailable. Contact support with your Play app link.")
     body = body.model_copy(update={"play_developer_account_id": effective_publisher})
-    if not is_app_admin(current_user):
-        # Serialize creation before checking the per-person quota.
+    if not admin:
         from sqlalchemy import update
         db.execute(update(User).where(User.id == current_user.id).values(is_active=User.is_active))
         if db.scalar(select(App.id).where(App.owner_id == current_user.id).limit(1)):
             raise HTTPException(409, "Each person can add one app. Manage your existing app instead.")
-        canonical_developer_id = settings.google_play_developer_account_id.strip()
-        if settings.is_deployment and (
-            not canonical_developer_id
-            or body.play_developer_account_id.strip() != canonical_developer_id
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="The Play developer account is not verified for this service.",
-            )
-        try:
-            verify_app_package_ownership(settings, body.package_name)
-        except GooglePlayPackageNotOwned as exc:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="This app package is not accessible in the connected Google Play developer account.",
-            ) from exc
-        except GooglePlayBillingUnavailable as exc:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Google Play account verification is temporarily unavailable. Try again later.",
-            ) from exc
 
     selected_circle = None
     if body.circle_id is not None:
@@ -913,8 +887,8 @@ def create_app(
     if developer_account is None:
         developer_account = DeveloperAccount(
             play_developer_account_id=body.play_developer_account_id,
-            identity_method="PUBLIC_PUBLISHER",
-            verification_status="UNVERIFIED" if is_app_admin(current_user) else "VERIFIED",
+            identity_method="PUBLIC_PUBLISHER" if admin else "USER_PROVIDED",
+            verification_status="UNVERIFIED",
         )
         db.add(developer_account)
         try:
@@ -932,12 +906,6 @@ def create_app(
             if developer_account is None:
                 raise
 
-    # A package access check above is the evidence for these fields. Never
-    # convert an unverified client claim into a verified publisher identity.
-    if not is_app_admin(current_user):
-        developer_account.identity_method = "PUBLIC_PUBLISHER"
-        developer_account.verification_status = "VERIFIED"
-
     legacy_apps = list(
         db.scalars(
             select(App).where(
@@ -951,9 +919,6 @@ def create_app(
     if legacy_apps and developer_account.first_free_claimed_at is None:
         developer_account.first_free_claimed_at = now
 
-    linked_app_count = db.scalar(
-        select(func.count(App.id)).where(App.developer_account_id == developer_account.id)
-    ) or 0
     paid_purchase = None
     developer_account_unlimited = is_app_admin(current_user)
     app = App(
@@ -966,15 +931,18 @@ def create_app(
         ),
         circle_id=(selected_circle or ensure_owner_circle(db, current_user)).id,
         name=body.name,
+        ownership_authorized=body.ownership_authorized,
+        ownership_attested_at=now if body.ownership_authorized else None,
+        ownership_attestation_status=(
+            "CONFIRMED" if body.ownership_authorized else "PENDING_ATTESTATION"
+        ),
         package_name=body.package_name,
+        icon_url="data:" + icon_mime + ";base64," + base64.b64encode(icon_bytes).decode(),
         opt_in_url=str(body.opt_in_url),
         core_workflow_steps=body.core_workflow_steps,
-        google_group_url=str(body.google_group_url) if body.google_group_url else (
-            settings.launch_circle_google_group_join_url
-            if body.google_group_mode == "LAUNCH_CIRCLE" else None
-        ),
-        google_group_mode=body.google_group_mode,
-        status="WAITING_FOR_TESTERS",
+        google_group_url=settings.launch_circle_google_group_join_url,
+        google_group_mode="LAUNCH_CIRCLE",
+        status="WAITING_FOR_TESTERS" if body.ownership_authorized else "DRAFT",
         tester_target=body.tester_target,
     )
     developer_account.first_free_claimed_at = now
@@ -1057,6 +1025,28 @@ def get_app(
     return app_read(owned_app(db, app_id, current_user))
 
 
+@router.post("/apps/{app_id}/ownership-attestation", response_model=AppRead)
+def attest_app_ownership(
+    app_id: str,
+    body: OwnershipAttestationRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    now: datetime = Depends(get_now),
+) -> AppRead:
+    app = owned_app(db, app_id, current_user)
+    if not body.confirmed:
+        raise HTTPException(422, "Confirm that you own this app or are authorized to submit it")
+    if not app.ownership_authorized:
+        app.ownership_authorized = True
+        app.ownership_attested_at = now
+        app.ownership_attestation_status = "CONFIRMED"
+        if app.status == "DRAFT":
+            app.status = "WAITING_FOR_TESTERS"
+        db.commit()
+        db.refresh(app)
+    return app_read(app)
+
+
 @router.patch("/apps/{app_id}", response_model=AppRead)
 def update_app(
     app_id: str,
@@ -1065,13 +1055,7 @@ def update_app(
     db: Session = Depends(get_db),
 ) -> AppRead:
     app = owned_app(db, app_id, current_user)
-    values = body.model_dump(exclude_unset=True)
-    for name, value in values.items():
-        if name == "core_workflow_steps" and value is None:
-            continue
-        if name in {"opt_in_url", "google_group_url"} and value is not None:
-            value = str(value)
-        setattr(app, name, value)
+    apply_app_update(app, body)
     db.commit()
     db.refresh(app)
     return app_read(app)
@@ -1094,7 +1078,7 @@ def confirm_google_group(
             db, current_user.id, "google_group_confirmed",
             f"google-group-confirmed:{app.id}", app_id=app.id,
         )
-    # Test access confirmation does not recruit or place the App in a group.
+    # Home visibility follows completed setup; recruitment is administrator-managed.
     db.commit()
     db.refresh(app)
     return app_read(app)
@@ -1126,6 +1110,12 @@ def assign_tester(
     now: datetime = Depends(get_now),
 ) -> AssignmentRead:
     app = owned_app(db, app_id, current_user)
+    if not app.ownership_authorized:
+        raise HTTPException(status_code=409, detail="APP_OWNER_ATTESTATION_REQUIRED")
+    if app_group_is_closed(db, app.id):
+        raise HTTPException(status_code=409, detail="APP_GROUP_CLOSED")
+    if app.no_test_required:
+        raise HTTPException(status_code=409, detail="Testing tasks are waived for this app")
     if tester_id == app.owner_id:
         raise HTTPException(status_code=422, detail="An owner cannot test their own app")
     tester = db.get(User, tester_id)
@@ -1140,11 +1130,23 @@ def assign_tester(
     )
     if member is None or not tester.is_active:
         raise HTTPException(status_code=422, detail="Tester must be an active member of the app circle")
+    if not has_app_group_consent(db, app.id, tester_id):
+        raise HTTPException(
+            status_code=409,
+            detail="Tester has not explicitly joined this app's matched App Group",
+        )
+    # Serialize quota checks for a tester across simultaneous admin assignments.
+    db.execute(update(User).where(User.id == tester_id).values(is_active=User.is_active))
+    active_work_count = db.scalar(select(func.count(TesterAssignment.id)).where(
+        TesterAssignment.tester_id == tester_id,
+        TesterAssignment.status.in_({"ASSIGNED", "OPTED_IN", "INSTALLED", "ACTIVE"}),
+    )) or 0
+    if active_work_count >= 2:
+        raise HTTPException(status_code=409, detail="Tester has reached the active assignment limit")
     daily_count = db.scalar(
         select(func.count(TesterAssignment.id)).where(
             TesterAssignment.tester_id == tester_id,
             TesterAssignment.assignment_day == assignment_day(now),
-            TesterAssignment.status != "DROPPED",
         )
     ) or 0
     if daily_count >= 2:
@@ -1192,8 +1194,15 @@ def confirm_opt_in(
     now: datetime = Depends(get_now),
 ) -> AssignmentRead:
     assignment = assigned_to(db, assignment_id, current_user)
+    require_tester_group(current_user)
     if assignment.status == "DROPPED":
         raise HTTPException(status_code=409, detail="Dropped assignment cannot be resumed")
+    account_changed = assignment.play_account_email != current_user.tester_group_play_email
+    if account_changed:
+        assignment.opted_in_at = None
+        assignment.installed_at = None
+        assignment.play_account_email = current_user.tester_group_play_email
+        assignment.status = "ASSIGNED"
     first_opt_in = assignment.opted_in_at is None
     if first_opt_in:
         assignment.opted_in_at = now
@@ -1220,6 +1229,9 @@ def confirm_installed(
     now: datetime = Depends(get_now),
 ) -> AssignmentRead:
     assignment = assigned_to(db, assignment_id, current_user)
+    require_tester_group(current_user)
+    if assignment.play_account_email != current_user.tester_group_play_email:
+        raise HTTPException(409, "Your Play account changed. Join this app's Play test again before confirming installation.")
     if assignment.opted_in_at is None:
         raise HTTPException(status_code=409, detail="Confirm opt-in before installation")
     if assignment.status in {"DROPPED", "COMPLETED"}:
@@ -1287,27 +1299,7 @@ def complete_test_assignment(
         evaluate_app_recovery(db, assignment.app, now)
         db.commit()
         return test_assignment_read(assignment)
-    if assignment.status != "ASSIGNED":
-        raise HTTPException(status_code=409, detail="Test assignment is not completable")
-    assignment.status = "COMPLETED"
-    assignment.completed_at = now
-    assignment.opted_in_at = assignment.opted_in_at or now
-    assignment.installed_at = assignment.installed_at or now
-    assignment.last_activity_at = now
-    assignment.health_status = "GOOD"
-    evaluate_app_recovery(db, assignment.app, now)
-    emit_pilot_event(
-        db,
-        current_user.id,
-        "test_assignment_completed",
-        f"test-assignment-completed:{assignment.id}",
-        app_id=assignment.app_id,
-        assignment_id=assignment.id,
-        payload={"assignment_day": str(assignment.assignment_day)},
-    )
-    db.commit()
-    db.refresh(assignment)
-    return test_assignment_read(assignment)
+    raise HTTPException(status_code=409, detail="Use the guided test steps: join the Google Group, opt in to this app, confirm installation, then complete a mission and submit feedback.")
 
 
 @router.get("/apps/{app_id}/assignment-coverage", response_model=AssignmentCoverageRead)
@@ -1366,6 +1358,7 @@ def start_mission(
         raise HTTPException(status_code=404, detail="Mission not found")
     if mission.assignment.tester_id != current_user.id:
         raise HTTPException(status_code=403, detail="Mission belongs to another tester")
+    require_test_enrollment(current_user, mission.assignment)
     refresh_mission_availability(db, [mission], now)
     if mission.status not in {"AVAILABLE", "COMPLETED"}:
         raise HTTPException(status_code=409, detail="Mission is not available")
@@ -1390,6 +1383,7 @@ def complete_mission(
         raise HTTPException(status_code=404, detail="Mission not found")
     if mission.assignment.tester_id != current_user.id:
         raise HTTPException(status_code=403, detail="Mission belongs to another tester")
+    require_test_enrollment(current_user, mission.assignment)
     refresh_mission_availability(db, [mission], now)
     if mission.status not in {"AVAILABLE", "COMPLETED"}:
         raise HTTPException(status_code=409, detail="Mission is not available")
@@ -1432,6 +1426,7 @@ def submit_feedback(
         raise HTTPException(status_code=404, detail="Mission not found")
     if mission.assignment.tester_id != current_user.id:
         raise HTTPException(status_code=403, detail="Mission belongs to another tester")
+    require_test_enrollment(current_user, mission.assignment)
     if mission.status != "COMPLETED":
         raise HTTPException(status_code=409, detail="Complete the mission before feedback")
     if mission.feedback_entry is not None:

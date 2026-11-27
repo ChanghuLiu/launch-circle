@@ -52,6 +52,28 @@ def buyer_with_app(package_suffix: str):
     return db, user, app
 
 
+def historical_additional_checkout(body, user, db):
+    """Seed an existing legacy intent to exercise verification, never create a new sale."""
+    account = db.query(DeveloperAccount).filter_by(play_developer_account_id=body.play_developer_account_id).one()
+    purchase = AdditionalAppPurchase(owner_id=user.id, developer_account_id=account.id,
+        google_play_product_id="additional_app_1", amount_total=100, currency="usd")
+    db.add(purchase); db.commit(); db.refresh(purchase)
+    return phase0_api.additional_app_checkout_read(purchase)
+
+
+def test_new_additional_app_purchase_is_rejected_without_creating_a_charge():
+    import pytest
+    from fastapi import HTTPException
+    db, user, _app = buyer_with_app("noadditionalpurchase")
+    try:
+        with pytest.raises(HTTPException) as rejected:
+            phase0_api.start_additional_app_checkout(AdditionalAppCheckoutCreate(play_developer_account_id="1234567890123456789"), user, db)
+        assert rejected.value.status_code == 409
+        assert db.query(AdditionalAppPurchase).count() == 0
+    finally:
+        db.close()
+
+
 def binding(purchase_id: str) -> str:
     return hashlib.sha256(f"launch-circle:{purchase_id}".encode()).hexdigest()
 
@@ -91,7 +113,7 @@ def fake_catalog(_settings, product_id: str) -> dict:
 def test_additional_app_grants_one_credit_tied_to_google_order_and_retry_is_idempotent(monkeypatch):
     db, user, app = buyer_with_app("paymentone")
     try:
-        intent = phase0_api.start_additional_app_checkout(
+        intent = historical_additional_checkout(
             AdditionalAppCheckoutCreate(play_developer_account_id="1234567890123456789"), user, db
         )
         assert intent.product_id == "additional_app_1"
@@ -144,7 +166,7 @@ def test_additional_app_grants_one_credit_tied_to_google_order_and_retry_is_idem
 def test_pilot_accepts_bound_play_test_purchase_without_region_or_order_id(monkeypatch):
     db, user, _app = buyer_with_app("play-test-order")
     try:
-        intent = phase0_api.start_additional_app_checkout(
+        intent = historical_additional_checkout(
             AdditionalAppCheckoutCreate(play_developer_account_id="1234567890123456789"), user, db
         )
         monkeypatch.setattr(phase0_api.settings, "app_env", "pilot")
@@ -193,7 +215,7 @@ def test_pilot_accepts_bound_play_test_purchase_without_region_or_order_id(monke
 def test_production_rejects_license_test_purchase(monkeypatch):
     db, user, _app = buyer_with_app("play-test-production")
     try:
-        intent = phase0_api.start_additional_app_checkout(
+        intent = historical_additional_checkout(
             AdditionalAppCheckoutCreate(play_developer_account_id="1234567890123456789"), user, db
         )
         monkeypatch.setattr(phase0_api.settings, "app_env", "production")
@@ -232,7 +254,7 @@ def test_managed_price_uses_credit_sku_and_redeems_once(monkeypatch):
     monkeypatch.setattr(phase0_api, "verify_app_package_ownership", lambda *_args: None)
     db, user, app = buyer_with_app("paymentmanaged")
     try:
-        additional = phase0_api.start_additional_app_checkout(
+        additional = historical_additional_checkout(
             AdditionalAppCheckoutCreate(play_developer_account_id="1234567890123456789"), user, db
         )
         monkeypatch.setattr(
@@ -265,17 +287,16 @@ def test_managed_price_uses_credit_sku_and_redeems_once(monkeypatch):
         assert full_price.product_id == "managed_launch_15"
         assert full_price.amount_total == 1500
 
-        paid_app = phase0_api.create_app(
-            AppCreate(
-                name="Additional payment test app",
-                package_name="com.example.paymentmanaged.additional",
-                opt_in_url="https://play.google.com/apps/testing/com.example.paymentmanaged.additional",
-                play_developer_account_id="1234567890123456789",
-            ),
-            user,
-            db,
-            datetime.now(timezone.utc),
-        )
+        # Historical paid app: the current one-app policy forbids creating this
+        # through registration, but existing purchase credit must remain readable.
+        purchase = db.get(AdditionalAppPurchase, additional.id)
+        paid_app = App(owner_id=user.id, developer_account_id=app.developer_account_id,
+            circle_id=app.circle_id, entitlement_status="ADDITIONAL_PAID",
+            name="Historical additional app", package_name="com.example.paymentmanaged.additional",
+            opt_in_url="https://play.google.com/apps/testing/com.example.paymentmanaged.additional")
+        db.add(paid_app); db.flush()
+        purchase.app_id, purchase.status = paid_app.id, "CONSUMED"
+        db.commit()
         assert paid_app.entitlement_status == "ADDITIONAL_PAID"
         assert managed_offer_snapshot(db, db.get(App, paid_app.id))["managed_credit_amount_cents"] == 100
         assert managed_offer_snapshot(db, app)["managed_credit_amount_cents"] == 0
@@ -389,7 +410,7 @@ def test_unverified_managed_purchase_does_not_set_app_entitlement(monkeypatch):
 def test_wrong_play_product_does_not_grant_purchase_or_credit(monkeypatch):
     db, user, _app = buyer_with_app("paymentinvalid")
     try:
-        intent = phase0_api.start_additional_app_checkout(
+        intent = historical_additional_checkout(
             AdditionalAppCheckoutCreate(play_developer_account_id="1234567890123456789"), user, db
         )
         monkeypatch.setattr(
@@ -428,7 +449,7 @@ def test_wrong_play_product_does_not_grant_purchase_or_credit(monkeypatch):
 def test_play_console_us_base_price_mismatch_rejects_purchase(monkeypatch):
     db, user, _app = buyer_with_app("price-mismatch")
     try:
-        intent = phase0_api.start_additional_app_checkout(
+        intent = historical_additional_checkout(
             AdditionalAppCheckoutCreate(play_developer_account_id="1234567890123456789"), user, db
         )
         monkeypatch.setattr(

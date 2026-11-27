@@ -4,8 +4,10 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 import app.models
+from app.middleware.activity import user_activity_middleware
 from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
+from app.api.capabilities import router as capabilities_router
 from app.api.evidence import router as evidence_router
 from app.api.intake import router as intake_router
 from app.api.phase0 import router as phase0_router
@@ -19,6 +21,8 @@ Base.metadata.create_all(bind=engine)
 ensure_sqlite_phase1_schema()
 
 app = FastAPI(title="Launch Circle API", version="0.1.0", debug=False)
+
+app.middleware("http")(user_activity_middleware)
 
 if settings.cors_origin_list:
     app.add_middleware(
@@ -45,6 +49,7 @@ def health() -> dict[str, str]:
 
 app.include_router(evidence_router)
 app.include_router(auth_router)
+app.include_router(capabilities_router)
 app.include_router(phase0_router)
 app.include_router(users_router)
 

@@ -1,11 +1,12 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.api.phase0 import mission_read
 from app.api.phase0 import test_assignment_read as assignment_view
 from app.core.database import SessionLocal
-from app.models.launch import Feedback, TesterAssignment, TestMission
+from app.models.launch import App, Feedback, TesterAssignment, TestMission
+from app.models.pool import AppGroup, AppGroupTaskQueue
 from tests.test_owner_app_group_selection import make_group
 from tests.test_shared_pool import actor, campaign, open_app, post
 
@@ -35,8 +36,12 @@ def test_group_matching_capacity_and_join_consent(client):
         assert post(client, '/app-groups/' + own['id'] + '/join', owners[0]).status_code == 200
     with SessionLocal() as db:
         assigned = db.scalars(select(TesterAssignment).where(TesterAssignment.tester_id == owners[0][0])).all()
-        assert len(assigned) == 14
+        assert len(assigned) == 2
         assert all(a.app_id != apps[0] and a.opted_in_at is None and a.installed_at is None for a in assigned)
+        assert db.scalar(select(func.count(AppGroupTaskQueue.id)).where(
+            AppGroupTaskQueue.tester_id == owners[0][0],
+            AppGroupTaskQueue.status == "PENDING",
+        )) == 12
     assert post(client, '/app-groups/' + own['id'] + '/join', owners[-1]).status_code == 409
 
 
@@ -53,6 +58,122 @@ def test_later_group_app_creates_task_only_for_consented_member(client):
         tasks = db.scalars(select(TesterAssignment)).all()
         assert len(tasks) == 2
         assert {(task.tester_id, task.app_id) for task in tasks} == {(first[0], b), (second[0], a)}
+
+
+def test_group_queue_is_idempotent_and_dispatches_only_within_daily_limit(client):
+    from app.main import app
+    from app.services.clock import get_now
+
+    group_id = make_group("Queue")
+    owners = [actor() for _ in range(4)]
+    apps = []
+    for owner in owners:
+        app_id = campaign(owner)
+        open_app(client, app_id, owner)
+        apps.append(app_id)
+        assert choose(client, app_id, group_id, owner).status_code == 200
+
+    with SessionLocal() as db:
+        assigned = db.scalars(select(TesterAssignment).where(TesterAssignment.tester_id == owners[0][0])).all()
+        pending = db.scalars(select(AppGroupTaskQueue).where(
+            AppGroupTaskQueue.tester_id == owners[0][0], AppGroupTaskQueue.status == "PENDING",
+        )).all()
+        assert len(assigned) == 2
+        assert len(pending) == 1 and pending[0].app_id == apps[3]
+
+    from app.api.pool import sync_group
+    with SessionLocal() as db:
+        sync_group(db, group_id, datetime.now(UTC))
+        db.commit()
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count(AppGroupTaskQueue.id)).where(
+            AppGroupTaskQueue.tester_id == owners[0][0],
+        )) == 3
+
+    # Completion frees the concurrent-work slots; the next UTC day can drain one queued item.
+    with SessionLocal() as db:
+        for row in db.scalars(select(TesterAssignment).where(TesterAssignment.tester_id == owners[0][0])):
+            row.status = "COMPLETED"
+        db.commit()
+    previous = app.dependency_overrides.get(get_now)
+    app.dependency_overrides[get_now] = lambda: datetime.now(UTC) + timedelta(days=1)
+    try:
+        assert client.get("/test-assignments/today", headers=owners[0][1]).status_code == 200
+        assert client.get("/test-assignments/today", headers=owners[0][1]).status_code == 200
+    finally:
+        if previous is None:
+            app.dependency_overrides.pop(get_now, None)
+        else:
+            app.dependency_overrides[get_now] = previous
+    with SessionLocal() as db:
+        delivered = db.scalar(select(AppGroupTaskQueue).where(
+            AppGroupTaskQueue.tester_id == owners[0][0], AppGroupTaskQueue.app_id == apps[3],
+        ))
+        assert delivered.status == "DISPATCHED"
+        assert db.scalar(select(func.count(TesterAssignment.id)).where(
+            TesterAssignment.tester_id == owners[0][0], TesterAssignment.app_id == apps[3],
+        )) == 1
+
+
+def test_closed_group_blocks_direct_and_admin_task_creation_and_keeps_existing_task(client):
+    owner, tester = actor(), actor()
+    group_id = make_group("Closed")
+    app_id = campaign(owner)
+    open_app(client, app_id, owner)
+    assert choose(client, app_id, group_id, owner).status_code == 200
+    peer_app = campaign(tester)
+    open_app(client, peer_app, tester)
+    assert choose(client, peer_app, group_id, tester).status_code == 200
+    with SessionLocal() as db:
+        existing = db.scalar(select(TesterAssignment).where(
+            TesterAssignment.app_id == app_id, TesterAssignment.tester_id == tester[0],
+        ))
+        assert existing is not None
+        existing_id = existing.id
+        db.get(AppGroup, group_id).status = "CLOSED"
+        db.commit()
+
+    direct = post(client, f"/apps/{app_id}/tester-pool/accept", tester)
+    manual = client.post(f"/apps/{app_id}/assign/{tester[0]}", headers=owner[1])
+    assert direct.status_code == 409 and direct.json()["detail"] == "APP_GROUP_CLOSED"
+    assert manual.status_code == 409 and manual.json()["detail"] == "APP_GROUP_CLOSED"
+    with SessionLocal() as db:
+        kept = db.get(TesterAssignment, existing_id)
+        assert kept.status == "ASSIGNED"
+        assert db.scalar(select(func.count(TesterAssignment.id)).where(
+            TesterAssignment.app_id == app_id, TesterAssignment.tester_id == tester[0],
+        )) == 1
+
+
+def test_admin_assignment_observes_the_same_two_task_daily_limit(client):
+    owner, tester, unrelated_owner = actor(), actor(), actor()
+    group_id = make_group("Daily cap")
+    target_app = campaign(owner)
+    open_app(client, target_app, owner)
+    assert choose(client, target_app, group_id, owner).status_code == 200
+    tester_app = campaign(tester)
+    open_app(client, tester_app, tester)
+    assert choose(client, tester_app, group_id, tester).status_code == 200
+    unrelated_app = campaign(unrelated_owner)
+    with SessionLocal() as db:
+        circle_id = db.get(App, unrelated_app).circle_id
+        db.add(TesterAssignment(
+            app_id=unrelated_app,
+            circle_id=circle_id,
+            tester_id=tester[0],
+            assignment_day=datetime.now(UTC).date(),
+            status="DROPPED",
+        ))
+        db.commit()
+        before = db.scalar(select(func.count(TesterAssignment.id)).where(
+            TesterAssignment.tester_id == tester[0],
+            TesterAssignment.assignment_day == datetime.now(UTC).date(),
+        ))
+        assert before == 2
+
+    response = client.post(f"/apps/{target_app}/assign/{tester[0]}", headers=owner[1])
+    assert response.status_code == 409
+    assert "daily assignment limit" in response.json()["detail"].lower()
 
 
 def test_submitted_feedback_blocks_current_task_but_new_due_mission_reopens(client):
@@ -136,12 +257,16 @@ def test_leaving_full_group_reopens_slot_preserves_feedback_and_can_resume(clien
         assert db.get(PoolListing, app_ids[0]).enabled
         assert db.scalar(select(Feedback).where(Feedback.mission_id == mission_id)) is not None
         assert all(t.status == 'DROPPED' for t in db.scalars(select(TesterAssignment).where(TesterAssignment.tester_id == owners[0][0])))
+        assert db.scalar(select(func.count(AppGroupTaskQueue.id)).where(
+            AppGroupTaskQueue.tester_id == owners[0][0],
+            AppGroupTaskQueue.status == "CANCELLED",
+        )) > 0
     # The freed slot can be filled by a new app; recruitment approval remains enabled.
     newcomer = actor();replacement = campaign(newcomer);open_app(client, replacement, newcomer)
     assert choose(client, replacement, group['id'], newcomer).status_code == 200
     with SessionLocal() as db:
         replacement_tasks = db.scalars(select(TesterAssignment).where(TesterAssignment.tester_id == newcomer[0])).all()
-        assert len(replacement_tasks) == 14
+        assert len(replacement_tasks) == 2
     other_group = make_group("USB")
     assert choose(client, app_ids[0], other_group, owners[0]).status_code == 200
     own_group = next(g for g in client.get('/app-groups', headers=owners[0][1]).json() if g['my_group'])

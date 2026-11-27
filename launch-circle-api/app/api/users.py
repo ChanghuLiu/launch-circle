@@ -1,7 +1,8 @@
 from datetime import datetime, timezone
+from hashlib import sha256
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -122,11 +123,21 @@ def update_device(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    device = db.scalar(select(Device).where(Device.installation_id == body.installation_id))
-    if device is not None and device.user_id != current_user.id:
-        raise HTTPException(status_code=409, detail="Installation belongs to another user")
+    # Serialize registration for an account so overlapping retries reuse its row.
+    db.execute(update(User).where(User.id == current_user.id).values(is_active=User.is_active))
+    digest = sha256(f"{current_user.id}:{body.installation_id}".encode()).hexdigest()
+    scoped_id = f"account-v1:{digest}"
+    installation_ids = [scoped_id]
+    if not body.installation_id.startswith("account-v1:"):
+        installation_ids.append(body.installation_id)
+    device = db.scalar(
+        select(Device).where(
+            Device.user_id == current_user.id,
+            Device.installation_id.in_(installation_ids),
+        ).order_by((Device.installation_id == scoped_id).desc()).limit(1)
+    )
     if device is None:
-        device = Device(user_id=current_user.id, installation_id=body.installation_id)
+        device = Device(user_id=current_user.id, installation_id=scoped_id)
         db.add(device)
     device.manufacturer = body.manufacturer
     device.model = body.model
@@ -137,7 +148,7 @@ def update_device(
     db.refresh(device)
     return {
         "id": device.id,
-        "installation_id": device.installation_id,
+        "installation_id": body.installation_id,
         "manufacturer": device.manufacturer,
         "model": device.model,
         "android_api": device.android_api,

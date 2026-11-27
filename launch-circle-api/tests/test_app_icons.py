@@ -1,4 +1,4 @@
-from test_entitlements import register, create_app
+from tests.test_entitlements import register, create_app
 
 def test_icon_upload_is_owner_only_and_rejects_invalid_content(client):
     owner = register(client, 'icon-owner@example.com', 'Owner')

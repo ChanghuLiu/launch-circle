@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, Index
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -64,3 +64,23 @@ class AppGroupMember(Base):
     group_id: Mapped[str] = mapped_column(ForeignKey("app_groups.id", ondelete="CASCADE"), primary_key=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class AppGroupTaskQueue(Base):
+    """Idempotent future task consent for a tester and peer app in a group."""
+
+    __tablename__ = "app_group_task_queue"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    group_id: Mapped[str] = mapped_column(ForeignKey("app_groups.id", ondelete="CASCADE"), nullable=False)
+    app_id: Mapped[str] = mapped_column(ForeignKey("apps.id", ondelete="CASCADE"), nullable=False)
+    tester_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="PENDING", server_default="PENDING")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    assignment_id: Mapped[str | None] = mapped_column(ForeignKey("tester_assignments.id", ondelete="SET NULL"))
+
+    __table_args__ = (
+        UniqueConstraint("group_id", "app_id", "tester_id", name="uq_app_group_task_queue_scope"),
+        Index("ix_app_group_task_queue_user_status", "tester_id", "status", "created_at"),
+        Index("ix_app_group_task_queue_group_status", "group_id", "status"),
+    )

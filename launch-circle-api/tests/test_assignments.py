@@ -44,7 +44,7 @@ def create_app(client: TestClient, owner: dict, suffix: str) -> dict:
     response = client.post(
         "/apps",
         headers=owner["headers"],
-        json={"icon_data": 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGPUjTrBwMDAxMDAwMDAAAAPQwFTH4I6DQAAAABJRU5ErkJggg==',
+        json={"ownership_authorized": True, "icon_data": 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGPUjTrBwMDAxMDAwMDAAAAPQwFTH4I6DQAAAABJRU5ErkJggg==',
             "name": f"Assignment App {suffix}",
             "package_name": f"com.example.assignment{package_suffix}",
             "opt_in_url": f"https://play.google.com/apps/testing/com.example.assignment{package_suffix}",
