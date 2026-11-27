@@ -17,11 +17,17 @@ from sqlalchemy.orm import Session
 from app.api.pool import active_work, current_assignments, ready, supply
 from app.core.config import get_settings
 from app.core.database import get_db
-from app.models.admin import AdminAppControl, AdminAudit, AdminRecommendation, AdminSession, AdminCredential
+from app.models.admin import (
+    AdminAppControl,
+    AdminAudit,
+    AdminCredential,
+    AdminRecommendation,
+    AdminSession,
+)
 from app.models.launch import App, Circle, CircleMember, Feedback, TesterAssignment
 from app.models.pool import AppGroup, AppIntake, PoolListing, TesterPoolPreference
 from app.models.user import User
-from app.services.admin_auth import password_matches, password_hash
+from app.services.admin_auth import password_hash, password_matches
 from app.services.circles import active_member_count
 
 router = APIRouter(prefix="/admin", tags=["operator"])

@@ -8,8 +8,8 @@ from app.core.database import SessionLocal
 from app.models.admin import AdminAudit, AdminRecommendation
 from app.models.launch import TesterAssignment
 from app.models.pool import AppGroup
-from tests.test_owner_app_group_selection import make_group
 from app.services.admin_auth import password_hash, password_matches
+from tests.test_owner_app_group_selection import make_group
 from tests.test_shared_pool import actor, campaign, open_app, post
 
 PASSWORD = "SYNTHETIC-operator-test-password"
