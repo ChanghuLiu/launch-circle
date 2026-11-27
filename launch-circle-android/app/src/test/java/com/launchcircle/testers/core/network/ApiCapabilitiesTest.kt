@@ -16,15 +16,24 @@ class ApiCapabilitiesTest {
         assertTrue(parsed.appGroupSelection)
     }
 
+    @Test fun acceptsExactProductionCapabilitiesPayload() {
+        val production = """{"schema_version":1,"migration_revision":"0021_group_task_queue","capabilities":{"owner_attestation":true,"app_group_selection":true}}"""
+        val parsed = ApiCapabilities.parse(production)
+        assertTrue(parsed.ownerAttestation)
+        assertTrue(parsed.appGroupSelection)
+    }
+
     @Test fun rejectsLegacyRevision() {
         val parsed = ApiCapabilities.parse(enabled.replace("0021_group_task_queue", "0019_user_activity_events"))
         assertFalse(parsed.ownerAttestation)
         assertFalse(parsed.appGroupSelection)
     }
 
-    @Test fun rejects404AndMissingBody() {
-        assertEqualsUnsupported(ApiCapabilities.fromHttpResult(successful = false, raw = enabled))
-        assertEqualsUnsupported(ApiCapabilities.fromHttpResult(successful = true, raw = null))
+    @Test fun distinguishesUnsupportedFromUnavailableResponses() {
+        assertEqualsUnsupported(ApiCapabilities.fromHttpResult(statusCode = 404, raw = enabled))
+        assertFalse(ApiCapabilities.fromHttpResult(statusCode = 503, raw = enabled).resolved)
+        assertFalse(ApiCapabilities.fromHttpResult(statusCode = 200, raw = null).resolved)
+        assertFalse(ApiCapabilities.Unavailable.resolved)
     }
 
     @Test fun rejectsUnknownFieldsAndMalformedResponses() {

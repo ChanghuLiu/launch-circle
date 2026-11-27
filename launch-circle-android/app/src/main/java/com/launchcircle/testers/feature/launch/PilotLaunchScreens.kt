@@ -57,6 +57,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -65,6 +66,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
@@ -110,6 +114,14 @@ fun LaunchWorkspace(
 ) {
     val state by viewModel.state.collectAsState()
     val activity = LocalActivity.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, viewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.refreshCapabilities()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     LaunchedEffect(viewModel, profile.id) { viewModel.loadLaunches(profile.id) }
     val primaryDestination = state.pilotSurface == PilotSurface.NONE && state.destination in setOf(
         LaunchDestination.COMMUNITY_HOME,
@@ -213,6 +225,9 @@ fun LaunchWorkspace(
                             viewModel::setDraftIcon,
                             loading = state.loading,
                             supportsOwnerAttestation = state.capabilities.ownerAttestation,
+                            capabilitiesResolved = state.capabilitiesResolved,
+                            capabilitiesCheckFailed = state.capabilitiesCheckFailed,
+                            onRetryCapabilities = { viewModel.refreshCapabilities(force = true) },
                         )
                         LaunchDestination.DASHBOARD -> {
                             val selected = state.selectedApp?.takeIf { it.owner_id == profile.id }
@@ -233,6 +248,8 @@ fun LaunchWorkspace(
                                     onAdd = if (profile.login_email.equals("liuchanghu2018@gmail.com", ignoreCase = true)) viewModel::showAddApp else null,
                                     onAttestOwnership = { viewModel.attestOwnership(selected.id) },
                                     supportsAppGroupSelection = state.capabilities.appGroupSelection,
+                                    capabilitiesResolved = state.capabilitiesResolved,
+                                    capabilitiesCheckFailed = state.capabilitiesCheckFailed,
                                 )
                             } else if (!state.loading) {
                                 Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
@@ -690,6 +707,9 @@ private fun AddApp(
     onDraftIcon: (String?) -> Unit,
     loading: Boolean = false,
     supportsOwnerAttestation: Boolean,
+    capabilitiesResolved: Boolean,
+    capabilitiesCheckFailed: Boolean,
+    onRetryCapabilities: () -> Unit,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var playLink by rememberSaveable { mutableStateOf("") }
@@ -703,7 +723,7 @@ private fun AddApp(
     val steps = parseCoreWorkflowSteps(workflowText)
     val stepsTooLong = steps.any { it.length > 200 }
     val stepsInvalid = steps.size > 4 || stepsTooLong
-    val valid = parsedPlayLink != null && name.isNotBlank() && draftIcon != null && steps.size >= 2 && !stepsInvalid &&
+    val valid = capabilitiesResolved && parsedPlayLink != null && name.isNotBlank() && draftIcon != null && steps.size >= 2 && !stepsInvalid &&
         (!supportsOwnerAttestation || ownershipAuthorized)
     val example = lcText("Open the app and try its main feature using sample data.\nCheck the result and report anything confusing.", "打开应用，用示例数据尝试主要功能。\n检查结果，反馈遇到的问题或不清楚的地方。")
     Column(Modifier.fillMaxSize()) {
@@ -791,7 +811,13 @@ private fun AddApp(
                     Text(message, color = color, fontWeight = FontWeight.SemiBold)
                 },
                 minLines = 3, maxLines = 5, enabled = !loading, modifier = Modifier.fillMaxWidth())
-            if (supportsOwnerAttestation) {
+            if (!capabilitiesResolved && capabilitiesCheckFailed) {
+                Text(lcText("Unable to check service capabilities. Check your connection and retry.", "暂时无法检查服务能力。请检查网络后重试。"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(onClick = onRetryCapabilities) { Text(lcText("Try again", "重试")) }
+            } else if (!capabilitiesResolved) {
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+                Text(lcText("Checking service capabilities…", "正在检查服务能力…"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else if (supportsOwnerAttestation) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Checkbox(checked = ownershipAuthorized, onCheckedChange = { ownershipAuthorized = it }, enabled = !loading)
                     Text(lcText(
@@ -909,6 +935,8 @@ private fun Dashboard(
     onAdd: (() -> Unit)? = null,
     onAttestOwnership: () -> Unit,
     supportsAppGroupSelection: Boolean,
+    capabilitiesResolved: Boolean,
+    capabilitiesCheckFailed: Boolean,
 ) {
     var coordinationMinutesText by rememberSaveable(app.id) { mutableStateOf("") }
     var showPriorityOffer by rememberSaveable(app.id) { mutableStateOf(false) }
@@ -950,7 +978,10 @@ private fun Dashboard(
                 }
             }
         }
-        if (!supportsAppGroupSelection) item {
+        if (!capabilitiesResolved && capabilitiesCheckFailed) item {
+            Text(lcText("Unable to check App Groups support. Check your connection, then return to this screen to retry.", "暂时无法检查互测小组支持。请检查网络，再返回此页重试。"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (capabilitiesResolved && !supportsAppGroupSelection) item {
             Text(
                 lcText("Owner confirmation and App Groups will be available after the service is updated.", "所有者确认和互测小组将在服务端更新后可用。"),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

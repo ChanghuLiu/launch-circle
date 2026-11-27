@@ -89,8 +89,8 @@ class RealLaunchRepository(
     override suspend fun capabilities(): ApiCapabilities = runCatching {
         val response = api.capabilities()
         val payload = response.body()?.use { it.string() }
-        ApiCapabilities.fromHttpResult(response.isSuccessful, payload)
-    }.getOrDefault(ApiCapabilities.Unsupported)
+        ApiCapabilities.fromHttpResult(response.code(), payload)
+    }.getOrDefault(ApiCapabilities.Unavailable)
 
     override suspend fun setAppIcon(appId: String, data: String?) = authenticated {
         if (data == null) api.importIcon(it, appId) else api.uploadIcon(it, appId, mapOf("data" to data))

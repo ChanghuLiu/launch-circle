@@ -5,9 +5,12 @@ import com.google.gson.JsonParser
 data class ApiCapabilities(
     val ownerAttestation: Boolean = false,
     val appGroupSelection: Boolean = false,
+    /** False means no authoritative HTTP response was available yet. */
+    val resolved: Boolean = true,
 ) {
     companion object {
         val Unsupported = ApiCapabilities()
+        val Unavailable = ApiCapabilities(resolved = false)
 
         /** Strict parsing is intentional: old/unknown APIs must stay fail-closed. */
         fun parse(raw: String): ApiCapabilities {
@@ -32,7 +35,10 @@ data class ApiCapabilities(
             }.getOrDefault(Unsupported)
         }
 
-        fun fromHttpResult(successful: Boolean, raw: String?): ApiCapabilities =
-            if (successful && raw != null) parse(raw) else Unsupported
+        fun fromHttpResult(statusCode: Int, raw: String?): ApiCapabilities = when {
+            statusCode == 404 -> Unsupported
+            statusCode !in 200..299 || raw == null -> Unavailable
+            else -> parse(raw)
+        }
     }
 }

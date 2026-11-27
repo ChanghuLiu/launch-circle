@@ -38,6 +38,8 @@ enum class PilotSurface {
 
 data class LaunchUiState(
     val capabilities: ApiCapabilities = ApiCapabilities.Unsupported,
+    val capabilitiesResolved: Boolean = false,
+    val capabilitiesCheckFailed: Boolean = false,
     val appIntakes: List<com.launchcircle.testers.core.model.AppIntakeStatus> = emptyList(),
     val destination: LaunchDestination = LaunchDestination.COMMUNITY_HOME,
     val pilotSurface: PilotSurface = PilotSurface.NONE,
@@ -79,6 +81,9 @@ class LaunchViewModel(
 ) : ViewModel() {
 
     private var loadedUserId: String? = null
+    private var capabilitiesUserId: String? = null
+    private var capabilitiesRefreshAtMs = 0L
+    private var capabilitiesRefreshJob: kotlinx.coroutines.Job? = null
     private var pendingAppRequest: CreateAppRequest? = null
     private var draftIcon: String? = null
 
@@ -91,9 +96,44 @@ class LaunchViewModel(
 
     fun loadLaunches(userId: String) {
         if (loadedUserId == userId) return
+        capabilitiesRefreshJob?.cancel()
+        capabilitiesRefreshJob = null
+        capabilitiesUserId = null
+        capabilitiesRefreshAtMs = 0L
         loadedUserId = userId
         _state.value = LaunchUiState()
+        refreshCapabilities(force = true)
         loadWorkspace()
+    }
+
+    /** Refresh the side-effect-free service capability contract after app resume. */
+    fun refreshCapabilities(force: Boolean = false) {
+        val userId = loadedUserId ?: return
+        if (capabilitiesRefreshJob?.isActive == true) return
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (!force) {
+            if (_state.value.capabilitiesCheckFailed && now - capabilitiesRefreshAtMs < 5_000L) return
+            if (!_state.value.capabilitiesCheckFailed && capabilitiesUserId == userId && now - capabilitiesRefreshAtMs < 60_000L) return
+        }
+        capabilitiesRefreshJob = viewModelScope.launch {
+            val capabilities = runCatching { repository.capabilities() }
+                .getOrDefault(ApiCapabilities.Unavailable)
+            if (loadedUserId == userId) {
+                capabilitiesRefreshAtMs = android.os.SystemClock.elapsedRealtime()
+                if (capabilities.resolved) {
+                    _state.value = _state.value.copy(
+                        capabilities = capabilities,
+                        capabilitiesResolved = true,
+                        capabilitiesCheckFailed = false,
+                    )
+                    capabilitiesUserId = userId
+                } else {
+                    // Keep a previous authoritative positive result and don't turn
+                    // a timeout/5xx into the user-facing service-update warning.
+                    _state.value = _state.value.copy(capabilitiesCheckFailed = true)
+                }
+            }
+        }
     }
 
     fun setAppIcon(appId: String, data: String?) = runTask {
@@ -108,8 +148,6 @@ class LaunchViewModel(
 
     private fun loadWorkspace() {
         runTask {
-            val capabilities = runCatching { repository.capabilities() }
-                .getOrDefault(ApiCapabilities.Unsupported)
             val config = runCatching { repository.pilotConfig() }.getOrDefault(PilotConfig())
             val apps = repository.launches()
             val dashboards = apps.associate { it.id to repository.dashboard(it.id) }
@@ -120,7 +158,6 @@ class LaunchViewModel(
             val circle = selected?.let { repository.circle(it.id) }
             _state.value.copy(
                 destination = _state.value.destination,
-                capabilities = capabilities,
                 pilotConfig = config,
                 testerGroupAccess = runCatching { repository.testerGroupAccess() }.getOrNull(),
                 appIntakes = repository.appIntakes(),

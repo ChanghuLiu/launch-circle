@@ -33,6 +33,7 @@ import com.launchcircle.testers.core.launch.DemoLaunchRepository
 import com.launchcircle.testers.core.launch.RealLaunchRepository
 import com.launchcircle.testers.feature.launch.LaunchViewModel
 import com.launchcircle.testers.feature.launch.LaunchWorkspace
+import com.launchcircle.testers.feature.launch.lcText
 import com.launchcircle.testers.feature.onboarding.AppDestination
 import com.launchcircle.testers.feature.onboarding.AppFlow
 import com.launchcircle.testers.feature.onboarding.AccountDeletionUiState
@@ -252,7 +253,25 @@ private fun AppRoot(
                 }
                 androidx.activity.compose.BackHandler(enabled = poolOpen) { closePool() }
                 if (poolOpen) {
-                    if (!launchUi.capabilities.appGroupSelection) {
+                    if (!launchUi.capabilitiesResolved && launchUi.capabilitiesCheckFailed) {
+                        androidx.compose.foundation.layout.Column(
+                            modifier = androidx.compose.ui.Modifier.fillMaxSize().padding(24.dp),
+                            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+                        ) {
+                            androidx.compose.material3.Text(lcText("Unable to check App Groups support. Check your connection and retry.", "暂时无法检查互测小组支持。请检查网络后重试。"))
+                            androidx.compose.material3.TextButton(onClick = { launchViewModel.refreshCapabilities(force = true) }) {
+                                androidx.compose.material3.Text(lcText("Try again", "重试"))
+                            }
+                        }
+                    } else if (!launchUi.capabilitiesResolved) {
+                        androidx.compose.foundation.layout.Column(
+                            modifier = androidx.compose.ui.Modifier.fillMaxSize().padding(24.dp),
+                            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+                        ) {
+                            androidx.compose.material3.LinearProgressIndicator()
+                            androidx.compose.material3.Text(lcText("Checking App Groups support…", "正在检查互测小组支持…"))
+                        }
+                    } else if (!launchUi.capabilities.appGroupSelection) {
                         androidx.compose.foundation.layout.Column(
                             modifier = androidx.compose.ui.Modifier.fillMaxSize().padding(24.dp),
                             verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
@@ -310,6 +329,9 @@ private fun AppRoot(
                             onLaunch = launchViewModel::showHome,
                             onGroup = { poolAppId = null; poolHome = true; poolOpen = true },
                             showGroups = launchUi.capabilities.appGroupSelection,
+                            groupsResolved = launchUi.capabilitiesResolved,
+                            groupsCheckFailed = launchUi.capabilitiesCheckFailed,
+                            onRetryCapabilities = { launchViewModel.refreshCapabilities(force = true) },
                             onSessionExpired = authViewModel::expireSession,
                             onBeginnerGuide = { guideStartSignal++ },
                             requestScope = communityAppsRequestScope,

@@ -340,10 +340,12 @@ private fun CommunityActionTile(
     title: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     primary: Boolean,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     Card(
+        enabled = enabled,
         onClick = onClick,
         modifier = modifier.heightIn(min = 88.dp),
         shape = RoundedCornerShape(20.dp),
@@ -388,6 +390,9 @@ fun CommunityAppsScreen(
     baseUrl: String, tokens: TokenStore, refresh: suspend () -> Boolean,
     onAdd: () -> Unit, onTests: () -> Unit, onLaunch: () -> Unit, onGroup: () -> Unit,
     showGroups: Boolean = true,
+    groupsResolved: Boolean = true,
+    groupsCheckFailed: Boolean = false,
+    onRetryCapabilities: () -> Unit = {},
     onSessionExpired: () -> Unit = {}, onBeginnerGuide: () -> Unit = {},
     requestScope: kotlinx.coroutines.CoroutineScope,
     cache: CommunityAppsCache = remember { CommunityAppsCache() },
@@ -513,10 +518,18 @@ fun CommunityAppsScreen(
                     title = lcText("App Groups", "互测小组"),
                     icon = Icons.Rounded.Groups,
                     primary = false,
+                    enabled = groupsResolved && showGroups,
                     onClick = onGroup,
                 )
             }
-            if (!showGroups) Text(
+            if (!groupsResolved && groupsCheckFailed) {
+                Text(
+                    lcText("Unable to check App Groups support. Check your connection and retry.", "暂时无法检查互测小组支持。请检查网络后重试。"),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                TextButton(onClick = onRetryCapabilities) { Text(lcText("Try again", "重试")) }
+            } else if (!groupsResolved) LinearProgressIndicator(Modifier.fillMaxWidth())
+            if (groupsResolved && !showGroups) Text(
                 lcText("App Groups will be available after the service is updated.", "互测小组将在服务端更新后可用。"),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
