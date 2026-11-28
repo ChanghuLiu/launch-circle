@@ -1,8 +1,16 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 
 class GoogleAuthRequest(BaseModel):
     id_token: str
+    acquisition_source: str | None = Field(default=None, max_length=120)
+    acquisition_medium: str | None = Field(default=None, max_length=120)
+    acquisition_campaign: str | None = Field(default=None, max_length=120)
+
+    @field_validator("acquisition_source", "acquisition_medium", "acquisition_campaign")
+    @classmethod
+    def normalize_attribution(cls, value: str | None) -> str | None:
+        return value.strip()[:120] if value and value.strip() else None
 
 
 class TokenPair(BaseModel):

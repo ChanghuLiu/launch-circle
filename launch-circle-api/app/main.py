@@ -4,17 +4,25 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 import app.models
+from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
+from app.api.capabilities import router as capabilities_router
+from app.api.evidence import router as evidence_router
+from app.api.intake import router as intake_router
 from app.api.phase0 import router as phase0_router
+from app.api.pool import router as pool_router
 from app.api.users import router as users_router
 from app.core.config import get_settings
 from app.core.database import Base, engine, ensure_sqlite_phase1_schema
+from app.middleware.activity import user_activity_middleware
 
 settings = get_settings()
 Base.metadata.create_all(bind=engine)
 ensure_sqlite_phase1_schema()
 
 app = FastAPI(title="Launch Circle API", version="0.1.0", debug=False)
+
+app.middleware("http")(user_activity_middleware)
 
 if settings.cors_origin_list:
     app.add_middleware(
@@ -39,6 +47,29 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+app.include_router(evidence_router)
 app.include_router(auth_router)
+app.include_router(capabilities_router)
 app.include_router(phase0_router)
 app.include_router(users_router)
+
+app.include_router(pool_router)
+
+app.include_router(intake_router)
+
+app.include_router(admin_router)
+
+
+@app.middleware("http")
+async def admin_security_headers(request, call_next):
+    response = await call_next(request)
+    if request.url.path == "/admin" or request.url.path.startswith("/admin/"):
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; script-src 'self'; style-src 'self'; "
+            "frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+        )
+    return response

@@ -2,7 +2,7 @@
 Description=Daily Launch Circle SQLite backup
 
 [Timer]
-OnCalendar=daily
+OnCalendar=*-*-* 03:15:00 UTC
 Persistent=true
 RandomizedDelaySec=15m
 Unit=launch-circle-backup.service

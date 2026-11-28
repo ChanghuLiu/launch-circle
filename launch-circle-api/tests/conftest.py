@@ -24,5 +24,13 @@ def reset_database():
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch, request):
+    # API integration tests use a fake publisher check; service-level tests
+    # cover Android Publisher request behavior without touching Play.
+    monkeypatch.setattr("app.api.phase0.verify_app_package_ownership", lambda *_args: None)
+    # The dedicated activity-logging module asserts real persistence and export.
+    # Other API tests focus on business behavior and would otherwise commit
+    # hundreds of unrelated diagnostic rows during the shared-pool load matrix.
+    if request.path.name not in {"test_activity_logging.py", "test_capabilities.py"}:
+        monkeypatch.setattr("app.middleware.activity.record_request_activity", lambda *_args: None)
     return TestClient(app)

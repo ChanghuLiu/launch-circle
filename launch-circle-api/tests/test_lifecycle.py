@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import hashlib
 
 import pytest
 from fastapi.testclient import TestClient
@@ -8,6 +9,12 @@ from app.core.database import SessionLocal, engine
 from app.main import app as fastapi_app
 from app.models.launch import App, CircleMember
 from app.services.clock import get_now
+from tests.group_fixtures import seed_circle_app_group_consent
+
+
+def play_account_id_for_test(owner: dict, suffix: str) -> str:
+    digest = hashlib.sha256(f"{owner['id']}:{suffix}".encode()).digest()[:8]
+    return str(int.from_bytes(digest, "big"))
 
 
 def register(client: TestClient, email: str, name: str) -> dict:
@@ -23,7 +30,11 @@ def register(client: TestClient, email: str, name: str) -> dict:
     assert response.status_code == 201, response.text
     token = response.json()["access_token"]
     profile = client.get("/me", headers={"Authorization": f"Bearer {token}"}).json()
-    return {"id": profile["id"], "email": email, "headers": {"Authorization": f"Bearer {token}"}}
+    result = {"id": profile["id"], "email": email, "headers": {"Authorization": f"Bearer {token}"}}
+    # Existing scenario explicitly starts with a synthetic confirmed Play account.
+    confirmed = client.put("/tester-group-access", headers=result["headers"], json={"status": "SELF_CONFIRMED", "play_email": email})
+    assert confirmed.status_code == 200, confirmed.text
+    return result
 
 
 def join_circle(client: TestClient, owner: dict, member: dict) -> None:
@@ -41,13 +52,15 @@ def create_app(client: TestClient, owner: dict, suffix: str) -> dict:
     response = client.post(
         "/apps",
         headers=owner["headers"],
-        json={
+        json={"ownership_authorized": True, "icon_data": 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGPUjTrBwMDAxMDAwMDAAAAPQwFTH4I6DQAAAABJRU5ErkJggg==',
             "name": f"Lifecycle App {suffix}",
             "package_name": f"com.example.lifecycle{suffix}",
             "opt_in_url": f"https://play.google.com/apps/testing/com.example.lifecycle{suffix}",
+            "play_developer_account_id": play_account_id_for_test(owner, suffix),
         },
     )
     assert response.status_code == 201, response.text
+    seed_circle_app_group_consent(response.json()["id"])
     return response.json()
 
 

@@ -23,6 +23,56 @@ MISSION_MINUTES = {
     "FINAL_FEEDBACK": 5,
 }
 
+DEFAULT_CORE_WORKFLOW_STEPS = [
+    "Open the app and complete its main task.",
+    "Check that the task result is clear and correct.",
+]
+
+
+def mission_instructions(
+    mission_type: str, app_name: str, core_workflow_steps: list[str] | None
+) -> tuple[str, list[str]]:
+    workflow = [step.strip() for step in (core_workflow_steps or []) if step.strip()]
+    if len(workflow) < 2:
+        workflow = DEFAULT_CORE_WORKFLOW_STEPS
+
+    if mission_type == "INSTALL_FIRST_IMPRESSION":
+        return (
+            f"See how easy it is to get started with {app_name}.",
+            [
+                "Open the app and follow its first screen.",
+                f"Try this first part of the main workflow: {workflow[0]}",
+                "Notice anything confusing or blocked.",
+            ],
+        )
+    if mission_type in {"CORE_FEATURE", "SECOND_USE"}:
+        goal = (
+            f"Return to {app_name} and repeat the main workflow."
+            if mission_type == "SECOND_USE"
+            else f"Complete the main workflow in {app_name}."
+        )
+        return goal, workflow[:4]
+    if mission_type == "EDGE_CASE":
+        return (
+            f"Try one realistic variation of the main workflow in {app_name}.",
+            [
+                f"Start the workflow: {workflow[0]}",
+                "Try a different valid input, interruption, or navigation path.",
+                "Check whether the app recovers and shows a clear result.",
+            ],
+        )
+    if mission_type == "RETEST":
+        return (
+            f"Update {app_name} to the latest test build, repeat its main workflow, and check any issue you previously noticed.",
+            workflow[:4],
+        )
+    if mission_type == "FINAL_FEEDBACK":
+        return (
+            f"Confirm the main workflow in {app_name} and share your final observations.",
+            workflow[:4],
+        )
+    return f"Review the main workflow in {app_name}.", workflow[:4]
+
 
 def aware(value: datetime) -> datetime:
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)

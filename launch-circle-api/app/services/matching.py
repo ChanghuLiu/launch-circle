@@ -1,11 +1,13 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from app.models.launch import App, CircleMember, TesterAssignment
+from app.models.launch import App, BackendEvent, CircleMember, TesterAssignment
+from app.models.pool import AppGroupApp, AppGroupMember
 from app.models.user import User
 from app.services.assignments import assignment_day
+from app.services.dispatch_authorization import app_group_recruitment_open
 from app.services.events import emit_event
 from app.services.lifecycle import GOOGLE_MINIMUM
 
@@ -18,7 +20,7 @@ def _timestamp(value: datetime | None) -> float:
     if value is None:
         return 0.0
     if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
+        value = value.replace(tzinfo=UTC)
     return value.timestamp()
 
 
@@ -30,8 +32,11 @@ def match_testers(
     replacement_for: TesterAssignment | None = None,
     now: datetime | None = None,
 ) -> list[TesterAssignment]:
+    if app.no_test_required or not app_group_recruitment_open(db, app.id):
+        return []
     current = [
-        a for a in app.assignments
+        a
+        for a in app.assignments
         if a.status != "DROPPED" and a.health_status not in {"INACTIVE", "DROPPED"}
     ]
     needed = max(0, app.tester_target - len(current))
@@ -44,17 +49,23 @@ def match_testers(
         CircleMember.circle_id == app.circle_id,
         CircleMember.status == "ACTIVE",
     )
+    app_group_member_ids = (
+        select(AppGroupMember.user_id)
+        .join(AppGroupApp, AppGroupApp.group_id == AppGroupMember.group_id)
+        .where(AppGroupApp.app_id == app.id)
+    )
     users = list(
         db.scalars(
             select(User).where(
                 User.id != app.owner_id,
                 User.is_active.is_(True),
                 User.id.in_(circle_member_ids),
+                User.id.in_(app_group_member_ids),
             )
         )
     )
     active_for_app = {a.tester_id for a in app.assignments}
-    current_time = now or datetime.now(timezone.utc)
+    current_time = now or datetime.now(UTC)
     current_day = assignment_day(current_time)
     workloads: dict[str, int] = {}
     for assignment in db.scalars(select(TesterAssignment)):
@@ -64,7 +75,6 @@ def match_testers(
     for assignment in db.scalars(
         select(TesterAssignment).where(
             TesterAssignment.assignment_day == current_day,
-            TesterAssignment.status != "DROPPED",
         )
     ):
         daily_workloads[assignment.tester_id] = daily_workloads.get(assignment.tester_id, 0) + 1
@@ -90,6 +100,17 @@ def match_testers(
 
     assigned: list[TesterAssignment] = []
     for user in eligible[:needed]:
+        db.execute(update(User).where(User.id == user.id).values(is_active=User.is_active))
+        current_user_today = db.scalar(select(func.count(TesterAssignment.id)).where(
+            TesterAssignment.tester_id == user.id,
+            TesterAssignment.assignment_day == current_day,
+        )) or 0
+        current_user_work = db.scalar(select(func.count(TesterAssignment.id)).where(
+            TesterAssignment.tester_id == user.id,
+            TesterAssignment.status.in_(ACTIVE_WORK_STATES),
+        )) or 0
+        if current_user_today >= 2 or current_user_work >= 2:
+            continue
         assignment = TesterAssignment(
             app=app,
             circle_id=app.circle_id,
@@ -135,6 +156,8 @@ def assign_replacements(
     limit: int | None = None,
 ) -> list[TesterAssignment]:
     """Assign missing coverage from the app's Circle without rewriting history."""
+    if app.no_test_required or not app_group_recruitment_open(db, app.id):
+        return []
     if app.testing_start_at is None or app.status not in {"TESTING", "AT_RISK"}:
         return []
     shortage = max(0, GOOGLE_MINIMUM - effective_coverage(app))
@@ -156,6 +179,11 @@ def assign_replacements(
 
     current_day = assignment_day(now)
     existing_tester_ids = {assignment.tester_id for assignment in app.assignments}
+    consented_member_ids = (
+        select(AppGroupMember.user_id)
+        .join(AppGroupApp, AppGroupApp.group_id == AppGroupMember.group_id)
+        .where(AppGroupApp.app_id == app.id)
+    )
     member_rows = list(
         db.scalars(
             select(CircleMember)
@@ -164,6 +192,7 @@ def assign_replacements(
                 CircleMember.circle_id == app.circle_id,
                 CircleMember.status == "ACTIVE",
                 User.is_active.is_(True),
+                User.id.in_(consented_member_ids),
                 User.id != app.owner_id,
             )
         )
@@ -172,7 +201,6 @@ def assign_replacements(
     for row in db.scalars(
         select(TesterAssignment).where(
             TesterAssignment.assignment_day == current_day,
-            TesterAssignment.status != "DROPPED",
         )
     ):
         today_workload[row.tester_id] = today_workload.get(row.tester_id, 0) + 1
@@ -206,15 +234,32 @@ def assign_replacements(
         for row in app.assignments
         if row.replacement_for_id is not None and row.status != "DROPPED"
     }
-    inactive = [
-        row for row in app.assignments
-        if (
-            row.health_status in {"INACTIVE", "DROPPED"} or row.status == "DROPPED"
+    system_ended_ids = set(db.scalars(
+        select(BackendEvent.assignment_id).where(
+            BackendEvent.app_id == app.id,
+            BackendEvent.event_type == "ASSIGNMENT_ENDED_NO_CONSENT",
         )
+    ))
+    inactive = [
+        row
+        for row in app.assignments
+        if (row.health_status in {"INACTIVE", "DROPPED"} or row.status == "DROPPED")
         and row.id not in assignments_with_replacements
+        and row.id not in system_ended_ids
     ]
     inactive.sort(key=lambda row: (_timestamp(row.assigned_at), row.id), reverse=True)
     for member, replaced in zip(candidates[:needed], inactive):
+        db.execute(update(User).where(User.id == member.user_id).values(is_active=User.is_active))
+        current_user_today = db.scalar(select(func.count(TesterAssignment.id)).where(
+            TesterAssignment.tester_id == member.user_id,
+            TesterAssignment.assignment_day == current_day,
+        )) or 0
+        current_user_work = db.scalar(select(func.count(TesterAssignment.id)).where(
+            TesterAssignment.tester_id == member.user_id,
+            TesterAssignment.status.in_(ACTIVE_WORK_STATES),
+        )) or 0
+        if current_user_today >= 2 or current_user_work >= 2:
+            continue
         assignment = TesterAssignment(
             app=app,
             circle_id=app.circle_id,

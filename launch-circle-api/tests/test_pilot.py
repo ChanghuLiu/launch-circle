@@ -2,6 +2,7 @@ from sqlalchemy import select
 
 from app.core.database import SessionLocal, engine
 from app.models.launch import App, PilotEvent
+from tests.group_fixtures import seed_app_group_consent
 
 
 PASSWORD = "pilot-password"
@@ -17,20 +18,25 @@ def register(client, email: str, name: str) -> dict:
     profile = client.get(
         "/me", headers={"Authorization": f"Bearer {token}"}
     ).json()
-    return {
+    result = {
         "id": profile["id"],
         "headers": {"Authorization": f"Bearer {token}"},
     }
+    # Existing scenario explicitly starts with a synthetic confirmed Play account.
+    confirmed = client.put("/tester-group-access", headers=result["headers"], json={"status": "SELF_CONFIRMED", "play_email": email})
+    assert confirmed.status_code == 200, confirmed.text
+    return result
 
 
 def create_launch(client, owner: dict) -> dict:
     response = client.post(
         "/apps",
         headers=owner["headers"],
-        json={
+        json={"ownership_authorized": True, "icon_data": 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGPUjTrBwMDAxMDAwMDAAAAPQwFTH4I6DQAAAABJRU5ErkJggg==',
             "name": "Pilot App",
             "package_name": "com.launchcircle.pilot",
             "opt_in_url": "https://play.google.com/apps/testing/com.launchcircle.pilot",
+            "play_developer_account_id": "1000000000000000002",
         },
     )
     assert response.status_code == 201, response.text
@@ -133,6 +139,7 @@ def test_core_pilot_events_are_recorded(client):
     tester = register(client, "event-tester@example.com", "Tester")
     launch = create_launch(client, owner)
     join_circle(client, owner, tester)
+    seed_app_group_consent(launch["id"], [tester["id"]])
 
     assignment = client.post(
         f"/apps/{launch['id']}/assign/{tester['id']}",

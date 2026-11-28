@@ -1,6 +1,9 @@
 package com.launchcircle.testers.core.launch
 
 import com.launchcircle.testers.core.model.CreateAppRequest
+import com.launchcircle.testers.core.model.AdditionalAppCheckout
+import com.launchcircle.testers.core.model.AdditionalAppCheckoutRequest
+import com.launchcircle.testers.core.model.GooglePlayPurchaseVerification
 import com.launchcircle.testers.core.model.FeedbackRequest
 import com.launchcircle.testers.core.model.LaunchApp
 import com.launchcircle.testers.core.model.LaunchDashboard
@@ -9,19 +12,57 @@ import com.launchcircle.testers.core.model.LaunchCircle
 import com.launchcircle.testers.core.model.MissionFeedback
 import com.launchcircle.testers.core.model.PilotConfig
 import com.launchcircle.testers.core.model.MatchingResult
+import com.launchcircle.testers.core.model.WorkloadSummary
+import com.launchcircle.testers.core.model.ManagedOfferSummary
+import com.launchcircle.testers.core.model.ManagedCheckout
+import com.launchcircle.testers.core.model.CoordinationTimeRequest
+import com.launchcircle.testers.core.model.ManagedOfferViewRequest
 import com.launchcircle.testers.core.model.TestMission
 import com.launchcircle.testers.core.model.TestAssignment
 import com.launchcircle.testers.core.model.TesterAssignment
 import com.launchcircle.testers.core.network.LaunchCircleApi
+import com.launchcircle.testers.core.network.ApiCapabilities
 import com.launchcircle.testers.core.storage.TokenStore
 import retrofit2.HttpException
 
 interface LaunchRepository {
+    suspend fun capabilities(): ApiCapabilities = ApiCapabilities.Unsupported
+    suspend fun appIntakes(): List<com.launchcircle.testers.core.model.AppIntakeStatus> = emptyList()
+    suspend fun submitAppIntake(request: com.launchcircle.testers.core.model.AppIntakeRequest): com.launchcircle.testers.core.model.AppIntakeStatus = error("App review requires an online account")
+
+    suspend fun setAppIcon(appId: String, data: String?): LaunchApp = error("Icon upload requires an online account")
+
+    suspend fun evidenceRuns(missionId: String): List<com.launchcircle.testers.core.model.EvidenceRunFull> = error("Evidence pilot is not supported")
+
+    suspend fun evidenceRunDetail(runId: String): com.launchcircle.testers.core.model.EvidenceRunDetail = error("Evidence pilot is not supported")
+    suspend fun evidenceReport(appId: String): String = error("Evidence pilot is not supported")
+
+    suspend fun evidenceSummary(appId: String): com.launchcircle.testers.core.model.CampaignEvidenceSummary = error("Evidence pilot is not supported")
+    suspend fun setEvidenceBuild(appId: String, version: Int, description: String): Unit = error("Evidence pilot is not supported")
+    suspend fun declareEvidenceFix(runId: String, version: Int, description: String): Unit = error("Evidence pilot is not supported")
+
+    suspend fun evidenceAssignmentStatus(assignmentId: String): String = error("Evidence pilot is not supported")
+
+    suspend fun evidenceContext(missionId: String): com.launchcircle.testers.core.model.MissionEvidenceContext = error("Evidence pilot is not supported")
+    suspend fun submitMissionRun(missionId: String, request: com.launchcircle.testers.core.model.MissionRunRequest): com.launchcircle.testers.core.model.MissionRunRecord = error("Evidence pilot is not supported")
+    suspend fun recordEnrollmentEvidence(assignmentId: String): Unit = error("Evidence pilot is not supported")
+
+    suspend fun testerGroupAccess(): com.launchcircle.testers.core.model.TesterGroupAccess = com.launchcircle.testers.core.model.TesterGroupAccess()
+    suspend fun updateTesterGroupAccess(email: String, status: String): com.launchcircle.testers.core.model.TesterGroupAccess = error("Connect to the live service to confirm group access")
     suspend fun pilotConfig(): PilotConfig
     suspend fun launches(): List<LaunchApp>
     suspend fun createApp(request: CreateAppRequest): LaunchApp
+    suspend fun attestOwnership(appId: String): LaunchApp
+    suspend fun createAdditionalAppCheckout(developerAccountId: String): AdditionalAppCheckout
+    suspend fun additionalAppCheckout(purchaseId: String): AdditionalAppCheckout
+    suspend fun createManagedCheckout(appId: String): ManagedCheckout
+    suspend fun managedCheckout(checkoutId: String): ManagedCheckout
+    suspend fun verifyGooglePlayPurchase(purchaseId: String, purchaseType: String, purchaseToken: String)
     suspend fun dashboard(appId: String): LaunchDashboard
+    suspend fun recordCoordinationTime(appId: String, minutes: Int, category: String): WorkloadSummary
+    suspend fun recordManagedOfferViewed(appId: String, trigger: String): ManagedOfferSummary
     suspend fun circle(appId: String): LaunchCircle
+    suspend fun circles(): List<LaunchCircle>
     suspend fun confirmGoogleGroup(appId: String): LaunchApp
     suspend fun matchTesters(appId: String): MatchingResult
     suspend fun testers(appId: String): List<TesterAssignment>
@@ -35,6 +76,7 @@ interface LaunchRepository {
     suspend fun startMission(missionId: String): TestMission
     suspend fun completeMission(missionId: String): TestMission
     suspend fun submitFeedback(missionId: String, request: FeedbackRequest): MissionFeedback
+    suspend fun createCircleInvite(): LaunchInvite
     suspend fun createInvite(appId: String): LaunchInvite
     suspend fun acceptInvite(inviteCode: String): LaunchInvite
 }
@@ -44,6 +86,15 @@ class RealLaunchRepository(
     private val tokenStore: TokenStore,
     private val refreshSession: suspend () -> Boolean,
 ) : LaunchRepository {
+    override suspend fun capabilities(): ApiCapabilities = runCatching {
+        val response = api.capabilities()
+        val payload = response.body()?.use { it.string() }
+        ApiCapabilities.fromHttpResult(response.code(), payload)
+    }.getOrDefault(ApiCapabilities.Unavailable)
+
+    override suspend fun setAppIcon(appId: String, data: String?) = authenticated {
+        if (data == null) api.importIcon(it, appId) else api.uploadIcon(it, appId, mapOf("data" to data))
+    }
     private fun bearer(): String =
         "Bearer " + checkNotNull(tokenStore.accessToken) { "No access token" }
 
@@ -56,11 +107,65 @@ class RealLaunchRepository(
         }
     }
 
+    override suspend fun evidenceRuns(missionId: String) = authenticated { api.evidenceRuns(it, missionId) }
+    override suspend fun evidenceRunDetail(runId: String) = authenticated { api.evidenceRunDetail(it, runId) }
+    override suspend fun evidenceReport(appId: String) = authenticated { api.evidenceReport(it, appId).use { body -> body.string() } }
+    override suspend fun evidenceSummary(appId: String) = authenticated { api.evidenceSummary(it, appId) }
+    override suspend fun setEvidenceBuild(appId: String, version: Int, description: String) = authenticated {
+        api.setEvidenceBuild(it, appId, com.launchcircle.testers.core.model.EvidenceBuildRequest(version, description))
+        Unit
+    }
+    override suspend fun declareEvidenceFix(runId: String, version: Int, description: String) = authenticated {
+        api.declareEvidenceFix(it, runId, com.launchcircle.testers.core.model.EvidenceBuildRequest(version, description))
+        Unit
+    }
+    override suspend fun evidenceAssignmentStatus(assignmentId: String) = authenticated {
+        api.evidenceAssignmentStatus(it, assignmentId).assignment_status
+    }
+    override suspend fun evidenceContext(missionId: String) = authenticated { api.evidenceContext(it, missionId) }
+    override suspend fun submitMissionRun(missionId: String, request: com.launchcircle.testers.core.model.MissionRunRequest) = authenticated {
+        api.submitMissionRun(it, missionId, request.copy(
+            device_key = tokenStore.evidenceDeviceKey(),
+            device_model = android.os.Build.MODEL,
+            android_api = android.os.Build.VERSION.SDK_INT,
+        ))
+    }
+    override suspend fun recordEnrollmentEvidence(assignmentId: String) = authenticated {
+        api.recordEnrollmentEvidence(it, assignmentId,
+            com.launchcircle.testers.core.model.EnrollmentEvidenceRequest(
+                event = "JOINED", note = "Tester confirmed joining through the Play testing link",
+            ))
+        Unit
+    }
+    override suspend fun testerGroupAccess() = authenticated { api.testerGroupAccess(it) }
+    override suspend fun updateTesterGroupAccess(email: String, status: String) = authenticated { api.updateTesterGroupAccess(it, com.launchcircle.testers.core.model.TesterGroupAccessUpdate(email, status)) }
     override suspend fun pilotConfig() = api.pilotConfig()
     override suspend fun launches() = authenticated { api.apps(it) }
+    override suspend fun appIntakes() = authenticated { api.appIntakes(it) }
+    override suspend fun submitAppIntake(request: com.launchcircle.testers.core.model.AppIntakeRequest) = authenticated { api.submitAppIntake(it, request) }
     override suspend fun createApp(request: CreateAppRequest) = authenticated { api.createApp(it, request) }
+    override suspend fun attestOwnership(appId: String) = authenticated { api.attestOwnership(it, appId) }
+    override suspend fun createAdditionalAppCheckout(developerAccountId: String) = authenticated {
+        api.createAdditionalAppCheckout(it, AdditionalAppCheckoutRequest(developerAccountId))
+    }
+    override suspend fun additionalAppCheckout(purchaseId: String) =
+        authenticated { api.additionalAppCheckout(it, purchaseId) }
+    override suspend fun createManagedCheckout(appId: String) =
+        authenticated { api.createManagedCheckout(it, appId) }
+    override suspend fun managedCheckout(checkoutId: String) =
+        authenticated { api.managedCheckout(it, checkoutId) }
+    override suspend fun verifyGooglePlayPurchase(purchaseId: String, purchaseType: String, purchaseToken: String) =
+        authenticated {
+            api.verifyGooglePlayPurchase(it, GooglePlayPurchaseVerification(purchaseId, purchaseType, purchaseToken))
+            Unit
+        }
     override suspend fun dashboard(appId: String) = authenticated { api.dashboard(it, appId) }
+    override suspend fun recordCoordinationTime(appId: String, minutes: Int, category: String) =
+        authenticated { api.recordCoordinationTime(it, appId, CoordinationTimeRequest(minutes, category)) }
+    override suspend fun recordManagedOfferViewed(appId: String, trigger: String) =
+        authenticated { api.recordManagedOfferViewed(it, appId, ManagedOfferViewRequest(trigger)) }
     override suspend fun circle(appId: String) = authenticated { api.appCircle(it, appId) }
+    override suspend fun circles() = authenticated { api.circles(it) }
     override suspend fun confirmGoogleGroup(appId: String) = authenticated { api.confirmGoogleGroup(it, appId) }
     override suspend fun matchTesters(appId: String) = authenticated { api.matchTesters(it, appId) }
     override suspend fun testers(appId: String) = authenticated { api.testers(it, appId) }
@@ -76,6 +181,7 @@ class RealLaunchRepository(
     override suspend fun completeMission(missionId: String) = authenticated { api.completeMission(it, missionId) }
     override suspend fun submitFeedback(missionId: String, request: FeedbackRequest) =
         authenticated { api.submitFeedback(it, missionId, request) }
+    override suspend fun createCircleInvite() = authenticated { api.createInvite(it) }
     override suspend fun createInvite(appId: String) = authenticated { api.createAppInvite(it, appId) }
     override suspend fun acceptInvite(inviteCode: String) = authenticated { api.acceptInvite(it, inviteCode) }
 }

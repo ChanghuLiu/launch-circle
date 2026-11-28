@@ -21,8 +21,8 @@ android {
         applicationId = "com.launchcircle.testers"
         minSdk = 27
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.0.2"
+        versionCode = 47
+        versionName = "1.0.45"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -70,6 +70,33 @@ android {
     }
 
     buildTypes {
+        getByName("debug") {
+            val uiPreviewBuild = providers.gradleProperty("launchCircleUiPreviewBuild").orElse("false").get().toBoolean()
+            val attestationPreviewBuild = providers.gradleProperty("launchCircleAttestationPreviewBuild").orElse("false").get().toBoolean()
+            if (uiPreviewBuild) {
+                applicationIdSuffix = ".uipreview"
+                versionNameSuffix = "-ui-preview"
+                buildConfigField("boolean", "USE_DEMO_REPOSITORY", "true")
+                buildConfigField("boolean", "ENABLE_DEVELOPMENT_AUTH", "true")
+            } else if (attestationPreviewBuild) {
+                applicationIdSuffix = ".attestationpreview"
+                versionNameSuffix = "-attestation-preview"
+                buildConfigField("boolean", "USE_DEMO_REPOSITORY", "true")
+                buildConfigField("boolean", "ENABLE_DEVELOPMENT_AUTH", "true")
+            } else if (providers.gradleProperty("launchCircleEvidencePilotBuild").orElse("false").get().toBoolean()) {
+                applicationIdSuffix = ".evidencepilot"
+                versionNameSuffix = "-evidencepilot"
+                // Device acceptance builds must exercise real customer authentication and data.
+                buildConfigField("String", "API_BASE_URL", "\"https://launchcircle-api.duckdns.org/\"")
+                buildConfigField("boolean", "USE_DEMO_REPOSITORY", "false")
+                buildConfigField("boolean", "ENABLE_DEVELOPMENT_AUTH", "false")
+                buildConfigField(
+                    "String",
+                    "GOOGLE_SERVER_CLIENT_ID",
+                    "\"519813588502-4jlmnljs86ijr8kijmuesq6i147p5f0c.apps.googleusercontent.com\"",
+                )
+            }
+        }
         getByName("release") {
             // Release artifacts always use the HTTPS pilot backend and Google authentication.
             buildConfigField(
@@ -126,13 +153,20 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 
     implementation("androidx.credentials:credentials:1.6.0")
     implementation("androidx.credentials:credentials-play-services-auth:1.6.0")
     implementation("com.google.android.libraries.identity.googleid:googleid:1.2.0")
+    implementation("com.android.installreferrer:installreferrer:2.2")
+    implementation("com.android.billingclient:billing:9.1.0")
+    implementation("com.google.android.play:app-update:2.1.0")
 
     implementation("com.squareup.retrofit2:retrofit:3.0.0")
     implementation("com.squareup.retrofit2:converter-gson:3.0.0")
 
     testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
 }

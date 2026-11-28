@@ -20,7 +20,18 @@ data class UserProfile(
 )
 
 // Request contract for POST /v1/auth/google; keep the wire name through R8.
-data class GoogleAuthRequest(@SerializedName("id_token") val id_token: String)
+data class InstallAttribution(
+    val source: String,
+    val medium: String?,
+    val campaign: String?,
+)
+
+data class GoogleAuthRequest(
+    @SerializedName("id_token") val id_token: String,
+    val acquisition_source: String? = null,
+    val acquisition_medium: String? = null,
+    val acquisition_campaign: String? = null,
+)
 data class RefreshRequest(val refresh_token: String)
 data class LogoutRequest(val refresh_token: String)
 data class UserUpdateRequest(

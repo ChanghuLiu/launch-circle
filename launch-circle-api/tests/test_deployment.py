@@ -9,7 +9,6 @@ from app.core.database import ensure_sqlite_parent, sqlite_database_path
 from app.main import app
 from app.services.sqlite_backup import create_backup, database_path
 
-
 PILOT_SECRET = "pilot-test-secret-that-is-not-used-in-deployment"
 
 
@@ -21,6 +20,7 @@ def pilot_settings(tmp_path, **overrides):
         "public_base_url": "https://pilot.example.test",
         "cors_origins": "https://pilot.example.test",
         "development_auth_enabled": False,
+        "google_play_developer_account_id": "1234567890123456789",
         "_env_file": None,
     }
     values.update(overrides)
@@ -79,6 +79,7 @@ def test_sqlite_backup_is_consistent_and_retained(tmp_path):
     third = create_backup(source, destination, keep=2)
     assert not first.exists()
     assert second.exists() and third.exists()
+    assert third.stat().st_mode & 0o777 == 0o600
     with sqlite3.connect(third) as db:
         assert db.execute("PRAGMA integrity_check").fetchone() == ("ok",)
         assert db.execute("SELECT value FROM sample").fetchone() == ("pilot-data",)
@@ -110,6 +111,6 @@ def test_development_auth_disabled_in_pilot(client, tmp_path):
 
 
 def test_no_acceptance_control_routes_are_exposed():
-    paths = {route.path for route in app.routes}
+    paths = {route.path for route in app.routes if hasattr(route, "path")}
     forbidden = {"/test-clock", "/acceptance/seed", "/acceptance/reset", "/reset", "/seed"}
     assert paths.isdisjoint(forbidden)

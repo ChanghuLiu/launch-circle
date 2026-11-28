@@ -1,5 +1,7 @@
 package com.launchcircle.testers.feature.launch
 
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.core.graphics.drawable.toBitmap
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -16,9 +18,11 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -28,12 +32,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Groups
+import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.RocketLaunch
 import androidx.compose.material.icons.rounded.Science
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
@@ -49,23 +55,32 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.launchcircle.testers.core.model.AdditionalAppCheckout
+import com.launchcircle.testers.core.model.ManagedCheckout
 import com.launchcircle.testers.core.model.LaunchApp
 import com.launchcircle.testers.core.model.LaunchDashboard
 import com.launchcircle.testers.core.model.LaunchInvite
@@ -74,10 +89,14 @@ import com.launchcircle.testers.core.model.MissionFeedback
 import com.launchcircle.testers.core.model.PilotConfig
 import com.launchcircle.testers.core.model.TestMission
 import com.launchcircle.testers.core.model.TestAssignment
+import com.launchcircle.testers.core.model.managedCheckoutPriceLabel
 import com.launchcircle.testers.core.model.TesterAssignment
+import com.launchcircle.testers.core.model.parseCoreWorkflowSteps
 import com.launchcircle.testers.core.model.UserProfile
+import com.launchcircle.testers.R
 import com.launchcircle.testers.feature.onboarding.AccountScreen
 import com.launchcircle.testers.ui.theme.LaunchAttention
+import java.util.Locale
 
 @Composable
 fun LaunchWorkspace(
@@ -87,46 +106,61 @@ fun LaunchWorkspace(
     deletionError: String?,
     onDeleteAccount: () -> Unit,
     onLogout: () -> Unit,
+    onSharedPool: () -> Unit = {},
+    onViewMyGroup: (String) -> Unit = { onSharedPool() },
+    guideStartSignal: Int = 0,
+    communityHome: @Composable () -> Unit = {},
+    homeBack: (() -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsState()
+    val activity = LocalActivity.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, viewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.refreshCapabilities()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     LaunchedEffect(viewModel, profile.id) { viewModel.loadLaunches(profile.id) }
     val primaryDestination = state.pilotSurface == PilotSurface.NONE && state.destination in setOf(
+        LaunchDestination.COMMUNITY_HOME,
         LaunchDestination.MY_LAUNCHES,
         LaunchDestination.DASHBOARD,
         LaunchDestination.TODAY_TESTS,
         LaunchDestination.TESTERS,
+        LaunchDestination.ACCOUNT,
     )
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing,
+        topBar = {
+            LaunchAppHeader(testerAccess = { TesterGroupAccessCard(state.testerGroupAccess, profile.login_email, state.loading, viewModel::updateTesterGroupAccess, viewModel::refreshTesterGroupAccess) }, onAccountAction = viewModel::showAccount, onGuideAction = { step -> if (step == 3) { if (state.capabilities.appGroupSelection) onSharedPool() } else viewModel.openGuideDestination(step, profile.login_email.equals("liuchanghu2018@gmail.com", ignoreCase = true)) }, guideAccountId = profile.id.toString(), guideStartSignal = guideStartSignal, onBack = if (state.destination == LaunchDestination.MY_LAUNCHES && state.pilotSurface == PilotSurface.NONE) homeBack else if (primaryDestination) null else ({
+                if (state.pilotSurface == PilotSurface.GROUP_SETUP) viewModel.skipGroupSetup()
+                else viewModel.back()
+            }))
+        },
         bottomBar = {
             if (primaryDestination) {
                 LaunchNavigation(
                     destination = state.destination,
-                    onHome = viewModel::showMyLaunch,
+                    onHome = viewModel::showCommunityHome,
                     onTests = viewModel::showToday,
                     onMyLaunch = viewModel::showHome,
-                    onCircle = viewModel::showCircle,
+                    onCircle = onSharedPool,
+                    showCircle = state.capabilities.appGroupSelection,
                 )
             }
         },
     ) { contentPadding ->
         Column(Modifier.fillMaxSize().padding(contentPadding)) {
             if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-            if (state.pilotSurface == PilotSurface.NONE && !primaryDestination &&
-                state.destination != LaunchDestination.ACCOUNT
-            ) {
-                TextButton(
-                    onClick = viewModel::back,
-                    modifier = Modifier.defaultMinSize(minHeight = 48.dp).padding(horizontal = 8.dp),
-                ) { Text("Back") }
-            }
             state.error?.let { ErrorBanner(it) }
             Box(Modifier.fillMaxSize()) {
                 when (state.pilotSurface) {
                     PilotSurface.INVITE -> InviteScreen(
-                        state.invite, state.loading, viewModel::refreshInvite,
+                        state.selectedApp, state.pilotConfig,
                         viewModel::closePilotSurface,
                     )
                     PilotSurface.JOIN -> JoinScreen(
@@ -144,8 +178,9 @@ fun LaunchWorkspace(
                         },
                         {
                             viewModel.closePilotSurface()
-                            viewModel.showCircle()
+                            onSharedPool()
                         },
+                        showCircle = state.capabilities.appGroupSelection,
                     )
                     PilotSurface.GROUP_SETUP -> state.selectedApp?.let {
                         GroupSetup(
@@ -153,38 +188,104 @@ fun LaunchWorkspace(
                             viewModel::confirmGoogleGroup, viewModel::skipGroupSetup,
                         )
                     }
-                    PilotSurface.NONE -> when (state.destination) {
-                        LaunchDestination.MY_LAUNCHES -> Home(
-                            profile, state.launches, state.dashboards, state.selectedApp, state.todayAssignments,
-                            viewModel::showAddApp, viewModel::showDashboard,
-                            viewModel::showToday, viewModel::showAssignment, viewModel::showInvite,
-                            viewModel::showJoin, viewModel::showAccount, onLogout,
+                    PilotSurface.ADDITIONAL_APP_PAYMENT -> state.pendingPayment?.let { checkout ->
+                        LaunchedEffect(activity, checkout.product_id) {
+                            activity?.let { current -> viewModel.loadGooglePlayPrice(current, checkout.product_id) }
+                        }
+                        AdditionalAppPayment(
+                            checkout = checkout,
+                            actualPrice = state.googlePlayPrice,
+                            loading = state.loading,
+                            onCheckStatus = { activity?.let(viewModel::recoverAdditionalAppPurchase) },
+                            onPurchase = { activity?.let(viewModel::launchAdditionalAppPurchase) },
+                            onClose = viewModel::closeAdditionalAppPayment,
                         )
+                    }
+                    PilotSurface.MANAGED_PAYMENT -> state.pendingManagedPayment?.let { checkout ->
+                        LaunchedEffect(activity, checkout.product_id, checkout.list_product_id) {
+                            activity?.let { current ->
+                                viewModel.loadGooglePlayPrice(current, checkout.product_id, checkout.list_product_id)
+                            }
+                        }
+                        ManagedLaunchPayment(
+                            checkout = checkout,
+                            actualPrice = state.googlePlayPrice,
+                            actualListPrice = state.googlePlayListPrice,
+                            loading = state.loading,
+                            onCheckStatus = viewModel::checkManagedPayment,
+                            onPurchase = { activity?.let(viewModel::launchManagedPurchase) },
+                            onClose = viewModel::closeManagedPayment,
+                        )
+                    }
+                    PilotSurface.NONE -> when (state.destination) {
+                        LaunchDestination.COMMUNITY_HOME -> communityHome()
+                        LaunchDestination.MY_LAUNCHES -> communityHome()
                         LaunchDestination.ADD_APP -> AddApp(
-                            state.pilotConfig, viewModel::createApp,
+                            viewModel::createApp,
+                            viewModel::setDraftIcon,
+                            loading = state.loading,
+                            supportsOwnerAttestation = state.capabilities.ownerAttestation,
+                            capabilitiesResolved = state.capabilitiesResolved,
+                            capabilitiesCheckFailed = state.capabilitiesCheckFailed,
+                            onRetryCapabilities = { viewModel.refreshCapabilities(force = true) },
                         )
                         LaunchDestination.DASHBOARD -> {
-                            val selected = state.selectedApp
+                            val selected = state.selectedApp?.takeIf { it.owner_id == profile.id }
+                                ?: state.launches.firstOrNull { it.owner_id == profile.id }
                             val dashboard = selected?.let { state.dashboards[it.id] }
                             if (selected != null && dashboard != null) {
                                 Dashboard(
-                                    selected, dashboard, state.loading,
+                                    selected, dashboard, state.launches.filter { it.owner_id == profile.id }, state.loading,
+                                    viewModel::showDashboard,
                                     viewModel::showInvite, viewModel::matchTesters,
                                     viewModel::showTesters, viewModel::showFeedback,
                                     viewModel::showGoogleGroupSetup,
+                                    viewModel::recordCoordinationTime,
+                                    { trigger -> viewModel.recordManagedOfferViewed(selected.id, trigger) },
+                                    { viewModel.startManagedCheckout(selected.id) },
+                                    if (state.pilotConfig.cold_start_evidence_enabled) viewModel::showEvidence else null,
+                                    viewModel::setAppIcon, { if (state.capabilities.appGroupSelection) onViewMyGroup(selected.id) },
+                                    onAdd = if (profile.login_email.equals("liuchanghu2018@gmail.com", ignoreCase = true)) viewModel::showAddApp else null,
+                                    onAttestOwnership = { viewModel.attestOwnership(selected.id) },
+                                    supportsAppGroupSelection = state.capabilities.appGroupSelection,
+                                    capabilitiesResolved = state.capabilitiesResolved,
+                                    capabilitiesCheckFailed = state.capabilitiesCheckFailed,
                                 )
+                            } else if (!state.loading) {
+                                Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                                    Text(lcText("My Launch", "我的发布"), style = MaterialTheme.typography.headlineMedium)
+                                    Text(lcText("Your app starts here", "从你的第一个 App 开始"), style = MaterialTheme.typography.titleLarge)
+                                    Text(lcText("Add your app, set up test access, then join a matching group. You can manage everything here.", "添加 App、设置测试访问，再加入匹配的小组。应用的配置和管理都在这里完成。"))
+                                    Button(onClick = viewModel::showAddApp, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(lcText("Add my app", "添加我的 App")) }
+                                }
                             }
                         }
                         LaunchDestination.TODAY_TESTS -> Today(
-                            state.todayAssignments, state.pilotConfig, viewModel::showAssignment,
+                            state.todayAssignments, viewModel::showAssignment,
+                            access = state.testerGroupAccess,
+                            accessCard = { TesterGroupAccessCard(state.testerGroupAccess, profile.login_email, state.loading, viewModel::updateTesterGroupAccess, viewModel::refreshTesterGroupAccess) },
                         )
                         LaunchDestination.ASSIGNMENT -> state.selectedAssignment?.let {
-                            AssignmentScreen(it, state.pilotConfig, viewModel::completeAssignment)
+                            EvidenceAssignmentScreen(it, state.assignmentMissions, state.loading,
+                                groupReady = state.testerGroupAccess?.ready == true,
+                                sharedGroupUrl = state.pilotConfig.google_group_join_url,
+                                accessCard = { TesterGroupAccessCard(state.testerGroupAccess, profile.login_email, state.loading, viewModel::updateTesterGroupAccess, viewModel::refreshTesterGroupAccess) },
+                                viewModel::confirmAssignmentOptIn, viewModel::confirmAssignmentInstalled,
+                                viewModel::showMission)
                         }
                         LaunchDestination.MISSION -> state.selectedMission?.let {
-                            Mission(
+                            if (state.testerGroupAccess?.ready != true) {
+                                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) {
+                                    TesterGroupAccessCard(state.testerGroupAccess, profile.login_email, state.loading, viewModel::updateTesterGroupAccess, viewModel::refreshTesterGroupAccess)
+                                }
+                            } else if (state.pilotConfig.cold_start_evidence_enabled) {
+                                MissionEvidenceScreen(state.evidenceContext, state.loading,
+                                    state.evidenceSavedId, viewModel::submitMissionEvidence,
+                                    onHistory = viewModel::showMissionEvidenceHistory)
+                            } else Mission(
                                 it, viewModel::startMission, viewModel::confirmOptIn,
                                 viewModel::confirmInstalled, viewModel::submitFeedback,
+                                loading = state.loading, started = state.missionStarted,
                             )
                         }
                         LaunchDestination.TESTERS -> Testers(
@@ -193,12 +294,27 @@ fun LaunchWorkspace(
                             rows = state.testers,
                             circle = state.circle,
                         )
+                        LaunchDestination.EVIDENCE -> PublisherEvidenceScreen(
+                            state.campaignEvidence, state.loading, state.evidenceNotice,
+                            viewModel::refreshEvidence, viewModel::setEvidenceBuild,
+                            viewModel::declareEvidenceFix, viewModel::showEvidenceDetail,
+                            state.evidenceReportJson, viewModel::prepareEvidenceReport,
+                        )
+                        LaunchDestination.EVIDENCE_HISTORY -> EvidenceHistoryScreen(
+                            state.evidenceRuns, viewModel::showEvidenceDetail)
+                        LaunchDestination.EVIDENCE_DETAIL -> EvidenceRunDetailScreen(
+                            state.evidenceDetail, state.loading, viewModel::beginEvidenceRetest)
+                        LaunchDestination.EVIDENCE_RETEST -> EvidenceRetestScreen(
+                            state.evidenceDetail, state.loading, state.evidenceSavedId,
+                            viewModel::submitEvidenceRetest)
                         LaunchDestination.FEEDBACK -> Feedback(state.feedback)
                         LaunchDestination.ACCOUNT -> AccountScreen(
                             profile = profile,
                             deleting = deletionInProgress,
                             error = deletionError,
                             onBack = viewModel::back,
+                            showBack = false,
+                            onLogout = onLogout,
                             onDeleteAccount = onDeleteAccount,
                         )
                     }
@@ -209,12 +325,14 @@ fun LaunchWorkspace(
 }
 
 @Composable
-private fun LaunchNavigation(
+internal fun LaunchNavigation(
     destination: LaunchDestination,
     onHome: () -> Unit,
     onTests: () -> Unit,
     onMyLaunch: () -> Unit,
     onCircle: () -> Unit,
+    showCircle: Boolean = true,
+    circleSelected: Boolean = false,
 ) {
     data class Item(
         val label: String,
@@ -222,12 +340,14 @@ private fun LaunchNavigation(
         val selected: Boolean,
         val onClick: () -> Unit,
     )
-    val items = listOf(
-        Item("Home", Icons.Rounded.Home, destination == LaunchDestination.MY_LAUNCHES, onHome),
-        Item("Tests", Icons.Rounded.Science, destination == LaunchDestination.TODAY_TESTS, onTests),
-        Item("My Launch", Icons.Rounded.RocketLaunch, destination == LaunchDestination.DASHBOARD, onMyLaunch),
-        Item("Circle", Icons.Rounded.Groups, destination == LaunchDestination.TESTERS, onCircle),
-    )
+    val items = buildList {
+        add(
+        Item(lcText("Home", "首页"), Icons.Rounded.Home, destination in setOf(LaunchDestination.COMMUNITY_HOME, LaunchDestination.MY_LAUNCHES), onHome),
+        )
+        if (showCircle) add(Item(lcText("Circle", "互测圈"), Icons.Rounded.Groups, circleSelected, onCircle))
+        add(Item(lcText("Tests", "我的测试"), Icons.Rounded.Science, destination == LaunchDestination.TODAY_TESTS, onTests))
+        add(Item(lcText("My Launch", "我的发布"), Icons.Rounded.RocketLaunch, destination == LaunchDestination.DASHBOARD, onMyLaunch))
+    }
     NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
         items.forEach { item ->
             NavigationBarItem(
@@ -255,7 +375,8 @@ private fun Home(
     onJoin: () -> Unit,
     onAccount: () -> Unit,
     onLogout: () -> Unit,
-) {
+    onPool: () -> Unit,
+ ) {
     val primaryApp = selectedApp ?: apps.firstOrNull()
     val dashboard = primaryApp?.let { dashboards[it.id] }
     LazyColumn(
@@ -264,25 +385,36 @@ private fun Home(
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         item {
-            Text("Home", style = MaterialTheme.typography.headlineLarge)
-            Text("Welcome back, " + (profile.display_name ?: "developer"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.home), style = MaterialTheme.typography.headlineLarge)
+            Text(stringResource(R.string.welcome_back, profile.display_name ?: stringResource(R.string.developer)), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        item { Button(onClick = onAdd, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.add_app)) } }
+        item {
+            OutlinedButton(onClick = onPool, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.public_pool_action)) }
+            Text(stringResource(R.string.public_pool_help), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        items(apps, key = { "app-${it.id}" }) { app ->
+            OutlinedButton(onClick = { onOpen(app) }, modifier = Modifier.fillMaxWidth()) {
+                AppIcon(app.name, app.icon_url, app.package_name)
+                Spacer(Modifier.width(12.dp))
+                Text(app.name, modifier = Modifier.weight(1f))
+            }
         }
         if (primaryApp == null || dashboard == null) {
             item {
                 EmptyCard(
-                    "Your first launch starts here",
-                    "Add an app, connect tester access, then invite developers or match available testers.",
+                    stringResource(R.string.first_launch_title),
+                    stringResource(R.string.first_launch_body),
                 )
             }
             item {
                 MetricCard(
-                    label = "Today's Work",
-                    value = "${today.size} ${if (today.size == 1) "test" else "tests"}",
+                    label = stringResource(R.string.todays_work),
+                    value = stringResource(if (today.size == 1) R.string.test_count_singular else R.string.test_count_plural, today.size),
                     supporting = "~${today.sumOf { it.estimated_minutes }} min",
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-            item { Button(onClick = onAdd, modifier = Modifier.fillMaxWidth()) { Text("Add app") } }
         } else {
             item {
                 CountdownHero(primaryApp, dashboard) { onOpen(primaryApp) }
@@ -290,48 +422,40 @@ private fun Home(
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     MetricCard(
-                        label = "Tester Coverage",
+                        label = stringResource(R.string.tester_coverage),
                         value = "${dashboard.active_testers} / ${dashboard.google_minimum}",
-                        supporting = if (dashboard.testers_needed_for_minimum == 0) "Requirement met" else
-                            "${dashboard.testers_needed_for_minimum} more required",
+                        supporting = if (dashboard.testers_needed_for_minimum == 0) stringResource(R.string.requirement_met) else
+                            stringResource(R.string.more_testers_required, dashboard.testers_needed_for_minimum),
                         positive = dashboard.testers_needed_for_minimum == 0,
                         modifier = Modifier.weight(1f),
                     )
                     MetricCard(
-                        label = "Today's Work",
-                        value = "${today.size} ${if (today.size == 1) "test" else "tests"}",
+                        label = stringResource(R.string.todays_work),
+                        value = stringResource(if (today.size == 1) R.string.test_count_singular else R.string.test_count_plural, today.size),
                         supporting = "~${today.sumOf { it.estimated_minutes }} min",
                         modifier = Modifier.weight(1f),
                     )
                 }
             }
             item {
-                SectionHeader("TODAY", if (today.isNotEmpty()) "View all" else null, onToday)
+                SectionHeader(stringResource(R.string.today), if (today.isNotEmpty()) stringResource(R.string.view_all) else null, onToday)
             }
             if (today.isEmpty()) {
-                item { EmptyCard("You're caught up", "No tests are assigned for today.") }
+                item { EmptyCard(stringResource(R.string.you_are_caught_up), stringResource(R.string.no_tests_today)) }
             } else {
                 items(today, key = { "home-${it.id}" }) { mission ->
                     TodayAssignmentCard(assignment = mission, onClick = { onAssignment(mission) }, compact = true)
                 }
             }
             item {
-                SectionHeader("CIRCLE HEALTH")
+                SectionHeader(stringResource(R.string.circle_health))
                 HealthCard(dashboard)
-            }
-            item {
-                SectionHeader("YOUR LAUNCHES")
-            }
-            items(apps, key = { it.id }) { app ->
-                LaunchCard(app, dashboards[app.id]) { onOpen(app) }
             }
         }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SecondaryLaunchButton("Invite developers", onInvite)
-                SecondaryLaunchButton("Join with invite code", onJoin)
-                TextButton(onClick = onAccount, modifier = Modifier.fillMaxWidth()) { Text("Account & settings") }
-                TextButton(onClick = onLogout, modifier = Modifier.fillMaxWidth()) { Text("Sign out") }
+                TextButton(onClick = onAccount, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.account_settings)) }
+                TextButton(onClick = onLogout, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.sign_out)) }
             }
         }
     }
@@ -364,7 +488,7 @@ private fun CountdownHero(app: LaunchApp, dashboard: LaunchDashboard, onOpen: ()
                     overflow = TextOverflow.Ellipsis,
                 )
                 Spacer(Modifier.width(12.dp))
-                StatusBadge(if (onTrack) "Testing on track" else "Needs attention", if (onTrack) StatusTone.SUCCESS else StatusTone.ATTENTION)
+                StatusBadge(stringResource(if (onTrack) R.string.testing_on_track else R.string.needs_attention), if (onTrack) StatusTone.SUCCESS else StatusTone.ATTENTION)
             }
             Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
                 if (dashboard.testing_started_at == null) {
@@ -376,24 +500,24 @@ private fun CountdownHero(app: LaunchApp, dashboard: LaunchDashboard, onOpen: ()
                         "${dashboard.qualifying_tester_count} / ${dashboard.required_tester_count} ready",
                         style = MaterialTheme.typography.titleLarge,
                     )
-                    Text("Day 1 starts when the requirement is met.", style = MaterialTheme.typography.bodyLarge)
+                    Text(stringResource(R.string.day_one_starts_after_requirement), style = MaterialTheme.typography.bodyLarge)
                 } else if (dashboard.lifecycle_complete) {
-                    Text("Internal testing complete", style = MaterialTheme.typography.headlineMedium)
-                    Text("Production application can be prepared.", style = MaterialTheme.typography.bodyLarge)
+                    Text(stringResource(R.string.internal_testing_complete), style = MaterialTheme.typography.headlineMedium)
+                    Text(stringResource(R.string.production_app_can_be_prepared), style = MaterialTheme.typography.bodyLarge)
                 } else {
                     Text(
                         dashboard.days_remaining.coerceAtLeast(0).toString(),
                         style = MaterialTheme.typography.displayLarge.copy(fontSize = 72.sp, lineHeight = 76.sp),
                     )
-                    Text("DAYS", style = MaterialTheme.typography.titleLarge)
-                    Text("until internal testing eligibility", style = MaterialTheme.typography.bodyLarge)
+                    Text(stringResource(R.string.days_uppercase), style = MaterialTheme.typography.titleLarge)
+                    Text(stringResource(R.string.until_internal_testing_eligibility), style = MaterialTheme.typography.bodyLarge)
                 }
             }
             Text(
                 if (dashboard.testing_started_at == null) {
-                    "Waiting for Day 1"
+                    stringResource(R.string.waiting_for_day_one)
                 } else {
-                    "Day ${dashboard.day.coerceAtLeast(0)} of $totalDays"
+                    stringResource(R.string.day_of_total, dashboard.day.coerceAtLeast(0), totalDays)
                 },
                 style = MaterialTheme.typography.titleMedium,
             )
@@ -407,7 +531,7 @@ private fun CountdownHero(app: LaunchApp, dashboard: LaunchDashboard, onOpen: ()
                 trackColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.24f),
             )
             Text(
-                "${dashboard.qualifying_tester_count} / ${dashboard.required_tester_count} testers qualifying",
+                stringResource(R.string.testers_qualifying_count, dashboard.qualifying_tester_count, dashboard.required_tester_count),
                 style = MaterialTheme.typography.titleMedium,
             )
         }
@@ -445,12 +569,12 @@ private fun HealthCard(dashboard: LaunchDashboard) {
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(if (good) "Good" else "Action needed", style = MaterialTheme.typography.headlineSmall)
-                StatusBadge(if (good) "Healthy" else "Attention", if (good) StatusTone.SUCCESS else StatusTone.ATTENTION)
+                Text(stringResource(if (good) R.string.good else R.string.action_needed), style = MaterialTheme.typography.headlineSmall)
+                StatusBadge(stringResource(if (good) R.string.healthy else R.string.attention), if (good) StatusTone.SUCCESS else StatusTone.ATTENTION)
             }
-            Text("${dashboard.active_testers} active testers", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.active_testers_count, dashboard.active_testers), color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (dashboard.at_risk_testers > 0) {
-                Text("${dashboard.at_risk_testers} need attention", color = LaunchAttention)
+                Text(stringResource(R.string.testers_need_attention_count, dashboard.at_risk_testers), color = LaunchAttention)
             }
         }
     }
@@ -464,9 +588,12 @@ private fun LaunchCard(app: LaunchApp, dashboard: LaunchDashboard?, onOpen: () -
     ) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(app.name, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (app.developer_account_unlimited) {
+                StatusBadge(stringResource(R.string.publisher_account_unlimited))
+            }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Day ${dashboard?.day ?: 0} / ${dashboard?.total_days ?: 14}")
-                Text("${dashboard?.active_testers ?: 0} active", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.day_progress, dashboard?.day ?: 0, dashboard?.total_days ?: 14))
+                Text(stringResource(R.string.active_count, dashboard?.active_testers ?: 0), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             LinearProgressIndicator(
                 progress = { (dashboard?.production_readiness ?: 0).coerceIn(0, 100) / 100f },
@@ -477,59 +604,246 @@ private fun LaunchCard(app: LaunchApp, dashboard: LaunchDashboard?, onOpen: () -
 }
 
 @Composable
-private fun AddApp(
-    config: PilotConfig,
-    onCreate: (String, String, String, String?, String) -> Unit,
+private fun AdditionalAppPayment(
+    checkout: AdditionalAppCheckout,
+    actualPrice: String?,
+    loading: Boolean,
+    onCheckStatus: () -> Unit,
+    onPurchase: () -> Unit,
+    onClose: () -> Unit,
 ) {
-    var name by rememberSaveable { mutableStateOf("") }
-    var packageName by rememberSaveable { mutableStateOf("") }
-    var optIn by rememberSaveable { mutableStateOf("") }
-    var mode by rememberSaveable { mutableStateOf("LAUNCH_CIRCLE") }
-    var ownUrl by rememberSaveable { mutableStateOf("") }
-    val context = LocalContext.current
+    val isPaid = checkout.status == "PAID" || checkout.status == "CONSUMED"
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("Add your app", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("A guided setup for your closed test.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Section("APP DETAILS")
-        OutlinedTextField(name, { name = it }, label = { Text("App name") }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(packageName, { packageName = it }, label = { Text("Package name") }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(optIn, { optIn = it }, label = { Text("Closed-testing opt-in URL") }, modifier = Modifier.fillMaxWidth())
-        Section("TESTER ACCESS")
-        Option(mode == "LAUNCH_CIRCLE", "Launch Circle Google Group · Recommended", "Shared access for pilot testers.") {
-            mode = "LAUNCH_CIRCLE"
-        }
-        if (mode == "LAUNCH_CIRCLE") {
-            Highlight {
-                Text("Group email")
-                Text(config.google_group_email, fontWeight = FontWeight.SemiBold)
-                OutlinedButton(onClick = { copy(context, config.google_group_email) }) {
-                    Text("Copy Group Email")
+        Text(stringResource(R.string.additional_app), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text(
+            when (checkout.status) {
+                "PAID", "CONSUMED" -> stringResource(R.string.additional_app_purchase_confirmed)
+                "FAILED", "EXPIRED" ->
+                    stringResource(R.string.additional_app_purchase_cancelled)
+                else ->
+                    stringResource(R.string.additional_app_purchase_verification)
+            },
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            actualPrice ?: stringResource(R.string.loading_google_play_price),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Button(
+            onClick = onPurchase,
+            enabled = !loading && !isPaid && actualPrice != null,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text(stringResource(R.string.buy_with_google_play)) }
+        Button(
+            onClick = onCheckStatus,
+            enabled = !loading,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text(stringResource(if (isPaid) R.string.apply_purchase else R.string.check_purchase_status)) }
+        OutlinedButton(
+            onClick = onClose,
+            enabled = !loading,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text(stringResource(R.string.return_to_add_app)) }
+    }
+}
+
+@Composable
+private fun ManagedLaunchPayment(
+    checkout: ManagedCheckout,
+    actualPrice: String?,
+    actualListPrice: String?,
+    loading: Boolean,
+    onCheckStatus: () -> Unit,
+    onPurchase: () -> Unit,
+    onClose: () -> Unit,
+) {
+    val isPaid = checkout.status == "PAID"
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text(stringResource(R.string.managed_launch), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text(
+            when (checkout.status) {
+                "PAID" -> stringResource(R.string.managed_purchase_confirmed)
+                "FAILED", "EXPIRED" -> stringResource(R.string.managed_purchase_cancelled)
+                else -> stringResource(R.string.managed_purchase_verification)
+            },
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            managedCheckoutPriceLabel(
+                actualListPrice,
+                actualPrice,
+                hasCredit = checkout.credit_amount > 0,
+            ),
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Button(
+            onClick = onPurchase,
+            enabled = !loading && !isPaid && actualPrice != null,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text(stringResource(R.string.buy_with_google_play)) }
+        Button(
+            onClick = onCheckStatus,
+            enabled = !loading,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text(stringResource(if (isPaid) R.string.refresh_confirmation else R.string.check_purchase_status)) }
+        OutlinedButton(
+            onClick = onClose,
+            enabled = !loading,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text(stringResource(R.string.return_to_launch)) }
+    }
+}
+
+@Composable
+private fun AddApp(
+    onCreate: (String, String, String, String?, String, List<String>, String, String?, Boolean) -> Unit,
+    onDraftIcon: (String?) -> Unit,
+    loading: Boolean = false,
+    supportsOwnerAttestation: Boolean,
+    capabilitiesResolved: Boolean,
+    capabilitiesCheckFailed: Boolean,
+    onRetryCapabilities: () -> Unit,
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var playLink by rememberSaveable { mutableStateOf("") }
+    var name by rememberSaveable { mutableStateOf("") }
+    var workflowText by rememberSaveable { mutableStateOf("") }
+    var draftIcon by androidx.compose.runtime.remember { mutableStateOf<String?>(null) }
+    var ownershipAuthorized by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) { onDraftIcon(null) }
+    val link = playLink.trim()
+    val parsedPlayLink = com.launchcircle.testers.core.launch.PlayAppLink.parseClosedTestingLink(link)
+    val steps = parseCoreWorkflowSteps(workflowText)
+    val stepsTooLong = steps.any { it.length > 200 }
+    val stepsInvalid = steps.size > 4 || stepsTooLong
+    val valid = capabilitiesResolved && parsedPlayLink != null && name.isNotBlank() && draftIcon != null && steps.size >= 2 && !stepsInvalid &&
+        (!supportsOwnerAttestation || ownershipAuthorized)
+    val example = lcText("Open the app and try its main feature using sample data.\nCheck the result and report anything confusing.", "打开应用，用示例数据尝试主要功能。\n检查结果，反馈遇到的问题或不清楚的地方。")
+    Column(Modifier.fillMaxSize()) {
+        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(lcText("Add your app", "添加自己的 App"), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(18.dp)) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Surface(color = MaterialTheme.colorScheme.primary, shape = CircleShape) {
+                            Text("1", Modifier.padding(horizontal = 12.dp, vertical = 6.dp), color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(lcText("App details", "应用信息"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text(lcText("App icon, Play link and name", "应用图标、Play 链接和名称"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
+            }
+            IconUpload(name.ifBlank { "App" }, draftIcon?.let { "data:image/png;base64,$it" }, enabled = !loading) { data ->
+                draftIcon = data
+                onDraftIcon(data)
+            }
+            Text(lcText("Closed testing link (required)", "封闭测试链接（必填）"), fontWeight = FontWeight.SemiBold)
+            OutlinedTextField(
+                value = playLink,
+                onValueChange = { playLink = it },
+                label = { Text(lcText("Google Play test link", "Google Play 测试链接")) },
+                placeholder = { Text(stringResource(R.string.add_app_closed_testing_link_placeholder)) },
+                supportingText = {
+                    Text(
+                        stringResource(
+                            if (playLink.isNotBlank() && parsedPlayLink == null)
+                                R.string.add_app_closed_testing_link_invalid
+                            else R.string.add_app_closed_testing_link_help,
+                        )
+                    )
+                },
+                isError = playLink.isNotBlank() && parsedPlayLink == null,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Uri),
+                singleLine = true,
+                enabled = !loading,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedButton(
+                onClick = {
+                    runCatching {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://play.google.com/console")))
+                    }
+                },
+                enabled = !loading,
+            ) { Text(lcText("Open Play Console ↗", "打开 Play Console ↗")) }
+            OutlinedTextField(name, { name = it }, label = { Text(lcText("App name (required)", "应用名称（必填）")) }, singleLine = true, enabled = !loading, modifier = Modifier.fillMaxWidth())
+            Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(16.dp)) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Surface(color = MaterialTheme.colorScheme.primary, shape = CircleShape) {
+                        Text("2", Modifier.padding(horizontal = 12.dp, vertical = 6.dp), color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold)
+                    }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(lcText("Write test steps", "填写测试步骤"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text(lcText("2–4 steps · one per line", "2–4 条测试步骤 · 每行一条"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    androidx.compose.material3.AssistChip(
+                        onClick = { workflowText = if (workflowText.isBlank()) example else workflowText.trimEnd() + "\n" + example },
+                        enabled = !loading && steps.size < 2,
+                        label = { Text(lcText("Use starter steps", "使用示例步骤"), maxLines = 1) },
+                    )
+                }
+            }
+            OutlinedTextField(workflowText, { workflowText = it }, label = { Text(lcText("Test steps (required)", "测试步骤（必填）")) },
+                isError = stepsInvalid,
+                supportingText = {
+                    val message = when {
+                        steps.size > 4 -> lcText("Keep at most 4 test steps.", "最多填写 4 条测试步骤，请删减。")
+                        stepsTooLong -> lcText("Shorten each step to 200 characters or fewer.", "每条测试步骤最多 200 字，请缩短。")
+                        steps.isEmpty() -> lcText("Write 2 to 4 steps, one per line, or use the starter steps.", "请填写 2 到 4 条，每条另起一行，也可以使用示例步骤。")
+                        steps.size == 1 -> lcText("Add at least 1 more step on a new line.", "还差至少 1 条，请另起一行填写。")
+                        else -> lcText("Test steps complete (${steps.size})", "测试步骤已完成（${steps.size} 条）")
+                    }
+                    val color = when {
+                        stepsInvalid -> MaterialTheme.colorScheme.error
+                        steps.size < 2 -> MaterialTheme.colorScheme.primary
+                        androidx.compose.foundation.isSystemInDarkTheme() -> androidx.compose.ui.graphics.Color(0xFF8DDBA4)
+                        else -> androidx.compose.ui.graphics.Color(0xFF176C38)
+                    }
+                    Text(message, color = color, fontWeight = FontWeight.SemiBold)
+                },
+                minLines = 3, maxLines = 5, enabled = !loading, modifier = Modifier.fillMaxWidth())
+            if (!capabilitiesResolved && capabilitiesCheckFailed) {
+                Text(lcText("Unable to check service capabilities. Check your connection and retry.", "暂时无法检查服务能力。请检查网络后重试。"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(onClick = onRetryCapabilities) { Text(lcText("Try again", "重试")) }
+            } else if (!capabilitiesResolved) {
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+                Text(lcText("Checking service capabilities…", "正在检查服务能力…"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else if (supportsOwnerAttestation) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Checkbox(checked = ownershipAuthorized, onCheckedChange = { ownershipAuthorized = it }, enabled = !loading)
+                    Text(lcText(
+                        "I own this app or am authorized to submit it for testing. Publisher identity is self-reported and may not be independently verified.",
+                        "我拥有此应用，或已获授权提交测试。发布者身份由我自报，可能未经独立核验。",
+                    ), style = MaterialTheme.typography.bodySmall)
+                }
+            } else {
                 Text(
-                    "You still add this group to your Closed Testing track in Play Console.",
+                    lcText("Ownership confirmation will be available after the service is updated. You can save this app now; it will remain pending until then.", "所有权确认将在服务端更新后可用。你现在可以保存此 App；在此之前它会保持待确认状态。"),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
+            Spacer(Modifier.height(8.dp))
         }
-        Option(mode == "OWN_GROUP", "Use my own Google Group", "Use an existing group URL.") {
-            mode = "OWN_GROUP"
+        Surface(tonalElevation = 3.dp) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (!valid) Text(lcText(if (supportsOwnerAttestation) "To continue, add an app icon, a closed testing link, an app name, 2–4 test steps, and confirm submission authority." else "To continue, add an app icon, a closed testing link, an app name, and 2–4 test steps.", if (supportsOwnerAttestation) "继续前请添加应用图标、封闭测试链接、应用名称、2–4 条测试步骤，并确认提交权限。" else "继续前请添加应用图标、封闭测试链接、应用名称和 2–4 条测试步骤。"), style = MaterialTheme.typography.bodySmall)
+                Button(onClick = {
+                    val closedTestingLink = checkNotNull(parsedPlayLink)
+                    onCreate(name.trim(), closedTestingLink.packageName, closedTestingLink.optInUrl, null, "LAUNCH_CIRCLE", steps, "", null, supportsOwnerAttestation && ownershipAuthorized)
+                },
+                    enabled = valid && !loading, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(lcText(if (loading) "Saving…" else "Save & set up test access", if (loading) "保存中…" else "保存并设置测试访问")) }
+            }
         }
-        if (mode == "OWN_GROUP") {
-            OutlinedTextField(ownUrl, { ownUrl = it }, label = { Text("Google Group URL") }, modifier = Modifier.fillMaxWidth())
-        }
-        Option(mode == "EMAIL_LIST", "Use email tester list", "Manage a fallback list in Play Console.") {
-            mode = "EMAIL_LIST"
-        }
-        Button(
-            onClick = { onCreate(name.trim(), packageName.trim(), optIn.trim(), ownUrl.ifBlank { null }, mode) },
-            enabled = name.isNotBlank() && packageName.contains(".") && optIn.startsWith("http") &&
-                (mode != "OWN_GROUP" || ownUrl.startsWith("http")),
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text("Create Launch") }
-        Spacer(Modifier.height(20.dp))
     }
 }
 
@@ -543,47 +857,60 @@ private fun GroupSetup(
 ) {
     val context = LocalContext.current
     val uri = LocalUriHandler.current
+    var consoleOpenFailed by remember { mutableStateOf(false) }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Connect tester access", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.connect_tester_access), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text(app.name, color = MaterialTheme.colorScheme.primary)
+        Text(
+            lcText(
+                "This is the one Launch Circle tester group. Add its email to every app's Play closed-test track. Testers join with the invite link once, then open each app's own Play test link.",
+                "Launch Circle 统一使用这一个测试群组。发布者需将群组邮箱添加到每个 App 的 Play 封闭测试轨道。测试者通过邀请链接加入一次，再逐个打开各 App 的 Play 测试链接。",
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Highlight {
-            Text("Launch Circle Google Group", fontWeight = FontWeight.SemiBold)
+            Text(lcText("Shared tester group email · for Play Console", "共用测试群组邮箱 · 用于 Play Console"), fontWeight = FontWeight.SemiBold)
             Text(config.google_group_email)
-            OutlinedButton(onClick = { copy(context, config.google_group_email) }) { Text("Copy Group Email") }
-            Text("Tester join link", fontWeight = FontWeight.SemiBold)
-            Text(config.google_group_join_url, style = MaterialTheme.typography.bodySmall)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { copy(context, config.google_group_join_url) }) { Text("Copy Join Link") }
-                OutlinedButton(onClick = { uri.openUri(config.google_group_join_url) }) { Text("Open Group") }
-            }
+            Text(lcText("Copy this email into every Launch Circle app's closed-test track. The invite link below is for testers.", "请将此邮箱添加到每个 Launch Circle App 的封闭测试轨道。下方邀请链接供测试者使用。"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedButton(onClick = { copy(context, config.google_group_email) }) { Text(lcText("Copy group email", "复制群组邮箱")) }
         }
-        Text(
-            "Share the join link with your testers. After joining this group, each tester must still open your app's own Play opt-in link.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text("Add the group in Play Console", style = MaterialTheme.typography.titleMedium)
+        Text(lcText("Add this group to this app in Play Console", "在 Play Console 中为此 App 添加群组"), style = MaterialTheme.typography.titleMedium)
+        OutlinedButton(
+            onClick = { consoleOpenFailed = runCatching { uri.openUri("https://play.google.com/console") }.isFailure },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text(lcText("Open Google Play Console", "打开 Google Play Console")) }
+        if (consoleOpenFailed) Text(lcText("Open play.google.com/console in your browser, then select this app.", "请在浏览器打开 play.google.com/console，然后选择此 App。"), color = MaterialTheme.colorScheme.error)
         listOf(
-            "1. Open Play Console",
-            "2. Closed testing",
-            "3. Manage testers",
-            "4. Add Google Group",
-            "5. Enter: " + config.google_group_email,
-            "6. Save",
-            "7. Return here and continue",
+            stringResource(R.string.group_setup_step_open_console),
+            stringResource(R.string.group_setup_step_closed_testing),
+            stringResource(R.string.group_setup_step_manage_testers),
+            stringResource(R.string.group_setup_step_add_group),
+            stringResource(R.string.group_setup_step_enter_group, config.google_group_email),
+            stringResource(R.string.group_setup_step_save),
+            stringResource(R.string.group_setup_step_return_continue),
         ).forEach { Text(it) }
+        AppTestInvitation(app, config)
         Text(
-            "This is your confirmation. Launch Circle does not modify or verify Play Console.",
+            lcText(
+                "After saving the group in Play Console and publishing a closed-test release, confirm here. Launch Circle cannot check Play Console for you. A ready app will then appear on Home; internal App Groups are separate.",
+                "在 Play Console 保存群组并开放封闭测试版本后，再回来确认。Launch Circle 无法替你读取 Play Console。App 满足上架条件后会显示在首页；内部互测小组是独立功能。",
+            ),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Button(onClick = onConfirm, enabled = !loading, modifier = Modifier.fillMaxWidth()) {
-            Text("I've added the Google Group")
+        Text(
+            stringResource(R.string.play_console_user_confirmation_note),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Button(onClick = onConfirm, enabled = !loading && !app.google_group_configured, modifier = Modifier.fillMaxWidth()) {
+            Text(if (app.google_group_configured) lcText("Tester access confirmed", "测试访问已确认") else lcText("I added the group to this app", "我已将群组添加到此 App"))
         }
-        OutlinedButton(onClick = onLater, modifier = Modifier.fillMaxWidth()) { Text("I'll do this later") }
+        OutlinedButton(onClick = onLater, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.do_this_later)) }
     }
 }
 
@@ -591,27 +918,117 @@ private fun GroupSetup(
 private fun Dashboard(
     app: LaunchApp,
     data: LaunchDashboard,
+    ownedApps: List<LaunchApp>,
     loading: Boolean,
+    onSelectApp: (LaunchApp) -> Unit,
     onInvite: () -> Unit,
     onMatch: () -> Unit,
     onTesters: () -> Unit,
     onFeedback: () -> Unit,
     onGroupSetup: () -> Unit,
+    onCoordinationTime: (Int, String) -> Unit,
+    onManagedOfferViewed: (String) -> Unit,
+    onManagedCheckout: () -> Unit,
+    onEvidence: (() -> Unit)?,
+    onIcon: (String, String?) -> Unit,
+    onPool: () -> Unit,
+    onAdd: (() -> Unit)? = null,
+    onAttestOwnership: () -> Unit,
+    supportsAppGroupSelection: Boolean,
+    capabilitiesResolved: Boolean,
+    capabilitiesCheckFailed: Boolean,
 ) {
+    var coordinationMinutesText by rememberSaveable(app.id) { mutableStateOf("") }
+    var showPriorityOffer by rememberSaveable(app.id) { mutableStateOf(false) }
+    LaunchedEffect(app.id, data.managed_offer_triggers.orEmpty()) {
+        data.managed_offer_triggers.orEmpty().distinct().forEach(onManagedOfferViewed)
+    }
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
-            Text("My Launch", style = MaterialTheme.typography.headlineLarge)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.foundation.layout.Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(lcText("My Launch", "我的发布"), style = MaterialTheme.typography.headlineMedium)
+                    if (onAdd != null) TextButton(onClick = onAdd, enabled = !loading) { Text(lcText("Add app", "添加 App")) }
+                }
+                if (ownedApps.size > 1) {
+                    var appMenuOpen by rememberSaveable(app.id) { mutableStateOf(false) }
+                    Box {
+                        OutlinedButton(onClick = { appMenuOpen = true }, enabled = !loading, modifier = Modifier.fillMaxWidth()) {
+                            Text(lcText("Managing: ", "正在管理：") + app.name + "  ▾", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        androidx.compose.material3.DropdownMenu(expanded = appMenuOpen, onDismissRequest = { appMenuOpen = false }) {
+                            ownedApps.forEach { item ->
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(item.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                    onClick = { appMenuOpen = false; onSelectApp(item) },
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    Text(app.name, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+        if (!capabilitiesResolved && capabilitiesCheckFailed) item {
+            Text(lcText("Unable to check App Groups support. Check your connection, then return to this screen to retry.", "暂时无法检查互测小组支持。请检查网络，再返回此页重试。"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (capabilitiesResolved && !supportsAppGroupSelection) item {
             Text(
-                app.name,
-                style = MaterialTheme.typography.titleLarge,
+                lcText("Owner confirmation and App Groups will be available after the service is updated.", "所有者确认和互测小组将在服务端更新后可用。"),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodySmall,
             )
+        }
+        if (supportsAppGroupSelection && !app.ownership_authorized) item {
+            OutlinedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        lcText("PENDING_ATTESTATION · Owner confirmation needed", "PENDING_ATTESTATION · 待所有者确认"),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(lcText(
+                        "This app was saved by an older client without an ownership statement. It cannot join a group or receive testers until you confirm that you own it or are authorized to submit it.",
+                        "此 App 由旧版客户端保存，尚无所有权声明。确认你拥有该 App 或获准提交后，才能加入小组或招募测试者。",
+                    ))
+                    Button(onClick = onAttestOwnership, enabled = !loading, modifier = Modifier.fillMaxWidth()) {
+                        Text(lcText("I own this app or am authorized to submit it", "我拥有此 App 或获准提交它"))
+                    }
+                }
+            }
+        }
+        item {
+            OutlinedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(lcText("Google Play tester access", "Google Play 测试访问"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    OutlinedButton(onClick = onInvite, enabled = !loading, modifier = Modifier.fillMaxWidth()) { Text(lcText("Share this app’s test invitation", "分享此 App 的测试邀请")) }
+                    if (app.google_group_configured) {
+                        Text(lcText("Confirmed. Your app is listed in Home. Internal App Groups are separate and optional.", "已确认。你的 App 已列入首页。Launch Circle 内部互测小组是独立的可选功能。"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (supportsAppGroupSelection) Button(onClick = onPool, enabled = !loading, modifier = Modifier.fillMaxWidth()) {
+                            Text(lcText("Browse App Groups", "浏览互测小组"))
+                        }
+                    } else {
+                        Text(lcText("For this app, add the shared Launch Circle tester Google Group to its Play Console closed-test track, then come back and confirm.", "请为这个 App 在 Play Console 封闭测试轨道添加 Launch Circle 共用测试群组，然后回来确认。"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Button(onClick = onGroupSetup, enabled = !loading, modifier = Modifier.fillMaxWidth()) {
+                            Text(lcText("Set up tester access", "配置测试访问"))
+                        }
+                    }
+                }
+            }
+        }
+        if (onEvidence != null) item {
+            OutlinedButton(onClick = onEvidence, enabled = !loading, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.publisher_evidence_title))
+            }
         }
         item {
             Card(
@@ -619,13 +1036,14 @@ private fun Dashboard(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
             ) {
                 Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(lcText("Testing progress", "测试进度"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                         Text(
-                            if (data.testing_started_at == null) "Waiting for testers"
-                            else "Day ${data.day} / ${data.total_days}",
+                            if (data.testing_started_at == null) lcText("Waiting for tester activity", "等待测试者开始")
+                            else stringResource(R.string.day_progress, data.day, data.total_days),
                             style = MaterialTheme.typography.headlineMedium,
                         )
-                        StatusBadge(pretty(data.status))
+                        if (data.testing_started_at != null) StatusBadge(localizedLabel(data.status))
                     }
                     LinearProgressIndicator(
                         progress = { data.production_readiness.coerceIn(0, 100) / 100f },
@@ -634,23 +1052,23 @@ private fun Dashboard(
                     )
                     Text(
                         if (data.testing_started_at == null) {
-                            "${data.qualifying_tester_count} / ${data.required_tester_count} ready"
+                            stringResource(R.string.testers_ready_count, data.qualifying_tester_count, data.required_tester_count)
                         } else if (data.lifecycle_complete) {
-                            "14-day internal test complete"
+                            stringResource(R.string.fourteen_day_test_complete)
                         } else {
-                            "${data.days_remaining.coerceAtLeast(0)} days remaining"
+                            stringResource(R.string.days_remaining, data.days_remaining.coerceAtLeast(0))
                         },
                         style = MaterialTheme.typography.titleMedium,
                     )
                     if (data.estimated_ready_date.isNotBlank()) {
-                        Text("Estimated production date · ${data.estimated_ready_date}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.estimated_production_date, data.estimated_ready_date), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     if (data.replacement_status != "NONE") {
                         Text(
                             when (data.replacement_status) {
-                                "COVERAGE_RESTORED" -> "Coverage restored"
-                                "REPLACEMENT_ASSIGNED" -> "Replacement assigned"
-                                else -> "Coverage at risk"
+                                "COVERAGE_RESTORED" -> stringResource(R.string.coverage_restored)
+                                "REPLACEMENT_ASSIGNED" -> stringResource(R.string.replacement_assigned)
+                                else -> stringResource(R.string.coverage_at_risk)
                             },
                             color = if (data.coverage_shortage == 0) MaterialTheme.colorScheme.tertiary else LaunchAttention,
                         )
@@ -662,41 +1080,61 @@ private fun Dashboard(
             }
         }
         item {
-            SectionHeader("TESTER COVERAGE")
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                MetricCard("Active testers", data.qualifying_tester_count.toString(), "Currently qualifying", data.qualifying_tester_count >= data.required_tester_count, Modifier.fillMaxWidth())
-                MetricCard("Required testers", data.required_tester_count.toString(), "Launch Circle requirement", modifier = Modifier.fillMaxWidth())
-            }
-        }
-        item {
-            SectionHeader("MILESTONES")
+            SectionHeader(stringResource(R.string.milestones))
             MilestoneTimeline(data)
         }
         item {
-            SectionHeader("CIRCLE HEALTH")
-            HealthCard(data)
-        }
-        item {
-            OutlinedButton(onClick = onGroupSetup, modifier = Modifier.fillMaxWidth()) {
-                Text("Tester access · " + if (app.google_group_configured) "Confirmed" else "Setup needed")
-            }
-        }
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onInvite, modifier = Modifier.fillMaxWidth()) { Text("Invite developers") }
-                OutlinedButton(onClick = onMatch, enabled = !loading, modifier = Modifier.fillMaxWidth()) { Text("Match available testers") }
-                OutlinedButton(onClick = onTesters, modifier = Modifier.fillMaxWidth()) { Text("View circle") }
+            OutlinedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.activity), style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.missions_progress, data.missions_completed, data.missions_total_available))
+                    Text(stringResource(R.string.feedback_response_count, data.feedback_count))
+                    TextButton(onClick = onFeedback, enabled = !loading && data.feedback_count > 0) { Text(stringResource(R.string.view_feedback)) }
+                }
             }
         }
         item {
             OutlinedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Activity", style = MaterialTheme.typography.titleMedium)
-                    Text("Missions · ${data.missions_completed} / ${data.missions_total_available}")
-                    Text("Feedback · ${data.feedback_count} responses")
-                    TextButton(onClick = onFeedback) { Text("View feedback") }
+                    Text(stringResource(R.string.workload), style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.tester_time_reported, data.tester_minutes_reported))
+                    Text(stringResource(R.string.developer_coordination_time, data.developer_coordination_minutes, data.coordination_entries))
+                    if (data.remaining_reciprocal_missions > 0) {
+                        Text(stringResource(R.string.remaining_circle_missions, data.remaining_reciprocal_missions, data.remaining_reciprocal_minutes))
+                    }
+                    OutlinedTextField(
+                        value = coordinationMinutesText,
+                        onValueChange = { coordinationMinutesText = it.filter(Char::isDigit).take(3) },
+                        label = { Text(stringResource(R.string.coordination_time_minutes)) },
+                        supportingText = { Text(stringResource(R.string.log_coordination_time_help)) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    val minutes = coordinationMinutesText.toIntOrNull()
+                    Button(
+                        onClick = {
+                            onCoordinationTime(checkNotNull(minutes), "COORDINATION")
+                            coordinationMinutesText = ""
+                        },
+                        enabled = !loading && minutes != null && minutes in 1..480,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(stringResource(R.string.log_coordination_time)) }
                 }
             }
+        }
+        if (data.managed_launch_purchased) {
+            item {
+                OutlinedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(stringResource(R.string.managed_launch), style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(R.string.managed_launch_active))
+                    }
+                }
+            }
+        }
+        item {
+            var editIcon by rememberSaveable(app.id) { mutableStateOf(false) }
+            OutlinedButton(onClick = { editIcon = !editIcon }, enabled = !loading) { Text(if (editIcon) "Close icon editor" else "Update app icon") }
+            if (editIcon) AppIconEditor(app, loading, onIcon)
         }
         item {
             Text(data.approval_disclaimer, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -729,52 +1167,36 @@ private fun MilestoneTimeline(data: LaunchDashboard) {
 }
 
 @Composable
-private fun InviteScreen(invite: LaunchInvite?, loading: Boolean, onNew: () -> Unit, onClose: () -> Unit) {
+private fun InviteScreen(app: LaunchApp?, config: PilotConfig, onClose: () -> Unit) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        TextButton(onClick = onClose) { Text(lcText("Back", "返回")) }
+        if (app == null) Text(lcText("Select your app in My Launch first.", "请先在我的发布选择自己的 App。"))
+        else AppTestInvitation(app, config)
+    }
+}
+
+@Composable
+private fun AppTestInvitation(app: LaunchApp, config: PilotConfig) {
     val context = LocalContext.current
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
-    ) {
-        TextButton(
-            onClick = onClose,
-            modifier = Modifier.defaultMinSize(minHeight = 48.dp),
-        ) { Text("Back") }
-        Text("Invite Developers", style = MaterialTheme.typography.headlineLarge)
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Grow your testing circle", style = MaterialTheme.typography.titleLarge)
-            Text(
-                "Invite another Android developer. You test their app. They test yours.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+    val uri = LocalUriHandler.current
+    var help by rememberSaveable(app.id) { mutableStateOf(false) }
+    var openFailed by remember { mutableStateOf(false) }
+    val invitation = lcText(
+        "Please test " + app.name + "\n\nJoin this app's Google Play test:\n" + app.opt_in_url + "\n\nFirst time testing with Launch Circle? Join our shared Google Group once:\n" + config.google_group_join_url + "\n\nUse the same Google account for the group, Play test and Play Store. Then install, try the app and send feedback.",
+        "邀请你测试 " + app.name + "\n\n加入此 App 的 Google Play 测试：\n" + app.opt_in_url + "\n\n首次参与 Launch Circle 测试？先加入共用 Google 群组一次：\n" + config.google_group_join_url + "\n\n群组、Play 测试和 Play 商店请使用同一个 Google 账号。然后安装、使用并提交反馈。",
+    )
+    Highlight {
+        Text(lcText("Invite testers for ", "邀请测试：") + app.name, style = MaterialTheme.typography.titleMedium)
+        Text(app.opt_in_url, style = MaterialTheme.typography.bodySmall)
+        Button(onClick = { share(context, invitation, app.name) }, modifier = Modifier.fillMaxWidth()) { Text(lcText("Share this app's test invitation", "分享此 App 的测试邀请")) }
+        OutlinedButton(onClick = { copy(context, invitation) }, modifier = Modifier.fillMaxWidth()) { Text(lcText("Copy test invitation", "复制测试邀请")) }
+        OutlinedButton(onClick = { openFailed = runCatching { uri.openUri(app.opt_in_url) }.isFailure }, modifier = Modifier.fillMaxWidth()) { Text(lcText("Open this app's Play test", "打开此 App 的 Play 测试页面")) }
+        if (openFailed) Text(lcText("Copy the invitation and open its Play link in your browser.", "请复制邀请，并在浏览器打开其中的 Play 链接。"), color = MaterialTheme.colorScheme.error)
+        TextButton(onClick = { help = !help }) { Text(lcText("First-time tester help", "首次测试者帮助")) }
+        if (help) {
+            Text(lcText("Join the shared Google Group once, then use this app's Play link above. Existing members can go straight to the Play link.", "首次加入共用 Google 群组后，再打开上方此 App 的 Play 链接。已有成员可以直接打开 Play 链接。"))
+            OutlinedButton(onClick = { openFailed = runCatching { uri.openUri(config.google_group_join_url) }.isFailure }) { Text(lcText("Join the shared Google Group", "加入共用 Google 群组")) }
         }
-        Card(
-            Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        ) {
-            Column(
-                Modifier.fillMaxWidth().padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                if (invite == null) {
-                    CircularProgressIndicator()
-                } else {
-                    Text("YOUR INVITE CODE", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                    Text(
-                        invite.invite_code,
-                        style = MaterialTheme.typography.displaySmall.copy(fontFamily = FontFamily.Monospace),
-                        maxLines = 1,
-                    )
-                    PrimaryLaunchButton("Share invite", onClick = { share(context, invite.share_url) })
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                        TextButton(onClick = { copy(context, invite.share_url) }) { Text("Copy link") }
-                        TextButton(onClick = { copy(context, invite.invite_code) }) { Text("Copy code") }
-                    }
-                }
-            }
-        }
-        SecondaryLaunchButton("Create another code", onNew, enabled = !loading)
     }
 }
 
@@ -785,17 +1207,17 @@ private fun JoinScreen(loading: Boolean, onJoin: (String) -> Unit, onClose: () -
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Text("Join Launch Circle", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("Enter the invite code another Android developer shared.")
+        Text(stringResource(R.string.join_launch_circle), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.enter_shared_invite_code))
         OutlinedTextField(
             code, { code = it.uppercase().take(8) },
-            label = { Text("Invite code") }, placeholder = { Text("LC-8H4K2") },
+            label = { Text(stringResource(R.string.invite_code)) }, placeholder = { Text(stringResource(R.string.invite_code_example)) },
             modifier = Modifier.fillMaxWidth(),
         )
         Button(onClick = { onJoin(code) }, enabled = !loading && code.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
-            Text("Join Launch Circle")
+            Text(stringResource(R.string.join_launch_circle))
         }
-        OutlinedButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
+        OutlinedButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.cancel)) }
     }
 }
 
@@ -805,61 +1227,73 @@ private fun JoinSuccess(
     onAdd: () -> Unit,
     onTests: () -> Unit,
     onCircle: () -> Unit,
+    showCircle: Boolean = true,
+    circleSelected: Boolean = false,
 ) {
     val uri = LocalUriHandler.current
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Text("You’re in.", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
-        Text("Next steps", style = MaterialTheme.typography.titleLarge)
-        Text("1. Join the Launch Circle Google Group using the same Google account as Google Play.")
-        Text("2. For every assigned app, open that app's Play closed-test opt-in link separately.")
-        Text("3. Install, test, and send honest feedback.")
+        Text(stringResource(R.string.you_are_in), style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.next_steps), style = MaterialTheme.typography.titleLarge)
+        Text(stringResource(R.string.join_launch_circle_group_step))
+        Text(stringResource(R.string.add_android_app_step))
+        Text(stringResource(R.string.help_test_developers_step))
         Text(
-            "Joining the group alone does not enroll you in an individual app test.",
+            lcText(
+                "Group membership alone does not enroll you in any specific Play closed test.",
+                "加入群组本身不会让你自动加入任何一个 App 的 Play 闭测。",
+            ),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Button(onClick = { uri.openUri(config.google_group_join_url) }, modifier = Modifier.fillMaxWidth()) { Text("Join Google Group") }
-        OutlinedButton(onClick = onAdd, modifier = Modifier.fillMaxWidth()) { Text("Add My App") }
-        OutlinedButton(onClick = onTests, modifier = Modifier.fillMaxWidth()) { Text("View Test Apps") }
-        OutlinedButton(onClick = onCircle, modifier = Modifier.fillMaxWidth()) { Text("View Circle Members") }
+        Button(onClick = { uri.openUri(config.google_group_join_url) }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.join_google_group)) }
+        OutlinedButton(onClick = onAdd, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.add_my_app)) }
+        OutlinedButton(onClick = onTests, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.view_test_apps)) }
+        if (showCircle) OutlinedButton(onClick = onCircle, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.view_circle_members)) }
     }
 }
 
 @Composable
 private fun Today(
     assignments: List<TestAssignment>,
-    config: PilotConfig,
     onAssignment: (TestAssignment) -> Unit,
+    access: com.launchcircle.testers.core.model.TesterGroupAccess?,
+    accessCard: @Composable () -> Unit,
 ) {
-    val uri = LocalUriHandler.current
-    val completed = assignments.filter { it.status == "COMPLETED" || it.completed_at != null }
-    val toDo = assignments.filterNot { it.status == "COMPLETED" || it.completed_at != null }
+    val completed = assignments.filter { it.status == "COMPLETED" || it.completed_at != null || it.feedback_submitted }
+    val toDo = assignments.filterNot { it.status == "COMPLETED" || it.completed_at != null || it.feedback_submitted }
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Text("Tests", style = MaterialTheme.typography.headlineLarge)
-            Text("Today's tests", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 4.dp))
-            Text("Short, meaningful checks scheduled for today.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.tests), style = MaterialTheme.typography.headlineLarge)
+            Text(stringResource(R.string.todays_tests), style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 4.dp))
             Text(
-                "Join the shared tester group once, then opt in to each assigned app separately with the same Google account.",
+                lcText(
+                    if (access?.ready == true) "Shared group access is ready. Each app still needs its own Play opt-in."
+                    else "Join the shared tester group once, then opt in to each assigned app separately.",
+                    if (access?.ready == true) "共用群组访问已就绪。每个 App 仍需单独加入 Play 闭测。"
+                    else "加入一次共用测试群组，然后分别加入每个已分配 App 的 Play 闭测。",
+                ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            OutlinedButton(
-                onClick = { uri.openUri(config.google_group_join_url) },
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-            ) { Text("Join Launch Circle Tester Group") }
         }
-        if (assignments.isEmpty()) item { EmptyCard("You're caught up", "No tests are assigned for today.") }
-        if (toDo.isNotEmpty()) item { SectionHeader("TO DO") }
+        item { accessCard() }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                MetricCard(lcText("To do", "待测试"), toDo.size.toString(), lcText("Assigned apps", "分配的应用"), modifier = Modifier.weight(1f))
+                MetricCard(lcText("Done", "已完成"), completed.size.toString(), lcText("Saved feedback", "已保存反馈"), modifier = Modifier.weight(1f))
+            }
+        }
+        if (assignments.isEmpty()) item { EmptyCard(lcText("You’re ready for the next task", "等待下一项测试任务"), lcText("No tests are assigned today. Browse App Groups to see your group and its apps.", "今天没有分配的测试。可前往 App Groups 查看自己的小组和应用。")) }
+        if (toDo.isNotEmpty()) item { SectionHeader(stringResource(R.string.to_do)) }
         items(toDo, key = { "todo-${it.id}" }) { assignment ->
             TodayAssignmentCard(assignment, { onAssignment(assignment) })
         }
-        if (completed.isNotEmpty()) item { SectionHeader("COMPLETED") }
+        if (completed.isNotEmpty()) item { SectionHeader(stringResource(R.string.completed)) }
         items(completed, key = { "completed-${it.id}" }) { assignment ->
             TodayAssignmentCard(assignment, { onAssignment(assignment) }, completed = true)
         }
@@ -904,22 +1338,22 @@ private fun TodayMissionCard(
                         color = if (completed) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        pretty(mission.mission_type) + " test",
+                        stringResource(R.string.mission_type_test, localizedLabel(mission.mission_type)),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("~${mission.estimated_minutes} min", style = MaterialTheme.typography.labelLarge)
+                    Text(stringResource(R.string.estimated_minutes_short, mission.estimated_minutes), style = MaterialTheme.typography.labelLarge)
                     if (compact && !completed) {
-                        Button(onClick = onClick, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) { Text("Start") }
+                        Button(onClick = onClick, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) { Text(stringResource(R.string.start)) }
                     } else if (!completed) {
                         FilledTonalButton(onClick = onClick, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) {
-                            Text(if (inProgress) "Continue" else "Start test")
+                            Text(stringResource(if (inProgress) R.string.continue_ else R.string.start_test))
                         }
                     }
                 }
             }
-            if (completed) Text("Completed", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
+            if (completed) Text(if (mission.feedback_submitted) "Feedback submitted" else stringResource(R.string.completed), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
         }
     }
 }
@@ -943,7 +1377,7 @@ private fun TodayAssignmentCard(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                AppAvatar(assignment.app_name, muted = completed)
+                AppIcon(assignment.app_name, assignment.icon_url, assignment.package_name)
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
                         assignment.app_name,
@@ -952,16 +1386,15 @@ private fun TodayAssignmentCard(
                         overflow = TextOverflow.Ellipsis,
                         color = if (completed) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
                     )
-                    Text(pretty(assignment.test_type) + " test", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.mission_type_test, localizedLabel(assignment.test_type)), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("~${assignment.estimated_minutes} min", style = MaterialTheme.typography.labelLarge)
-                    if (completed) {
-                        Text("Completed", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
-                    } else {
-                        val label = if (compact) "Start" else "Start test"
-                        FilledTonalButton(onClick = onClick, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) { Text(label) }
-                    }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.estimated_minutes_short, assignment.estimated_minutes), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (completed) Text(if (assignment.feedback_submitted) lcText("Feedback submitted", "反馈已提交") else stringResource(R.string.completed), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
+                else {
+                    val label = stringResource(if (compact) R.string.start else R.string.start_test)
+                    FilledTonalButton(onClick = onClick, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) { Text(label) }
                 }
             }
         }
@@ -969,63 +1402,23 @@ private fun TodayAssignmentCard(
 }
 
 @Composable
-private fun AssignmentScreen(
-    assignment: TestAssignment,
-    config: PilotConfig,
-    onComplete: () -> Unit,
-) {
+private fun AssignmentScreen(assignment: TestAssignment, onComplete: () -> Unit) {
     val uri = LocalUriHandler.current
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Text(assignment.app_name, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text(pretty(assignment.test_type) + " Test", style = MaterialTheme.typography.titleLarge)
-        Text("About ${assignment.estimated_minutes} minutes")
-        Text("Assigned for ${assignment.assignment_day}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(stringResource(R.string.mission_type_test_title, localizedLabel(assignment.test_type)), style = MaterialTheme.typography.titleLarge)
+        Text(stringResource(R.string.about_minutes, assignment.estimated_minutes))
+        Text(stringResource(R.string.assigned_for_day, assignment.assignment_day), color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (assignment.status == "COMPLETED" || assignment.completed_at != null) {
-            Highlight { Text("Completed", fontWeight = FontWeight.SemiBold); Text("Your completion is saved.") }
+            Highlight { Text(stringResource(R.string.completed), fontWeight = FontWeight.SemiBold); Text(stringResource(R.string.completion_saved)) }
         } else {
-            var groupJoined by rememberSaveable(assignment.id) { mutableStateOf(false) }
-            var openedAppOptIn by rememberSaveable(assignment.id) { mutableStateOf(false) }
-
-            Text("Step 1 · Join the tester group", style = MaterialTheme.typography.titleMedium)
-            Highlight {
-                Text(config.google_group_email, fontWeight = FontWeight.SemiBold)
-                Text("Use the same Google account you use for Google Play.")
-                OutlinedButton(onClick = { uri.openUri(config.google_group_join_url) }) {
-                    Text("Open group join link")
-                }
+            Button(onClick = { uri.openUri(assignment.opt_in_url) }, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.start_test))
             }
-            Text(
-                "Continue after Google Groups shows you as a member. If it asks you to request access, wait for approval first. Launch Circle cannot check group membership.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Button(onClick = { groupJoined = true }, modifier = Modifier.fillMaxWidth()) {
-                Text("I've joined the group")
-            }
-
-            if (groupJoined) {
-                HorizontalDivider()
-                Text("Step 2 · Join this app's closed test", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "Group membership does not enroll you in ${assignment.app_name}. Open this app's own Play opt-in link and complete the opt-in there.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Button(
-                    onClick = { uri.openUri(assignment.opt_in_url); openedAppOptIn = true },
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("Open this app's Play opt-in link") }
-                Text(
-                    "Launch Circle cannot verify Play opt-in or installation. Confirm only after you have opted in, installed, and tested the app.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Button(
-                    onClick = onComplete,
-                    enabled = openedAppOptIn,
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("Confirm opt-in, install, and test") }
-            }
+            Button(onClick = onComplete, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.mark_test_complete)) }
         }
     }
 }
@@ -1052,45 +1445,75 @@ private fun Mission(
     onStart: () -> Unit,
     onOptIn: () -> Unit,
     onInstalled: () -> Unit,
-    onSubmit: (Boolean, String, String?, String?) -> Unit,
+    onSubmit: (String, String?, String?, Int?) -> Unit,
+    loading: Boolean = false,
+    started: Boolean = false,
 ) {
     val initial = when (mission.assignment_status) {
         "ACTIVE", "COMPLETED", "INSTALLED" -> 3
         "OPTED_IN" -> 2
         else -> 0
     }
-    var step by rememberSaveable(mission.id) { mutableIntStateOf(initial) }
-    var openOk by rememberSaveable(mission.id) { mutableStateOf<Boolean?>(null) }
-    var featureOk by rememberSaveable(mission.id) { mutableStateOf<String?>(null) }
+    var playOpened by rememberSaveable(mission.id) { mutableStateOf(false) }
+    val step = if (started) 4 else if (initial == 0 && playOpened) 1 else initial
+    var completionResult by rememberSaveable(mission.id) { mutableStateOf<String?>(null) }
+    var timeSpentText by rememberSaveable(mission.id) { mutableStateOf("") }
     var issue by rememberSaveable(mission.id) { mutableStateOf("") }
     var suggestion by rememberSaveable(mission.id) { mutableStateOf("") }
+    val missionSteps = mission.steps.orEmpty().ifEmpty { listOf(missionPrompt(mission.mission_type)) }
+    val missionGoal = mission.goal.orEmpty().ifBlank { missionPrompt(mission.mission_type) }
     val uri = LocalUriHandler.current
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(mission.app_name, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text(pretty(mission.mission_type) + " Test", style = MaterialTheme.typography.titleLarge)
-        Text("About " + mission.estimated_minutes + " minutes")
-        if (step == 0) Button(onClick = { uri.openUri(mission.opt_in_url); step = 1 }, modifier = Modifier.fillMaxWidth()) { Text("Open Play Testing Link") }
-        if (step == 1) Button(onClick = { onOptIn(); step = 2 }, modifier = Modifier.fillMaxWidth()) { Text("Confirm Opt-In") }
-        if (step == 2) Button(onClick = { onInstalled(); step = 3 }, modifier = Modifier.fillMaxWidth()) { Text("Confirm Installed") }
+        Text(stringResource(R.string.mission_type_test_title, localizedLabel(mission.mission_type)), style = MaterialTheme.typography.titleLarge)
+        Text(stringResource(R.string.about_minutes, mission.estimated_minutes))
+        if (step == 0) Button(onClick = { uri.openUri(mission.opt_in_url); playOpened = true }, enabled = !loading && !mission.feedback_submitted, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.open_play_testing_link)) }
+        if (step == 1) Button(onClick = { onOptIn() }, enabled = !loading && !mission.feedback_submitted, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.confirm_opt_in)) }
+        if (step == 2) Button(onClick = { onInstalled() }, enabled = !loading && !mission.feedback_submitted, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.confirm_installed)) }
         if (step == 3) {
-            Highlight { Text("Your mission", fontWeight = FontWeight.SemiBold); Text(missionPrompt(mission.mission_type)) }
-            Button(onClick = { onStart(); step = 4 }, modifier = Modifier.fillMaxWidth()) { Text("Complete Mission") }
+            Highlight {
+                Text(stringResource(R.string.your_mission), fontWeight = FontWeight.SemiBold)
+                Text(missionGoal)
+                missionSteps.forEachIndexed { index, instruction ->
+                    Text("${index + 1}. $instruction")
+                }
+            }
+            Button(onClick = { onStart() }, enabled = !loading && !mission.feedback_submitted, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.start_mission)) }
         }
         if (step >= 4) {
-            Text("Did the app open successfully?", fontWeight = FontWeight.SemiBold)
-            Choices(listOf("Yes", "No"), openOk?.let { if (it) "Yes" else "No" }) { openOk = it == "Yes" }
-            Text("Did the main feature work?", fontWeight = FontWeight.SemiBold)
-            Choices(listOf("Yes", "Partly", "No"), featureOk?.lowercase()?.replaceFirstChar { it.uppercase() }) { featureOk = it.uppercase() }
-            OutlinedTextField(issue, { issue = it }, label = { Text("Any issue? Optional") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(suggestion, { suggestion = it }, label = { Text("Any suggestion? Optional") }, modifier = Modifier.fillMaxWidth())
-            Button(
-                onClick = { onSubmit(checkNotNull(openOk), checkNotNull(featureOk), issue, suggestion) },
-                enabled = openOk != null && featureOk != null,
+            Text(stringResource(R.string.mission_result_question), fontWeight = FontWeight.SemiBold)
+            Option(
+                completionResult == "COMPLETED",
+                stringResource(R.string.result_completed),
+                stringResource(R.string.result_completed_help),
+            ) { completionResult = "COMPLETED" }
+            Option(
+                completionResult == "COMPLETED_WITH_DIFFICULTY",
+                stringResource(R.string.result_with_difficulty),
+                stringResource(R.string.result_with_difficulty_help),
+            ) { completionResult = "COMPLETED_WITH_DIFFICULTY" }
+            Option(
+                completionResult == "COULD_NOT_COMPLETE",
+                stringResource(R.string.result_could_not_complete),
+                stringResource(R.string.result_could_not_complete_help),
+            ) { completionResult = "COULD_NOT_COMPLETE" }
+            OutlinedTextField(
+                value = timeSpentText,
+                onValueChange = { timeSpentText = it.filter(Char::isDigit).take(3) },
+                label = { Text(stringResource(R.string.time_taken_prompt)) },
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("Submit Feedback") }
+            )
+            OutlinedTextField(issue, { issue = it }, label = { Text(stringResource(R.string.what_happened_optional)) }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(suggestion, { suggestion = it }, label = { Text(stringResource(R.string.suggestion_optional)) }, modifier = Modifier.fillMaxWidth())
+            val timeSpentMinutes = timeSpentText.toIntOrNull()
+            Button(
+                onClick = { onSubmit(checkNotNull(completionResult), issue, suggestion, checkNotNull(timeSpentMinutes)) },
+                enabled = !loading && !mission.feedback_submitted && completionResult != null && timeSpentMinutes != null && timeSpentMinutes in 1..240,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(stringResource(R.string.submit_feedback)) }
         }
     }
 }
@@ -1102,12 +1525,12 @@ private fun Testers(
     rows: List<TesterAssignment>,
     circle: LaunchCircle?,
 ) {
-    val attentionRows = rows.filter { participationState(it) == "NEEDS_ATTENTION" }
-    val inactiveRows = rows.filter { participationState(it) == "INACTIVE" }
+    val attentionRows = rows.filter { participationState(it) == "AT_RISK" }
+    val criticalRows = rows.filter { participationState(it) == "CRITICAL" }
     val droppedRows = rows.filter { participationState(it) == "DROPPED" }
     val activeRows = rows.filter { participationState(it) == "ACTIVE" }
     val active = dashboard?.active_testers ?: activeRows.size
-    val attention = dashboard?.at_risk_testers ?: attentionRows.size + inactiveRows.size
+    val attention = dashboard?.at_risk_testers ?: attentionRows.size + criticalRows.size
     val healthy = dashboard?.status != "AT_RISK" && dashboard?.circle_health == "GOOD"
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -1115,9 +1538,9 @@ private fun Testers(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Text("Circle", style = MaterialTheme.typography.headlineLarge)
+            Text(stringResource(R.string.circle), style = MaterialTheme.typography.headlineLarge)
             Text(
-                app?.let { "${it.name} testing circle" } ?: "Testing circle",
+                app?.let { stringResource(R.string.app_testing_circle, it.name) } ?: stringResource(R.string.testing_circle),
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,
@@ -1133,13 +1556,13 @@ private fun Testers(
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Column {
-                            Text("Circle Health", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(if (healthy) "Healthy" else "Needs attention", style = MaterialTheme.typography.headlineSmall)
+                            Text(stringResource(R.string.circle_health_title), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(if (healthy) R.string.healthy else R.string.needs_attention), style = MaterialTheme.typography.headlineSmall)
                         }
-                        StatusBadge(if (healthy) "On track" else "Attention", if (healthy) StatusTone.SUCCESS else StatusTone.ATTENTION)
+                        StatusBadge(stringResource(if (healthy) R.string.on_track else R.string.attention), if (healthy) StatusTone.SUCCESS else StatusTone.ATTENTION)
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Tester coverage", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.tester_coverage_title), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text("$active / ${dashboard?.required_tester_count ?: 12}", style = MaterialTheme.typography.labelLarge)
                     }
                     LinearProgressIndicator(
@@ -1151,16 +1574,16 @@ private fun Testers(
                         color = if (healthy) MaterialTheme.colorScheme.tertiary else LaunchAttention,
                     )
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        CircleMetric(active.toString(), "Active", StatusTone.SUCCESS, Modifier.weight(1f))
-                        CircleMetric(attention.toString(), "Attention", StatusTone.ATTENTION, Modifier.weight(1f))
-                        CircleMetric(droppedRows.size.toString(), "Dropped", StatusTone.NEUTRAL, Modifier.weight(1f))
+                        CircleMetric(active.toString(), stringResource(R.string.active), StatusTone.SUCCESS, Modifier.weight(1f))
+                        CircleMetric(attention.toString(), stringResource(R.string.attention), StatusTone.ATTENTION, Modifier.weight(1f))
+                        CircleMetric(droppedRows.size.toString(), stringResource(R.string.dropped), StatusTone.NEUTRAL, Modifier.weight(1f))
                     }
                 }
             }
         }
         if (app != null) {
             item {
-                SectionHeader("APP STATUS")
+                SectionHeader(stringResource(R.string.app_status))
                 OutlinedCard(Modifier.fillMaxWidth()) {
                     Row(
                         Modifier.fillMaxWidth().padding(18.dp),
@@ -1174,16 +1597,16 @@ private fun Testers(
                             overflow = TextOverflow.Ellipsis,
                         )
                         Spacer(Modifier.width(8.dp))
-                        StatusBadge(pretty(dashboard?.status ?: app.status))
+                        StatusBadge(localizedLabel(dashboard?.status ?: app.status))
                     }
                 }
             }
         }
         circle?.let { launchCircle ->
             item {
-                SectionHeader("CIRCLE MEMBERS")
+                SectionHeader(stringResource(R.string.circle_members))
                 Text(
-                    "${launchCircle.active_member_count} / ${launchCircle.max_members} active members",
+                    stringResource(R.string.active_members_count, launchCircle.active_member_count, launchCircle.max_members),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -1192,29 +1615,34 @@ private fun Testers(
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(member.member_label, style = MaterialTheme.typography.titleMedium)
                         Text(
-                            if (member.role == "OWNER") "Circle owner"
-                            else if (member.status == "ACTIVE") "Active member"
-                            else member.status.lowercase().replaceFirstChar { it.uppercase() } + " member",
+                            stringResource(
+                                when {
+                                    member.role == "OWNER" -> R.string.circle_owner
+                                    member.status == "ACTIVE" -> R.string.active_member
+                                    else -> R.string.circle_member_status
+                                },
+                                member.status.lowercase().replaceFirstChar { it.uppercase() },
+                            ),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
             }
         }
-        if (rows.isEmpty()) item { EmptyCard("No tester statuses yet", "Tester status appears after members are assigned to this app.") }
-        if (attentionRows.isNotEmpty()) item { SectionHeader("NEEDS ATTENTION") }
+        if (rows.isEmpty()) item { EmptyCard(stringResource(R.string.no_tester_statuses), stringResource(R.string.tester_statuses_explanation)) }
+        if (attentionRows.isNotEmpty()) item { SectionHeader(stringResource(R.string.at_risk)) }
         items(attentionRows, key = { "attention-${it.id}" }) { tester ->
             TesterStatusRow(tester)
         }
-        if (activeRows.isNotEmpty()) item { SectionHeader("ACTIVE MEMBERS") }
+        if (activeRows.isNotEmpty()) item { SectionHeader(stringResource(R.string.active_members)) }
         items(activeRows, key = { "active-${it.id}" }) { tester ->
             TesterStatusRow(tester)
         }
-        if (inactiveRows.isNotEmpty()) item { SectionHeader("INACTIVE") }
-        items(inactiveRows, key = { "inactive-${it.id}" }) { tester ->
+        if (criticalRows.isNotEmpty()) item { SectionHeader(stringResource(R.string.critical)) }
+        items(criticalRows, key = { "critical-${it.id}" }) { tester ->
             TesterStatusRow(tester, muted = true)
         }
-        if (droppedRows.isNotEmpty()) item { SectionHeader("DROPPED") }
+        if (droppedRows.isNotEmpty()) item { SectionHeader(stringResource(R.string.dropped)) }
         items(droppedRows, key = { "dropped-${it.id}" }) { tester ->
             TesterStatusRow(tester, muted = true)
         }
@@ -1236,8 +1664,10 @@ private fun CircleMetric(value: String, label: String, tone: StatusTone, modifie
 
 private fun participationState(tester: TesterAssignment): String = when {
     tester.status == "DROPPED" || tester.health_status == "DROPPED" -> "DROPPED"
-    tester.health_status == "INACTIVE" -> "INACTIVE"
-    tester.health_status == "AT_RISK" -> "NEEDS_ATTENTION"
+    tester.health_status in setOf("CRITICAL", "INACTIVE") -> "CRITICAL"
+    tester.health_status == "AT_RISK" -> "AT_RISK"
+    tester.participation_state == "NEEDS_ATTENTION" -> "AT_RISK"
+    tester.participation_state == "INACTIVE" -> "CRITICAL"
     tester.participation_state.isNotBlank() -> tester.participation_state
     else -> "ACTIVE"
 }
@@ -1264,9 +1694,9 @@ private fun TesterStatusRow(tester: TesterAssignment, muted: Boolean = false) {
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text("Day ${tester.testing_day}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.day_number, tester.testing_day), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (tester.total_missions > 0) {
-                    Text("${tester.completed_missions} / ${tester.total_missions} tests", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.completed_mission_count, tester.completed_missions, tester.total_missions), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             StatusBadge(testerLabel(tester), testerTone(tester))
@@ -1290,14 +1720,16 @@ private fun TesterAvatar(label: String, muted: Boolean) {
 @Composable
 private fun Feedback(rows: List<MissionFeedback>) {
     LazyColumn(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item { Text("Feedback", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold) }
-        if (rows.isEmpty()) item { EmptyCard("No feedback yet", "Responses appear after completed missions.") }
+        item { Text(stringResource(R.string.feedback), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold) }
+        if (rows.isEmpty()) item { EmptyCard(stringResource(R.string.no_feedback_yet), stringResource(R.string.feedback_after_missions)) }
         items(rows, key = { it.id }) { row ->
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(row.tester_label + " · " + pretty(row.mission_type), fontWeight = FontWeight.SemiBold)
-                    row.issue_text?.let { Text("Issue · " + it) }
-                    row.suggestion_text?.let { Text("Suggestion · " + it) }
+                    Text(row.tester_label + " · " + localizedLabel(row.mission_type), fontWeight = FontWeight.SemiBold)
+                    row.completion_result?.let { Text(stringResource(R.string.feedback_result, localizedLabel(it))) }
+                    row.time_spent_minutes?.let { Text(stringResource(R.string.feedback_tester_time, it)) }
+                    row.issue_text?.let { Text(stringResource(R.string.feedback_issue, it)) }
+                    row.suggestion_text?.let { Text(stringResource(R.string.feedback_suggestion, it)) }
                 }
             }
         }
@@ -1425,30 +1857,60 @@ private fun Choices(values: List<String>, selected: String?, onSelect: (String) 
     }
 }
 
-private fun testerLabel(value: TesterAssignment): String = when {
-    participationState(value) == "DROPPED" -> "Dropped"
-    participationState(value) == "INACTIVE" -> "Inactive"
-    participationState(value) == "NEEDS_ATTENTION" -> "Needs attention"
-    value.is_replacement -> "Replacement"
-    value.health_status == "NEW" -> "New"
-    else -> "Active"
-}
+@Composable
+private fun testerLabel(value: TesterAssignment): String = stringResource(
+    when {
+        participationState(value) == "DROPPED" -> R.string.dropped
+        participationState(value) == "CRITICAL" -> R.string.critical
+        participationState(value) == "AT_RISK" -> R.string.at_risk
+        value.is_replacement -> R.string.replacement
+        value.health_status == "NEW" -> R.string.new_tester
+        value.health_status == "HEALTHY" -> R.string.healthy
+        else -> R.string.active
+    },
+)
 
 private fun testerTone(value: TesterAssignment): StatusTone = when {
-    participationState(value) == "ACTIVE" -> StatusTone.SUCCESS
-    participationState(value) in setOf("NEEDS_ATTENTION", "INACTIVE") -> StatusTone.ATTENTION
+    participationState(value) in setOf("ACTIVE", "HEALTHY") -> StatusTone.SUCCESS
+    participationState(value) in setOf("AT_RISK", "CRITICAL") -> StatusTone.ATTENTION
     else -> StatusTone.NEUTRAL
 }
 
-private fun missionPrompt(type: String): String = when (type) {
-    "INSTALL_FIRST_IMPRESSION" -> "Check the first-run experience."
-    "CORE_FEATURE" -> "Use the main feature and note anything unclear."
-    "EDGE_CASE" -> "Try an unusual input or interruption."
-    "SECOND_USE" -> "Return and complete a normal task again."
-    "RETEST" -> "Recheck the latest developer changes."
-    "FINAL_FEEDBACK" -> "Summarize the full testing experience."
-    else -> pretty(type)
-}
+@Composable
+private fun missionPrompt(type: String): String = stringResource(
+    when (type) {
+        "INSTALL_FIRST_IMPRESSION" -> R.string.mission_prompt_first_impression
+        "CORE_FEATURE" -> R.string.mission_prompt_core_feature
+        "EDGE_CASE" -> R.string.mission_prompt_edge_case
+        "SECOND_USE" -> R.string.mission_prompt_second_use
+        "RETEST" -> R.string.mission_prompt_retest
+        "FINAL_FEEDBACK" -> R.string.mission_prompt_final_feedback
+        else -> R.string.mission_prompt_generic
+    },
+)
+
+@Composable
+private fun localizedLabel(value: String): String = stringResource(
+    when (value) {
+        "WAITING_FOR_TESTERS" -> R.string.waiting_for_testers
+        "TESTING" -> R.string.testing_status
+        "AT_RISK", "COVERAGE_AT_RISK" -> R.string.coverage_at_risk
+        "TESTING_COMPLETE" -> R.string.fourteen_day_test_complete
+        "PRODUCTION_READY" -> R.string.production_ready_status
+        "DRAFT" -> R.string.draft_status
+        "INSTALL_FIRST_IMPRESSION" -> R.string.mission_first_impression
+        "CORE_FEATURE" -> R.string.mission_core_feature
+        "EDGE_CASE" -> R.string.mission_edge_case
+        "SECOND_USE" -> R.string.mission_second_use
+        "RETEST" -> R.string.mission_retest
+        "FINAL_FEEDBACK" -> R.string.mission_final_feedback
+        "COMPLETED" -> R.string.result_completed
+        "COMPLETED_WITH_DIFFICULTY" -> R.string.result_with_difficulty
+        "COULD_NOT_COMPLETE" -> R.string.result_could_not_complete
+        "PRIORITY" -> R.string.priority_support
+        else -> return pretty(value)
+    },
+)
 
 private fun pretty(value: String): String =
     value.lowercase().split("_").joinToString(" ") { it.replaceFirstChar(Char::uppercase) }
@@ -1458,10 +1920,105 @@ private fun copy(context: Context, value: String) {
     clipboard.setPrimaryClip(ClipData.newPlainText("Launch Circle", value))
 }
 
-private fun share(context: Context, value: String) {
+private fun share(context: Context, value: String, message: String = "Join my Android testing circle") {
     val intent = Intent(Intent.ACTION_SEND).apply {
         type = "text/plain"
-        putExtra(Intent.EXTRA_TEXT, "Join my Android testing circle\n\n" + value)
+        putExtra(Intent.EXTRA_TEXT, message + "\n\n" + value)
     }
     context.startActivity(Intent.createChooser(intent, "Share invite"))
+}
+
+
+@Composable
+private fun AppIconEditor(app: LaunchApp, loading: Boolean, onIcon: (String, String?) -> Unit) {
+    IconUpload(app.name, app.icon_url, app.package_name, enabled = !loading) { onIcon(app.id, it) }
+    TextButton(onClick = { onIcon(app.id, null) }) { Text(lcText("Get icon from Google Play", "从 Google Play 获取图标")) }
+}
+
+@Composable
+internal fun IconUpload(name: String, url: String?, packageName: String? = null, enabled: Boolean = true, onUpload: (String) -> Unit) {
+    val context = LocalContext.current
+    var error by androidx.compose.runtime.remember { mutableStateOf<String?>(null) }
+    val picker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readIconBytes() }
+                    ?: error("Cannot read this image")
+                require(bytes.size <= 1048576) { "Choose an image smaller than 1 MB" }
+                require((bytes.size >= 8 && bytes.copyOfRange(0, 8).contentEquals(byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a))) ||
+                    (bytes.size >= 3 && bytes[0] == 0xff.toByte() && bytes[1] == 0xd8.toByte() && bytes[2] == 0xff.toByte())) {
+                    "Choose a PNG or JPEG image"
+                }
+                require(android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size) != null) { "Choose a PNG or JPEG image" }
+                onUpload(android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP))
+            }.onSuccess { error = null }.onFailure { error = it.message ?: "Cannot read this image" }
+        }
+    }
+    OutlinedCard(Modifier.fillMaxWidth()) {
+        androidx.compose.foundation.layout.Row(
+            Modifier.fillMaxWidth().padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            AppIcon(name, url, packageName)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    if (url.isNullOrBlank()) lcText("App icon required", "需要应用图标") else lcText("App icon added", "已添加应用图标"),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(lcText("Choose a PNG or JPEG image · up to 1 MB", "选择 PNG 或 JPEG 图片 · 最大 1 MB"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            androidx.compose.material3.FilledTonalButton(onClick = { picker.launch("image/*") }, enabled = enabled) {
+                Text(if (url.isNullOrBlank()) lcText("Choose", "选择图标") else lcText("Change", "更换"))
+            }
+        }
+    }
+    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+}
+
+@Composable
+internal fun AppIcon(name: String, url: String?, packageName: String? = null) {
+    if (packageName == "com.launchcircle.testers") {
+        androidx.compose.foundation.Image(
+            painter = androidx.compose.ui.res.painterResource(com.launchcircle.testers.R.drawable.launch_circle_logo),
+            contentDescription = name,
+            modifier = Modifier.size(48.dp),
+        )
+        return
+    }
+    val context = LocalContext.current
+    var bitmap by androidx.compose.runtime.remember(url, packageName) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    LaunchedEffect(url, packageName) {
+        bitmap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                if (packageName == "com.regevidencehub.cablecert") {
+                    val icon = context.packageManager.getApplicationIcon(packageName)
+                    return@runCatching icon.toBitmap()
+                }
+                val value = url ?: return@runCatching null
+                val bytes = if (value.startsWith("data:image/")) android.util.Base64.decode(value.substringAfter(","), android.util.Base64.DEFAULT) else {
+                    val connection = java.net.URL(value).openConnection().apply { connectTimeout = 5000; readTimeout = 5000 }
+                    connection.getInputStream().use { it.readIconBytes() }
+                }
+                if (bytes.size > 1048576) null else android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            }.getOrNull()
+        }
+    }
+    val loaded = bitmap
+    if (loaded != null) androidx.compose.foundation.Image(loaded.asImageBitmap(), contentDescription = name, modifier = Modifier.size(48.dp))
+    else Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) { Text(name.take(1).uppercase()) }
+}
+
+private fun java.io.InputStream.readIconBytes(): ByteArray {
+    val output = java.io.ByteArrayOutputStream()
+    val buffer = ByteArray(8192)
+    while (output.size() <= 1048576) {
+        val count = read(buffer, 0, minOf(buffer.size, 1048577 - output.size()))
+        if (count < 0) break
+        output.write(buffer, 0, count)
+    }
+    return output.toByteArray()
 }

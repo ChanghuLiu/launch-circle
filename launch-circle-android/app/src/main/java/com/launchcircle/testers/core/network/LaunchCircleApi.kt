@@ -2,11 +2,20 @@ package com.launchcircle.testers.core.network
 
 import com.launchcircle.testers.core.model.DeviceUpdateRequest
 import com.launchcircle.testers.core.model.CreateAppRequest
+import com.launchcircle.testers.core.model.OwnershipAttestationRequest
+import com.launchcircle.testers.core.model.AdditionalAppCheckout
+import com.launchcircle.testers.core.model.AdditionalAppCheckoutRequest
+import com.launchcircle.testers.core.model.GooglePlayPurchaseVerification
 import com.launchcircle.testers.core.model.FeedbackRequest
 import com.launchcircle.testers.core.model.LaunchApp
 import com.launchcircle.testers.core.model.LaunchDashboard
 import com.launchcircle.testers.core.model.LaunchInvite
 import com.launchcircle.testers.core.model.LaunchCircle
+import com.launchcircle.testers.core.model.CoordinationTimeRequest
+import com.launchcircle.testers.core.model.WorkloadSummary
+import com.launchcircle.testers.core.model.ManagedOfferViewRequest
+import com.launchcircle.testers.core.model.ManagedOfferSummary
+import com.launchcircle.testers.core.model.ManagedCheckout
 import com.launchcircle.testers.core.model.MissionFeedback
 import com.launchcircle.testers.core.model.MatchingResult
 import com.launchcircle.testers.core.model.TestMission
@@ -33,6 +42,83 @@ import retrofit2.http.Path
 import retrofit2.http.PUT
 
 interface LaunchCircleApi {
+    @GET("capabilities")
+    suspend fun capabilities(): retrofit2.Response<okhttp3.ResponseBody>
+
+    @retrofit2.http.POST("apps/{appId}/icon")
+    suspend fun uploadIcon(@retrofit2.http.Header("Authorization") auth: String, @retrofit2.http.Path("appId") appId: String, @retrofit2.http.Body body: Map<String, String>): com.launchcircle.testers.core.model.LaunchApp
+    @retrofit2.http.POST("apps/{appId}/icon/google-play")
+    suspend fun importIcon(@retrofit2.http.Header("Authorization") auth: String, @retrofit2.http.Path("appId") appId: String): com.launchcircle.testers.core.model.LaunchApp
+
+    @GET("app-intakes")
+    suspend fun appIntakes(@Header("Authorization") auth: String): List<com.launchcircle.testers.core.model.AppIntakeStatus>
+    @POST("app-intakes")
+    suspend fun submitAppIntake(@Header("Authorization") auth: String, @Body body: com.launchcircle.testers.core.model.AppIntakeRequest): com.launchcircle.testers.core.model.AppIntakeStatus
+
+    @GET("app-groups")
+    suspend fun appGroups(@Header("Authorization") auth: String): List<com.launchcircle.testers.core.model.AppTestGroup>
+    @GET("apps/{appId}/app-groups")
+    suspend fun ownerAppGroups(@Header("Authorization") auth: String, @Path("appId") appId: String): com.launchcircle.testers.core.model.OwnerAppGroups
+    @POST("apps/{appId}/app-groups/{groupId}/join")
+    suspend fun joinOwnerAppGroup(@Header("Authorization") auth: String, @Path("appId") appId: String, @Path("groupId") groupId: String, @retrofit2.http.Body body: com.launchcircle.testers.core.model.AppGroupConsent): com.launchcircle.testers.core.model.AppGroupJoinResult
+    @POST("app-groups/{groupId}/leave")
+    suspend fun leaveAppGroup(@Header("Authorization") auth: String, @Path("groupId") groupId: String): Map<String, Any>
+    @POST("app-groups/{groupId}/join")
+    suspend fun joinAppGroup(@Header("Authorization") auth: String, @Path("groupId") groupId: String): Map<String, Any>
+    @GET("tester-pool/me")
+    suspend fun poolPreference(@Header("Authorization") auth: String): com.launchcircle.testers.core.model.PoolPreference
+    @POST("tester-pool/me")
+    suspend fun setPoolPreference(@Header("Authorization") auth: String, @Body body: com.launchcircle.testers.core.model.PoolOptIn): com.launchcircle.testers.core.model.PoolPreference
+    @GET("tester-pool/apps")
+    suspend fun poolOpportunities(@Header("Authorization") auth: String): List<com.launchcircle.testers.core.model.PoolOpportunity>
+    @GET("tester-pool/apps")
+    suspend fun communityApps(@Header("Authorization") auth: String): List<com.launchcircle.testers.core.model.PoolOpportunity>
+    @GET("apps/{appId}/supply")
+    suspend fun poolSupply(@Header("Authorization") auth: String, @Path("appId") appId: String): com.launchcircle.testers.core.model.PoolSupply
+    @POST("apps/{appId}/pool-listing")
+    suspend fun setPoolListing(@Header("Authorization") auth: String, @Path("appId") appId: String, @Body body: com.launchcircle.testers.core.model.PoolOptIn): com.launchcircle.testers.core.model.PoolSupply
+    @POST("apps/{appId}/tester-pool/accept")
+    suspend fun acceptPoolApp(@Header("Authorization") auth: String, @Path("appId") appId: String): Map<String, String>
+
+    @GET("missions/{missionId}/runs")
+    suspend fun evidenceRuns(@Header("Authorization") authorization: String, @Path("missionId") missionId: String): List<com.launchcircle.testers.core.model.EvidenceRunFull>
+
+    @GET("runs/{runId}/detail")
+    suspend fun evidenceRunDetail(@Header("Authorization") authorization: String, @Path("runId") runId: String): com.launchcircle.testers.core.model.EvidenceRunDetail
+
+    @GET("apps/{appId}/evidence-report")
+    suspend fun evidenceReport(@Header("Authorization") authorization: String, @Path("appId") appId: String): okhttp3.ResponseBody
+
+    @GET("apps/{appId}/evidence-summary")
+    suspend fun evidenceSummary(@Header("Authorization") authorization: String, @Path("appId") appId: String): com.launchcircle.testers.core.model.CampaignEvidenceSummary
+
+    @POST("apps/{appId}/evidence/build")
+    suspend fun setEvidenceBuild(@Header("Authorization") authorization: String, @Path("appId") appId: String, @Body body: com.launchcircle.testers.core.model.EvidenceBuildRequest): Map<String, Any>
+
+    @POST("runs/{runId}/fix")
+    suspend fun declareEvidenceFix(@Header("Authorization") authorization: String, @Path("runId") runId: String, @Body body: com.launchcircle.testers.core.model.EvidenceBuildRequest): Map<String, Any>
+
+    @GET("assignments/{assignmentId}/evidence-status")
+    suspend fun evidenceAssignmentStatus(@Header("Authorization") authorization: String, @Path("assignmentId") assignmentId: String): com.launchcircle.testers.core.model.AssignmentEvidenceStatus
+
+    @GET("missions/{missionId}/evidence-context")
+    suspend fun evidenceContext(@Header("Authorization") authorization: String, @Path("missionId") missionId: String): com.launchcircle.testers.core.model.MissionEvidenceContext
+
+    @POST("missions/{missionId}/runs")
+    suspend fun submitMissionRun(@Header("Authorization") authorization: String, @Path("missionId") missionId: String, @Body body: com.launchcircle.testers.core.model.MissionRunRequest): com.launchcircle.testers.core.model.MissionRunRecord
+
+    @POST("assignments/{assignmentId}/enrollment-evidence")
+    suspend fun recordEnrollmentEvidence(@Header("Authorization") authorization: String, @Path("assignmentId") assignmentId: String, @Body body: com.launchcircle.testers.core.model.EnrollmentEvidenceRequest): Map<String, Any>
+
+    @GET("android-version")
+    suspend fun androidVersion(): com.launchcircle.testers.feature.launch.AndroidVersionPolicy
+
+    @GET("tester-group-access")
+    suspend fun testerGroupAccess(@Header("Authorization") authorization: String): com.launchcircle.testers.core.model.TesterGroupAccess
+
+    @retrofit2.http.PUT("tester-group-access")
+    suspend fun updateTesterGroupAccess(@Header("Authorization") authorization: String, @Body body: com.launchcircle.testers.core.model.TesterGroupAccessUpdate): com.launchcircle.testers.core.model.TesterGroupAccess
+
     @GET("pilot-config")
     suspend fun pilotConfig(): PilotConfig
 
@@ -75,14 +161,68 @@ interface LaunchCircleApi {
     @POST("apps")
     suspend fun createApp(@Header("Authorization") authorization: String, @Body body: CreateAppRequest): LaunchApp
 
+    @POST("apps/{appId}/ownership-attestation")
+    suspend fun attestOwnership(
+        @Header("Authorization") authorization: String,
+        @Path("appId") appId: String,
+        @Body body: OwnershipAttestationRequest = OwnershipAttestationRequest(),
+    ): LaunchApp
+
+    @POST("payments/additional-app-checkout")
+    suspend fun createAdditionalAppCheckout(
+        @Header("Authorization") authorization: String,
+        @Body body: AdditionalAppCheckoutRequest,
+    ): AdditionalAppCheckout
+
+    @GET("payments/additional-app-checkout/{purchaseId}")
+    suspend fun additionalAppCheckout(
+        @Header("Authorization") authorization: String,
+        @Path("purchaseId") purchaseId: String,
+    ): AdditionalAppCheckout
+
+    @POST("apps/{appId}/managed-checkout")
+    suspend fun createManagedCheckout(
+        @Header("Authorization") authorization: String,
+        @Path("appId") appId: String,
+    ): ManagedCheckout
+
+    @GET("payments/managed-checkout/{checkoutId}")
+    suspend fun managedCheckout(
+        @Header("Authorization") authorization: String,
+        @Path("checkoutId") checkoutId: String,
+    ): ManagedCheckout
+
+    @POST("payments/google-play/verify")
+    suspend fun verifyGooglePlayPurchase(
+        @Header("Authorization") authorization: String,
+        @Body body: GooglePlayPurchaseVerification,
+    ): Map<String, Any>
+
     @POST("apps/{appId}/google-group/confirm")
     suspend fun confirmGoogleGroup(@Header("Authorization") authorization: String, @Path("appId") appId: String, @Body body: GoogleGroupConfirmationRequest = GoogleGroupConfirmationRequest()): LaunchApp
 
     @GET("apps/{appId}/dashboard")
     suspend fun dashboard(@Header("Authorization") authorization: String, @Path("appId") appId: String): LaunchDashboard
 
+    @POST("apps/{appId}/coordination-time")
+    suspend fun recordCoordinationTime(
+        @Header("Authorization") authorization: String,
+        @Path("appId") appId: String,
+        @Body body: CoordinationTimeRequest,
+    ): WorkloadSummary
+
+    @POST("apps/{appId}/managed-offer/viewed")
+    suspend fun recordManagedOfferViewed(
+        @Header("Authorization") authorization: String,
+        @Path("appId") appId: String,
+        @Body body: ManagedOfferViewRequest,
+    ): ManagedOfferSummary
+
     @GET("apps/{appId}/circle")
     suspend fun appCircle(@Header("Authorization") authorization: String, @Path("appId") appId: String): LaunchCircle
+
+    @GET("circles")
+    suspend fun circles(@Header("Authorization") authorization: String): List<LaunchCircle>
 
     @GET("circles/{circleId}")
     suspend fun circle(@Header("Authorization") authorization: String, @Path("circleId") circleId: String): LaunchCircle

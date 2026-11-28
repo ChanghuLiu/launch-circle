@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.models.launch import App, Feedback, TesterAssignment, TestMission
 from app.services.clock import aware
+from app.services.commercial import managed_offer_snapshot, workload_snapshot
 from app.services.lifecycle import (
     GOOGLE_MINIMUM,
     TOTAL_DAYS,
@@ -22,6 +23,8 @@ def calculate_readiness(db: Session, app: App, now: datetime | None = None) -> d
     continuous = len(continuous_qualifying(db, app))
     assigned = sum(item.status != "DROPPED" for item in assignments)
     feedback_count = db.scalar(select(func.count(Feedback.id)).where(Feedback.app_id == app.id)) or 0
+    workload = workload_snapshot(db, app)
+    managed_offer = managed_offer_snapshot(db, app)
     completed_missions = db.scalar(
         select(func.count(TestMission.id))
         .join(TesterAssignment)
@@ -102,6 +105,15 @@ def calculate_readiness(db: Session, app: App, now: datetime | None = None) -> d
         "circle_health": "AT_RISK" if app_status == "AT_RISK" or risk else "GOOD",
         "feedback_count": feedback_count,
         "completed_missions": completed_missions,
+        "tester_minutes_reported": workload["tester_minutes_reported"],
+        "developer_coordination_minutes": workload["developer_coordination_minutes"],
+        "coordination_entries": workload["coordination_entries"],
+        "remaining_reciprocal_missions": managed_offer["remaining_reciprocal_missions"],
+        "remaining_reciprocal_minutes": managed_offer["remaining_reciprocal_minutes"],
+        "managed_offer_triggers": managed_offer["triggers"],
+        "managed_list_price_cents": managed_offer["managed_list_price_cents"],
+        "managed_checkout_amount_cents": managed_offer["managed_checkout_amount_cents"],
+        "managed_launch_purchased": managed_offer["managed_launch_purchased"],
         "missions_completed": completed_missions,
         "missions_total_available": available_missions,
         "estimated_ready_date": timeline["estimated_ready_date"],

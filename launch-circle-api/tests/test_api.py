@@ -115,3 +115,34 @@ def test_refresh_rotation_and_logout(client, monkeypatch):
     assert logout.status_code == 204
     after_logout = client.post("/v1/auth/refresh", json={"refresh_token": new_refresh})
     assert after_logout.status_code == 401
+
+
+def test_shared_installation_preserves_legacy_device(client, monkeypatch):
+    from app.core.database import SessionLocal
+    from app.models.device import Device
+
+    first_headers = auth_headers(login(client, monkeypatch))
+    body = dict(installation_id="legacy-installation", manufacturer="TCL",
+                model="T434J", android_api=36, capabilities=[])
+    first = client.put("/v1/me/device", headers=first_headers, json=body)
+    assert first.status_code == 200
+    legacy_id = first.json()["id"]
+    with SessionLocal() as db:
+        db.get(Device, legacy_id).installation_id = body["installation_id"]
+        db.commit()
+
+    monkeypatch.setattr(auth_api, "verify_google_id_token", lambda token: {
+        **fake_google_payload(token), "sub": "second-user", "email": "second@example.com",
+    })
+    signed_in = client.post("/v1/auth/google", json={"id_token": "valid"})
+    assert signed_in.status_code == 200
+    second_headers = auth_headers(signed_in.json())
+    second = client.put("/v1/me/device", headers=second_headers, json={**body, "model": "Other"})
+    assert second.status_code == 200
+    assert second.json()["id"] != legacy_id
+    assert second.json()["installation_id"] == body["installation_id"]
+    retry = client.put("/v1/me/device", headers=second_headers, json=body)
+    assert retry.json()["id"] == second.json()["id"]
+    with SessionLocal() as db:
+        assert db.get(Device, legacy_id).model == "T434J"
+    assert client.put("/v1/me/device", headers=first_headers, json=body).json()["id"] == legacy_id

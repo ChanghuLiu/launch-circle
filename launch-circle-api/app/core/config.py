@@ -4,7 +4,6 @@ from urllib.parse import urlparse
 from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 DEVELOPMENT_JWT_SECRET = "development-only-change-me"
 DEPLOYMENT_ENVIRONMENTS = {"pilot", "production"}
 
@@ -29,6 +28,22 @@ class Settings(BaseSettings):
         validation_alias="PUBLIC_BASE_URL",
     )
     google_client_id: str = ""
+    android_latest_version_code: int = Field(default=20, ge=1)
+    android_latest_version_name: str = "1.0.18"
+    google_play_package_name: str = "com.launchcircle.testers"
+    google_play_service_account_json: str = ""
+    # The publisher account that owns Launch Circle's customer apps. Keep this
+    # server-side; a client-supplied developer ID is only a claim until the
+    # package can be verified with this account's Android Publisher access.
+    google_play_developer_account_id: str = ""
+    # Publisher IDs that can register any package owned by that verified Play
+    # publisher without the per-additional-app purchase. Keep this allowlist
+    # server-side; package ownership is still checked against the Publisher API.
+    google_play_unlimited_developer_account_ids: str = ""
+    admin_account_emails: str = "liuchanghu2018@gmail.com"
+    google_play_additional_app_product_id: str = "additional_app_1"
+    google_play_managed_product_id: str = "managed_launch_15"
+    google_play_managed_credit_product_id: str = "managed_launch_14"
     invite_base_url: str = Field(
         default="https://launchcircle.app/join",
         validation_alias=AliasChoices("INVITE_BASE_URL", "LAUNCH_CIRCLE_INVITE_BASE_URL"),
@@ -41,6 +56,8 @@ class Settings(BaseSettings):
         default="https://groups.google.com/g/launch-circle-12-testers",
         validation_alias=AliasChoices("GOOGLE_GROUP_URL", "LAUNCH_CIRCLE_GOOGLE_GROUP_JOIN_URL"),
     )
+    admin_password_hash: str = ""
+    cold_start_evidence_enabled: bool = False
     development_auth_enabled: bool = True
 
     @property
@@ -62,6 +79,17 @@ class Settings(BaseSettings):
     @property
     def launch_circle_invite_base_url(self) -> str:
         return self.invite_base_url.rstrip(chr(47))
+
+    @property
+    def unlimited_play_developer_account_ids(self) -> frozenset[str]:
+        return frozenset(
+            value.strip()
+            for value in self.google_play_unlimited_developer_account_ids.split(",")
+            if value.strip()
+        )
+
+    def has_unlimited_play_developer_account(self, account_id: str | None) -> bool:
+        return bool(account_id and account_id.strip() in self.unlimited_play_developer_account_ids)
 
     @model_validator(mode="after")
     def validate_deployment_safety(self) -> "Settings":
@@ -85,6 +113,17 @@ class Settings(BaseSettings):
             raise ValueError("CORS_ORIGINS must contain only HTTPS origins for pilot/production")
         if "*" in self.cors_origin_list:
             raise ValueError("CORS_ORIGINS cannot contain * for pilot/production")
+        if not self.google_play_developer_account_id.isdigit():
+            raise ValueError(
+                "GOOGLE_PLAY_DEVELOPER_ACCOUNT_ID must identify the verified publisher account"
+            )
+        if any(
+            not account_id.isdigit()
+            for account_id in self.unlimited_play_developer_account_ids
+        ):
+            raise ValueError(
+                "GOOGLE_PLAY_UNLIMITED_DEVELOPER_ACCOUNT_IDS must contain numeric publisher IDs"
+            )
         return self
 
 

@@ -1,4 +1,5 @@
 from app.services.missions import MISSION_SCHEDULE
+from tests.group_fixtures import seed_app_group_consent
 
 
 def register(client, email: str, display_name: str) -> dict:
@@ -15,22 +16,32 @@ def register(client, email: str, display_name: str) -> dict:
     tokens = response.json()
     me = client.get("/me", headers={"Authorization": f"Bearer {tokens['access_token']}"})
     assert me.status_code == 200
-    return {
+    result = {
         "id": me.json()["id"],
         "headers": {"Authorization": f"Bearer {tokens['access_token']}"},
     }
+    # Existing scenario explicitly starts with a synthetic confirmed Play account.
+    confirmed = client.put("/tester-group-access", headers=result["headers"], json={"status": "SELF_CONFIRMED", "play_email": email})
+    assert confirmed.status_code == 200, confirmed.text
+    return result
 
 
-def create_launch(client, owner: dict) -> dict:
+def create_launch(
+    client, owner: dict, core_workflow_steps: list[str] | None = None
+) -> dict:
+    request_body = {"ownership_authorized": True, "icon_data": 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGPUjTrBwMDAxMDAwMDAAAAPQwFTH4I6DQAAAABJRU5ErkJggg==',
+        "name": "BLE Signal Analyzer",
+        "package_name": "com.example.bleanalyzer",
+        "opt_in_url": "https://play.google.com/apps/testing/com.example.bleanalyzer",
+        "play_developer_account_id": "1000000000000000001",
+        "google_group_url": "https://groups.google.com/g/ble-testers",
+    }
+    if core_workflow_steps is not None:
+        request_body["core_workflow_steps"] = core_workflow_steps
     response = client.post(
         "/apps",
         headers=owner["headers"],
-        json={
-            "name": "BLE Signal Analyzer",
-            "package_name": "com.example.bleanalyzer",
-            "opt_in_url": "https://play.google.com/apps/testing/com.example.bleanalyzer",
-            "google_group_url": "https://groups.google.com/g/ble-testers",
-        },
+        json=request_body,
     )
     assert response.status_code == 201, response.text
     return response.json()
@@ -53,8 +64,15 @@ def join_circle(client, owner: dict, member: dict) -> None:
 def test_phase0_vertical_slice_and_cold_start_dashboard(client):
     owner = register(client, "owner@example.com", "Developer A")
     tester = register(client, "tester@example.com", "Developer B")
-    app = create_launch(client, owner)
+    workflow = [
+        "Open the signal scan screen.",
+        "Scan for nearby BLE devices.",
+        "Open a device and inspect its signal details.",
+    ]
+    app = create_launch(client, owner, workflow)
+    assert app["core_workflow_steps"] == workflow
     join_circle(client, owner, tester)
+    seed_app_group_consent(app["id"], [tester["id"]])
 
     cold = client.get(f"/apps/{app['id']}/dashboard", headers=owner["headers"])
     assert cold.status_code == 200
@@ -86,6 +104,10 @@ def test_phase0_vertical_slice_and_cold_start_dashboard(client):
     )
     first = missions.json()[0]
     assert first["status"] == "AVAILABLE"
+    core_mission = missions.json()[1]
+    assert core_mission["goal"] == "Complete the main workflow in BLE Signal Analyzer."
+    assert core_mission["steps"] == workflow
+    assert len(first["steps"]) <= 4
 
     today = client.get("/test-missions/today", headers=tester["headers"])
     assert today.status_code == 200
@@ -101,13 +123,17 @@ def test_phase0_vertical_slice_and_cold_start_dashboard(client):
         json={
             "launch_ok": True,
             "core_feature_ok": "partly",
+            "completion_result": "completed_with_difficulty",
             "rating": 4,
             "issue_text": "Permission explanation was unclear.",
             "suggestion_text": "Add a short onboarding note.",
+            "time_spent_minutes": 7,
         },
     )
     assert submitted.status_code == 201, submitted.text
     assert submitted.json()["core_feature_ok"] == "PARTLY"
+    assert submitted.json()["completion_result"] == "COMPLETED_WITH_DIFFICULTY"
+    assert submitted.json()["time_spent_minutes"] == 7
     assert submitted.json()["tester_label"].startswith("Tester #")
 
     feedback = client.get(f"/apps/{app['id']}/feedback", headers=owner["headers"])
@@ -125,6 +151,28 @@ def test_phase0_vertical_slice_and_cold_start_dashboard(client):
     assert data["completed_missions"] == 1
     assert data["feedback_count"] == 1
     assert data["production_readiness"] == 30
+    assert data["tester_minutes_reported"] == 7
+
+    coordination = client.post(
+        f"/apps/{app['id']}/coordination-time",
+        headers=owner["headers"],
+        json={"minutes": 13, "category": "COORDINATION"},
+    )
+    assert coordination.status_code == 201, coordination.text
+    assert coordination.json()["developer_coordination_minutes"] == 13
+    assert coordination.json()["coordination_entries"] == 1
+
+    workload = client.get(f"/apps/{app['id']}/workload", headers=owner["headers"])
+    assert workload.status_code == 200, workload.text
+    assert workload.json()["tester_minutes_reported"] == 7
+    assert workload.json()["developer_coordination_minutes"] == 13
+
+    viewed = client.post(
+        f"/apps/{app['id']}/managed-offer/viewed",
+        headers=owner["headers"],
+        json={"trigger": "PRIORITY"},
+    )
+    assert viewed.status_code == 200, viewed.text
 
 
 def test_owner_assignment_and_duplicate_assignment_are_rejected(client):
@@ -132,6 +180,7 @@ def test_owner_assignment_and_duplicate_assignment_are_rejected(client):
     tester = register(client, "tester@example.com", "Tester")
     app = create_launch(client, owner)
     join_circle(client, owner, tester)
+    seed_app_group_consent(app["id"], [tester["id"]])
 
     own_assignment = client.post(
         f"/apps/{app['id']}/assign/{owner['id']}", headers=owner["headers"]

@@ -15,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -74,7 +75,10 @@ fun LegacyLaunchWorkspace(
                 onToday = viewModel::showToday,
                 onLogout = onLogout,
             )
-            state.destination == LaunchDestination.ADD_APP -> AddAppScreen(viewModel::createApp)
+            state.destination == LaunchDestination.ADD_APP -> AddAppScreen(
+                viewModel::createApp,
+                viewModel::setDraftIcon,
+            )
             state.destination == LaunchDestination.DASHBOARD -> {
                 val app = state.selectedApp
                 val dashboard = app?.let { state.dashboards[it.id] }
@@ -163,21 +167,29 @@ private fun MyLaunchesScreen(
 
 @Composable
 private fun AddAppScreen(
-    onCreate: (String, String, String, String?) -> Unit,
+    onCreate: (String, String, String, String?, String, List<String>, String, String?, Boolean) -> Unit,
+    onDraftIcon: (String?) -> Unit,
 ) {
     var name by remember { mutableStateOf("") }
     var packageName by remember { mutableStateOf("") }
     var optInUrl by remember { mutableStateOf("") }
-    var groupUrl by remember { mutableStateOf("") }
-    val canCreate = name.isNotBlank() &&
+    var draftIcon by remember { mutableStateOf<String?>(null) }
+    var ownershipAuthorized by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { onDraftIcon(null) }
+    val canCreate = name.isNotBlank() && draftIcon != null &&
         packageName.contains(".") &&
-        optInUrl.startsWith("http")
+        optInUrl.startsWith("http") && ownershipAuthorized
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text("Add App", style = MaterialTheme.typography.headlineMedium)
+        IconUpload(name.ifBlank { "App" }, draftIcon?.let { "data:image/png;base64,$it" }) {
+            draftIcon = it
+            onDraftIcon(it)
+        }
+        Text("Required: PNG or JPEG, up to 1 MB.")
         OutlinedTextField(
             name, { name = it }, label = { Text("App name") },
             modifier = Modifier.fillMaxWidth(),
@@ -191,12 +203,32 @@ private fun AddAppScreen(
             label = { Text("Google Play closed-testing opt-in URL") },
             modifier = Modifier.fillMaxWidth(),
         )
-        OutlinedTextField(
-            groupUrl, { groupUrl = it }, label = { Text("Google Group URL (optional)") },
-            modifier = Modifier.fillMaxWidth(),
+        Text(
+            lcText(
+                "Launch Circle uses one shared tester group. After creating this app, add the group email to its Play closed-test track. Testers join the group once, then opt in to each app separately.",
+                "Launch Circle 统一使用一个测试群组。添加此 App 后，请在它自己的 Play 封闭测试轨道添加群组邮箱。测试者只需加入群组一次，但每个 App 都要单独加入 Play 测试。",
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Checkbox(checked = ownershipAuthorized, onCheckedChange = { ownershipAuthorized = it })
+            Text("I own this app or am authorized to submit it for testing. Publisher identity is self-reported and may not be independently verified.")
+        }
         Button(
-            onClick = { onCreate(name, packageName, optInUrl, groupUrl) },
+            onClick = {
+                onCreate(
+                    name,
+                    packageName,
+                    optInUrl,
+                    null,
+                    "LAUNCH_CIRCLE",
+                    listOf("Open the app and complete its main task.", "Check that the task result is clear and correct."),
+                    "",
+                    null,
+                    ownershipAuthorized,
+                )
+            },
             enabled = canCreate,
         ) { Text("Create Launch") }
     }
@@ -269,11 +301,7 @@ private fun DashboardScreen(
             Text("View Testers")
         }
         Button(onClick = onInvite, modifier = Modifier.fillMaxWidth()) {
-            Text("Invite Developers")
-        }
-        invite?.let {
-            Text("Invite code: ${it.invite_code}")
-            Text(it.share_url, style = MaterialTheme.typography.bodySmall)
+            Text(lcText("Share this app’s test invitation", "分享此 App 的测试邀请"))
         }
         OutlinedButton(onClick = onFeedback, modifier = Modifier.fillMaxWidth()) {
             Text("View Feedback")

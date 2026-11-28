@@ -11,8 +11,8 @@ MISSION_GRACE = timedelta(days=1)
 AT_RISK_INACTIVITY = timedelta(days=2)
 INACTIVE_AFTER = timedelta(days=4)
 HEALTH_ACTIVE = "ACTIVE"
-HEALTH_NEEDS_ATTENTION = "NEEDS_ATTENTION"
-HEALTH_INACTIVE = "INACTIVE"
+HEALTH_AT_RISK = "AT_RISK"
+HEALTH_CRITICAL = "CRITICAL"
 HEALTH_DROPPED = "DROPPED"
 
 
@@ -72,9 +72,9 @@ def participation_state(assignment: TesterAssignment) -> str:
     if assignment.status == "DROPPED" or assignment.health_status == "DROPPED":
         return HEALTH_DROPPED
     if assignment.health_status == "INACTIVE":
-        return HEALTH_INACTIVE
+        return HEALTH_CRITICAL
     if assignment.health_status == "AT_RISK":
-        return HEALTH_NEEDS_ATTENTION
+        return HEALTH_AT_RISK
     return HEALTH_ACTIVE
 
 

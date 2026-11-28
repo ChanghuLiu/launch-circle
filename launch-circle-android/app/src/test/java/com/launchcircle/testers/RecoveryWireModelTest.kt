@@ -41,12 +41,12 @@ class RecoveryWireModelTest {
                 "tester_label":"Tester","status":"ACTIVE","assigned_at":"2026-08-20T12:00:00Z",
                 "opted_in_at":"2026-08-20T12:00:00Z","installed_at":"2026-08-20T12:00:00Z",
                 "completed_at":null,"completed_missions":1,"total_missions":2,
-                "health_status":"INACTIVE","participation_state":"INACTIVE"
+                "health_status":"CRITICAL","participation_state":"CRITICAL"
             }""",
             TesterAssignment::class.java,
         )
 
-        assertEquals("INACTIVE", assignment.participation_state)
-        assertEquals("INACTIVE", assignment.health_status)
+        assertEquals("CRITICAL", assignment.participation_state)
+        assertEquals("CRITICAL", assignment.health_status)
     }
 }
