@@ -47,6 +47,7 @@ These are not all code47 changes. The historical production features, release re
 
 ## Remaining checks
 
-- Re-run Android unit/build/lint and the backend suite after the merge resolution, then push the merge to the existing PR #7 branch and verify its GitHub Actions run.
-- Rebuild and verify the signed release AAB against the final merged source SHA, update the release record/checklist, and keep PR #7 Draft. No Play upload or submission is authorized before authenticated UI acceptance.
-- The user must complete Google sign-in in the `Continue with Google` flow on `emulator-5554`; after that, resume the authenticated emulator page, network and lifecycle checks. No user action is needed to continue source, backend or CI work.
+- GitHub Actions run [46085441896](https://github.com/ChanghuLiu/launch-circle/actions/runs/46085441896) completed successfully on merge commit `296439e7450e32a10049b4abfc203672976bad05`: Android tests/debug build/lint and Backend Python 3.12/3.14 tests, lint and empty-database Alembic migration passed.
+- Rebuilt the signed code47 AAB after CI from that exact source commit. Final artifact SHA-256 is `1f46ef207455447577c6bde21f2661baf941dcbba4249da2b6a45137e8fabde4`; `jarsigner -verify` reports verified and its certificate SHA-256 matches code46. Detailed release record: `launch-circle-android/releases/code-47-2026-11-27.md`.
+- PR #7 is still Draft. No Play upload, review submission or rollout occurred. Do not merge/publish until authenticated UI acceptance and the physical-device gate are resolved.
+- The user must complete Google sign-in in the `Continue with Google` flow on `emulator-5554`; after that, resume the authenticated emulator page, network and lifecycle checks. No ID12 retry is planned. Current screenshot: `evidence/pr7-emulator-code47-2026-11-27/02-login-current.png`.
